@@ -55,6 +55,7 @@ $script:skips = 0
 $script:failed = New-Object System.Collections.Generic.List[string]
 $script:noise = New-Object System.Collections.Generic.List[string]
 $script:caseSeq = 0
+$script:pidScans = 0
 
 function Check {
     param([string]$Name, [bool]$Condition, [string]$Detail = '')
@@ -166,16 +167,45 @@ function Start-Zuuned {
     }
 }
 
+function Resolve-ZuunedWindowByPid {
+    # Win32 caches nothing, so this is the ground truth for "which visible window
+    # belongs to this process id".
+    param([int]$ProcessId)
+    $r = Invoke-Proc -File $winshot -Arguments @('--pid', [string]$ProcessId) -WorkDir $out -Timeout 20
+    if ($r.Code -ne 0) { return [IntPtr]::Zero }
+    $m = [regex]::Match($r.Out, 'hwnd=(\d+)')
+    if (-not $m.Success) { return [IntPtr]::Zero }
+    return [IntPtr][long]::Parse($m.Groups[1].Value)
+}
+
 function Wait-ZuunedWindow {
+    # PowerShell 7 reads Process.MainWindowHandle once and then keeps the answer, so
+    # a harness that looks at it while the splash is still mapping reports an empty
+    # handle for a window the user can plainly see: one probe found no handle on 30
+    # consecutive healthy launches.  Refresh() drops that cache and the pid scan is
+    # the check that cannot lie, and the case records which one answered because a
+    # screenshot of a handle nobody can explain is not evidence.
     param($Handle, [int]$Seconds = 30)
     $deadline = (Get-Date).AddSeconds($Seconds)
-    while ((Get-Date) -lt $deadline) {
-        if ($Handle.Proc.HasExited) { return [IntPtr]::Zero }
+    while ($true) {
+        if ($Handle.Proc.HasExited) {
+            return [pscustomobject]@{ Handle = [IntPtr]::Zero; Source = 'exited' }
+        }
+        $Handle.Proc.Refresh()
         $h = $Handle.Proc.MainWindowHandle
-        if ($h -ne [IntPtr]::Zero) { return $h }
+        if ($h -ne [IntPtr]::Zero) {
+            return [pscustomobject]@{ Handle = $h; Source = 'property' }
+        }
+        $h = Resolve-ZuunedWindowByPid -ProcessId $Handle.Proc.Id
+        if ($h -ne [IntPtr]::Zero) {
+            $script:pidScans++
+            return [pscustomobject]@{ Handle = $h; Source = 'pid-scan' }
+        }
+        if ((Get-Date) -ge $deadline) {
+            return [pscustomobject]@{ Handle = [IntPtr]::Zero; Source = 'none' }
+        }
         Start-Sleep -Milliseconds 250
     }
-    return $Handle.Proc.MainWindowHandle
 }
 
 function Stop-Zuuned {
@@ -192,8 +222,14 @@ function Stop-Zuuned {
         }
     }
     $text = ($Handle.ErrTask.Result -split "`r?`n") + ($Handle.OutTask.Result -split "`r?`n")
+    $code = $p.ExitCode
+    if ($Handle.Killed) {
+        # A destroyed process reports an exit code it never chose, so 124 is the
+        # gate's own: a forced kill can never be read as a clean shutdown.
+        $code = 124
+    }
     return [pscustomobject]@{
-        Code = $p.ExitCode
+        Code = $code
         Killed = [bool]$Handle.Killed
         Lines = @($text | Where-Object { $_ -ne '' })
     }
@@ -288,7 +324,8 @@ function Invoke-Case {
     }
     $handle = Start-Zuuned -Profile $profile -Suffix ('wus' + $script:caseSeq) `
         -Arguments (@($Arguments) + @('--qa-probe'))
-    $hwnd = Wait-ZuunedWindow -Handle $handle
+    $window = Wait-ZuunedWindow -Handle $handle
+    $hwnd = $window.Handle
     $shot = $null
     $verdict = $null
     $extra = $null
@@ -306,6 +343,7 @@ function Invoke-Case {
         Profile = $profile
         WindowSeen = ($hwnd -ne [IntPtr]::Zero)
         Hwnd = $hwnd
+        HwndSource = $window.Source
         Shot = $shot
         Verdict = $verdict
         Extra = $extra

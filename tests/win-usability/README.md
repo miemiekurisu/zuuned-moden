@@ -26,6 +26,10 @@ Usage:
   Now-Playing layout can be reached without asking the user to drag anything.
 - `winshot --foreground <hwndDecimal>` - raise a window before a capture that
   needs the screen fallback.
+- `winshot --pid <processId>` - print `hwnd=<dec> pid=<dec> titled=<0|1>` for that
+  process's visible window and capture nothing, for a harness that has a pid but
+  cannot trust `Process.MainWindowHandle`.  A visible non-tool window with a title
+  wins; an untitled visible window is still reported rather than nothing.
 
 Qt Quick on Windows presents through the window's own swapchain, so `PrintWindow`
 with `PW_RENDERFULLCONTENT` is the primary path and a screen `BitBlt` of the
@@ -86,12 +90,21 @@ untouched.  `ZUUNED_LOCK_SUFFIX` isolates the single-instance lock so an
 instrumented instance can run beside the daily one, `ZUUNED_MPV_AO=null` keeps it
 silent, and with the variables unset every path stays where Qt would put it.
 
-Two probe findings shape the gate.  A fresh profile shows the onboarding wizard
+Three probe findings shape the gate.  A fresh profile shows the onboarding wizard
 instead of the requested `--page`, so a page case has to dismiss onboarding first
 or report the onboarding state rather than claim a page rendered.  And the splash
 lasts about two seconds plus a fade, so a window captured 1.5 s after it appears
 is the splash, not the page - settle for several seconds, or poll the capture
-statistics until the frame stops being one flat colour.
+statistics until the frame stops being one flat colour.  And a handle that the
+harness reports is not trustworthy by itself: PowerShell 7 reads
+`Process.MainWindowHandle` once and keeps the answer, so a probe that looks at it
+while the splash is still mapping keeps saying "no window" for an app the user can
+see - one probe found no handle on 30 consecutive healthy launches, while
+`winshot --pid 77180` returned the same handle that a fresh `Get-Process` reported.
+`run.ps1` now refreshes the property, falls back to the pid scan, and records which
+route answered.  For the same reason `Stop-Zuuned` reports `124` rather than
+`ExitCode` after it had to destroy a process: a killed app must not be able to
+report a clean shutdown.
 
 No Zune has ever been connected to a Windows build, and nothing in this
 directory touches USB.

@@ -4,6 +4,7 @@
 //   winshot <hwndDecimal> <out.png>
 //   winshot --move <hwndDecimal> <width> <height>
 //   winshot --foreground <hwndDecimal>
+//   winshot --pid <processId>
 //
 // A capture is only evidence if someone can read it, so every shot prints one
 // machine-parsable line with the statistics the gate asserts on:
@@ -237,6 +238,29 @@ HWND handle(const char *arg) {
     return reinterpret_cast<HWND>(static_cast<uintptr_t>(raw));
 }
 
+struct PidSearch {
+    DWORD pid;
+    HWND titled;
+    HWND untitled;
+};
+
+BOOL CALLBACK collectWindow(HWND hwnd, LPARAM lParam) {
+    DWORD wpid = 0;
+    GetWindowThreadProcessId(hwnd, &wpid);
+    PidSearch *found = reinterpret_cast<PidSearch *>(lParam);
+    if (wpid != found->pid || !IsWindowVisible(hwnd))
+        return TRUE;
+    if (GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW)
+        return TRUE;
+    if (GetWindowTextLengthW(hwnd) > 0) {
+        if (!found->titled)
+            found->titled = hwnd;
+    } else if (!found->untitled) {
+        found->untitled = hwnd;
+    }
+    return found->titled ? FALSE : TRUE;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -245,7 +269,8 @@ int main(int argc, char **argv) {
                 "usage:\n"
                 "  winshot <hwndDecimal> <out.png>\n"
                 "  winshot --move <hwndDecimal> <width> <height>\n"
-                "  winshot --foreground <hwndDecimal>\n");
+                "  winshot --foreground <hwndDecimal>\n"
+                "  winshot --pid <processId>\n");
         return 2;
     }
     makeDpiAware();
@@ -260,6 +285,31 @@ int main(int argc, char **argv) {
     } guard{gdiplus, &token};
 
     const std::string mode = argv[1];
+    if (mode == "--pid") {
+        // .NET reports MainWindowHandle as zero for the window Qt Quick really
+        // shows, which left the usability gate waiting 30 s for a frame that was
+        // on screen the whole time and then killing a healthy app.  Enumerating
+        // by process id is the honest way to find what the user sees: a visible,
+        // titled, non-tool window wins, and an untitled one is still reported
+        // instead of nothing.
+        char *end = nullptr;
+        const unsigned long pid = strtoul(argv[2], &end, 10);
+        if (!end || *end || pid == 0) {
+            fprintf(stderr, "winshot: not a process id: %s\n", argv[2]);
+            return 2;
+        }
+        PidSearch search {static_cast<DWORD>(pid), nullptr, nullptr};
+        EnumWindows(collectWindow, reinterpret_cast<LPARAM>(&search));
+        const HWND found = search.titled ? search.titled : search.untitled;
+        if (!found) {
+            fprintf(stderr, "winshot: no visible window for pid %lu\n", pid);
+            return 2;
+        }
+        printf("hwnd=%llu pid=%lu titled=%d\n",
+               static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(found)),
+               pid, search.titled ? 1 : 0);
+        return 0;
+    }
     if (mode == "--move" || mode == "--foreground") {
         HWND hwnd = handle(argv[2]);
         if (!hwnd || !IsWindow(hwnd)) {

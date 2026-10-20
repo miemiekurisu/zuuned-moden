@@ -58,7 +58,14 @@ report the page, onboarding and island state it actually chose, and
 counts from a scan database. `run.ps1` is the gate being written around them and
 is deliberately incomplete: it implements the capture-tool phase, prints the
 outstanding cases and exits non-zero, so a partial run cannot be mistaken for a
-passed Windows gate.
+passed Windows gate.  Two harness faults found there are worth remembering because
+both blame the app for a bug in the test: PowerShell 7 caches
+`Process.MainWindowHandle` after the first zero read, so an instrumented launch
+whose property was polled during the splash looks like a windowless hang (30 of 30
+healthy launches looked that way), and `Process.Kill()` leaves the caller reading an
+exit code the application never chose, so a destroyed app looks like it exited
+cleanly.  The window is now resolved by process id through `winshot --pid`, which
+route answered is recorded, and a forced kill is reported as `124`.
 Unrelated open item: the EnvironmentBackground spray halo shows a white-ring
 artifact under the Windows blur path; that file is still identical to HEAD.
 
