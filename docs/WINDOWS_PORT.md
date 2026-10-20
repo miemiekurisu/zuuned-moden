@@ -88,7 +88,7 @@ environment to reproduce them.
   `opendir` semantics and UTF-8 narrow names under the same force-include the
   application builds with.
 - The usability gate makes seventeen instrumented launches plus the tool,
-  encoder and profile probes and ends `launches=17 checks=77 failures=0
+  encoder and profile probes and ends `launches=17 checks=83 failures=0
   skips=0 killed=0` and `OVERALL=ok`.
 - What those launches actually establish: every page paints real content rather
   than an empty window (`winshot` captures the live swapchain and the app
@@ -105,6 +105,15 @@ environment to reproduce them.
   `ZUUNED_MPV_AO=wasapi` ends `audio_out=wasapi` with the position advancing, and the
   same run with the variable empty ends `audio_out=null`, so the Windows audio backend
   is proven to open and to clock playback.  Nothing was listened to.
+- Which decoder path actually ran.  `transcodetool video` now prints the pixel format of
+  the first frame the decoder returned and the gate reads it back: `ZUUNED_HW_DECODE=0`
+  opens one decoder, asks for no accelerator and decodes in `yuv420p`, while the default
+  Settings leaves on reported a first frame in `cuda` on this machine and muxed a valid
+  480x272 file through the hardware frame download path.  What this corrects is worth
+  keeping: the line the layer used to print inferred a hardware decode from an attached
+  device context, which stays attached even when `get_format` answers with a software
+  format, so the earlier note here that Windows had only ever decoded in software was
+  read off a label that could not tell the two apart either way.
 
 ## What is not proven here
 
@@ -115,8 +124,11 @@ environment to reproduce them.
    through `current-ao`, but always muted, so samples never reach the speaker.
    Audible playback, exclusive mode, a hot-plugged or Bluetooth endpoint, and anything
    a human listened to remain unverified.
-3. Hardware decode.  The NVDEC path in the transcode layer is unverified on
-   Windows; everything run here used software decode.
+3. What hardware decode is worth.  The gate proves NVDEC engages on this machine and
+   that the downloaded frames survive the scaler and the muxer, never that decoding on
+   the GPU is faster than the software path here - the ~4x figure in the roadmap was
+   measured on Linux.  A machine without an NVIDIA decoder legitimately takes the
+   software path, and the gate asserts the software run only when it forces one.
 4. `spokenmediatool` builds but has no Windows gate of its own.
 5. Packaging.  No installer, no `cmake --install` layout, no verified
    `windeployqt` directory and no release artifact.
@@ -140,6 +152,7 @@ environment to reproduce them.
 2. Repeat the Linux hardware gates in the same order on Windows: library read,
    one album send, one deletion, readback, then the podcast and audiobook
    categories and firmware resume - each with its own evidence, none inherited.
-3. Add the remaining software gates: hardware decode against the software fallback,
-   audible (unmuted) playback, and a `spokenmediatool` phase.
+3. Add the remaining software gates: audible (unmuted) playback and a
+   `spokenmediatool` phase.  Measure NVDEC against software on a real 1080p item before
+   quoting a speed-up for Windows.
 4. Only then talk about Windows packaging or a Windows release channel.

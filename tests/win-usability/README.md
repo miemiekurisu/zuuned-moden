@@ -81,8 +81,8 @@ silent unless asked, on either platform.
 ## Status
 
 `run.ps1` is that gate and it is complete.  An unfiltered run makes seventeen
-instrumented launches plus the tool, encoder and profile probes and ends
-`launches=17 checks=77 failures=0 skips=0 killed=0` and `OVERALL=ok`:
+instrumented launches plus the tool, encoder, decode and profile probes and ends
+`launches=17 checks=83 failures=0 skips=0 killed=0` and `OVERALL=ok`:
 
     pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 
@@ -117,6 +117,15 @@ the seeded library (`-Only fixture,pages`).
   read by magic number because a name proves nothing and this repository already knows
   real libraries hold WMA streams inside `.mp3` files.  The products land in `%TEMP%`,
   exactly where the application writes, and the phase deletes them again.
+- `decode` - the same clip decoded twice, because Settings ships a decode accelerator
+  that no other phase reaches.  `ZUUNED_HW_DECODE=0` has to open exactly one decoder,
+  ask for no accelerator and hand back its first frame as `yuv420p`; the default run has
+  to name the path it used exactly once, and when that path is hardware the downloaded
+  frames have to survive the scaler and the muxer as a 480x272 file of the right length.
+  Which path the default picks belongs to the machine - a box with no NVIDIA decoder is
+  right to fall back - so the run prints it as a note and asserts nothing about it.
+  Neither case says a word about speed: this phase certifies that the GPU path really
+  produces frames and a whole file, never that it beats software.
 - `seek` - `playertool seek` and `play`, on the null audio driver.
 - `audio` - one audible `playertool play` with `ZUUNED_MPV_AO=wasapi` and `--mute`,
   then one run with the variable empty.  mpv names the output it really bound through

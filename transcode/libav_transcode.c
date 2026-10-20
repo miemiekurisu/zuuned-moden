@@ -29,6 +29,7 @@
 #include <libavutil/channel_layout.h>
 #include <libavutil/samplefmt.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/pixdesc.h>
 #include <libavutil/mathematics.h>
 #include <libavutil/dict.h>
 #include <libswresample/swresample.h>
@@ -952,15 +953,23 @@ char *zuuned_transcode_video(const char *input_path, int profile,
                 goto vcleanup;
             }
         } else {
-            int is_hw = (vdec_ctx->hw_device_ctx != NULL);
+            /* Attaching a device context only proves the request was made.
+             * get_format answers with the first software format whenever the
+             * decoder never offers a hardware one, and hw_device_ctx stays
+             * attached either way, so nothing on this side of the loop shows
+             * whether the GPU decoded anything - the first decoded frame does. */
+            const char *requested = "";
 #ifdef __APPLE__
-            const char *hw_name = "VideoToolbox HW";
+            if (vdec_ctx->get_format == get_vt_hw_format)
+                requested = ", VideoToolbox requested";
 #else
-            const char *hw_name = "NVDEC (CUDA) HW";
+            if (vdec_ctx->get_format == get_cuda_hw_format)
+                requested = ", NVDEC requested";
+            else if (vdec_ctx->get_format == get_vaapi_hw_format)
+                requested = ", VAAPI requested";
 #endif
-            fprintf(stderr, LOG_PREFIX " video: decoder OK (%s, %dx%d)\n",
-                    is_hw ? hw_name : "SW multi-thread",
-                    vdec_ctx->width, vdec_ctx->height);
+            fprintf(stderr, LOG_PREFIX " video: decoder OK (%dx%d%s)\n",
+                    vdec_ctx->width, vdec_ctx->height, requested);
         }
     }
 
@@ -1197,6 +1206,7 @@ char *zuuned_transcode_video(const char *input_path, int profile,
     /* Main transcode loop */
     int64_t video_pts = 0;
     int64_t audio_pts = 0;
+    int decode_path_logged = 0;
 
     fprintf(stderr, LOG_PREFIX " video: starting transcode (duration=%.1fs)\n",
             total_duration > 0 ? (double)total_duration / AV_TIME_BASE : -1.0);
@@ -1213,6 +1223,24 @@ char *zuuned_transcode_video(const char *input_path, int profile,
             while (avcodec_receive_frame(vdec_ctx, dec_frame) >= 0) {
                 AVFrame *sw_frame = dec_frame;
                 AVFrame *hw_download = NULL;
+
+                /* The one honest proof of a hardware decode: a frame that
+                 * really came back in a hardware pixel format. */
+                if (!decode_path_logged) {
+                    const char *fmt = av_get_pix_fmt_name(dec_frame->format);
+#ifdef __APPLE__
+                    const int hw_frame =
+                        dec_frame->format == AV_PIX_FMT_VIDEOTOOLBOX;
+#else
+                    const int hw_frame = dec_frame->format == AV_PIX_FMT_CUDA ||
+                                         dec_frame->format == AV_PIX_FMT_VAAPI;
+#endif
+                    decode_path_logged = 1;
+                    fprintf(stderr, LOG_PREFIX
+                            " video: decode path: %s (first frame fmt=%s)\n",
+                            hw_frame ? "HARDWARE" : "software",
+                            fmt ? fmt : "?");
+                }
 
                 /* If HW decoded, download from GPU to a software frame.
                  * CUDA: leave format unset so FFmpeg picks the native

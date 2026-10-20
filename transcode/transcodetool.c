@@ -9,6 +9,12 @@
  *   transcodetool art   <in> <out.jpg>       → embedded album art
  *   transcodetool frame <in> <sec> <out.jpg> → video frame grab
  *   transcodetool retag <in.mp3> <albumartist> → ID3v2.3 rewrite (prints path)
+ *
+ * ZUUNED_HW_DECODE=0|1|2|3 picks the decode path a transcode uses (0 sw,
+ * 1 auto → NVDEC then VAAPI then sw, 2 NVDEC only, 3 VAAPI only), which is the
+ * same knob Settings' transcodeAccel drives in the app.  A gate has to reach both
+ * the hardware path and the software fallback on one machine; the library default
+ * is auto and shows it only one of them.
  */
 
 #include "libav_transcode.h"
@@ -47,6 +53,10 @@ int main(int argc, char **argv)
     if (argc < 3) return usage();
     const char *cmd = argv[1];
     const char *in = argv[2];
+
+    const char *hw = getenv("ZUUNED_HW_DECODE");
+    if (hw && *hw)
+        zuuned_transcode_set_hw_decode(atoi(hw));
 
     if (strcmp(cmd, "audio") == 0) {
         char *out = zuuned_transcode_audio(in, NULL, progress_cb, NULL);

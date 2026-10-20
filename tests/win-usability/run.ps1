@@ -893,6 +893,96 @@ if (Select-Phase 'encode') {
 }
 
 Write-Host ''
+Write-Host ''
+Write-Host '== hardware decode'
+if (Select-Phase 'decode') {
+    # Settings offers a decode accelerator and SyncEngine passes it straight down, so
+    # the Windows line ships a code path - CUDA device, hardware frame download - that
+    # no earlier phase ever ran: encode used whatever the library default picked and
+    # reported nothing about it.  A device context is not proof either, because
+    # get_format answers with a software format whenever the decoder offers no hardware
+    # one, so this reads back the pixel format of the first frame the decoder returned.
+    if (-not (Test-Path -LiteralPath $ffmpeg) -or -not (Test-Path -LiteralPath $transcodeTool)) {
+        Skip 'the decode phase' 'ffmpeg.exe or transcodetool.exe is missing'
+    }
+    else {
+        $dclip = Join-Path $out 'decode-src.mp4'
+        $dmade = Invoke-Proc -File $ffmpeg -WorkDir $out -Timeout 300 -Arguments @(
+            '-hide_banner', '-loglevel', 'error', '-y',
+            '-f', 'lavfi', '-i', 'testsrc2=size=640x480:rate=15:duration=3',
+            '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3',
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+            '-c:a', 'aac', '-shortest', $dclip)
+        Check 'a 640x480 H.264 clip exists to decode from' `
+            (($dmade.Code -eq 0) -and (Test-Path -LiteralPath $dclip)) ('code=' + $dmade.Code)
+
+        # Exactly one line, or the assertion below is reading a leftover from a
+        # retry: the decoder opens twice when a hardware open fails.
+        function Get-DecodeLine {
+            param([string]$Text, [string]$Needle)
+            $lines = @($Text -split "`n" | Where-Object { $_ -match $Needle })
+            if ($lines.Count -ne 1) { return '' }
+            return $lines[0].Trim()
+        }
+
+        $dtemps = @()
+
+        # Mode 0 is the forced software path.  Every machine has it, so it is the only
+        # path the gate may insist on: nothing requested, first frame plain yuv420p.
+        $sw = Invoke-Proc -File $transcodeTool -Timeout 900 `
+            -Arguments @('video', $dclip, '2') -Env @{ ZUUNED_HW_DECODE = '0' }
+        $swOpen = Get-DecodeLine -Text $sw.Err -Needle 'video: decoder OK'
+        $swPath = Get-DecodeLine -Text $sw.Err -Needle 'video: decode path'
+        Check 'the forced software run opens one decoder and asks for no accelerator' `
+            (($swOpen -like '*video: decoder OK (640x480)') -and
+             ($sw.Err -notmatch 'unavailable')) ('line=' + $swOpen + ' code=' + $sw.Code)
+        Check 'the forced software run decodes its first frame in software' `
+            (($swPath -like '*decode path: software*fmt=yuv420p*') -and
+             ($sw.Err -notmatch 'decode path: HARDWARE')) ('line=' + $swPath)
+        $swOut = $sw.Out.Trim()
+        if ($swOut -and (Test-Path -LiteralPath $swOut)) { $dtemps += $swOut }
+        $swProbe = Invoke-Proc -File $transcodeTool -Timeout 120 -Arguments @('probe', $swOut)
+        Check 'the software-decoded clip still reaches the 480x272 target intact' `
+            (($sw.Code -eq 0) -and ($swProbe.Out -match 'video=480x272') -and
+             ($swProbe.Out -match 'duration=(2\.[5-9]|3\.[0-4])')) `
+            ('out=' + $swOut + ' probe=' + $swProbe.Out.Trim().Replace([Environment]::NewLine, ' '))
+
+        # Mode 1 is what Settings leaves on for a user, and its answer belongs to the
+        # machine: a box with no NVIDIA decoder falls back and is right to.  The gate
+        # only insists that the run says once which path it took, and that a hardware
+        # answer really produced a file through the download path.
+        $auto = Invoke-Proc -File $transcodeTool -Timeout 900 `
+            -Arguments @('video', $dclip, '2') -Env @{ ZUUNED_HW_DECODE = '1' }
+        $autoPath = Get-DecodeLine -Text $auto.Err -Needle 'video: decode path'
+        $autoOut = $auto.Out.Trim()
+        if ($autoOut -and (Test-Path -LiteralPath $autoOut)) { $dtemps += $autoOut }
+        Check 'the default run names the decode path it used exactly once' `
+            (($auto.Code -eq 0) -and ($autoPath -like '*decode path: *')) `
+            ('line=' + $autoPath + ' code=' + $auto.Code)
+        if ($autoPath -like '*HARDWARE*') {
+            $autoProbe = Invoke-Proc -File $transcodeTool -Timeout 120 `
+                -Arguments @('probe', $autoOut)
+            Check 'hardware-decoded frames download to a product the scaler and muxer accept' `
+                (($auto.Err -match 'scaler OK') -and ($autoProbe.Out -match 'video=480x272') -and
+                 ($autoProbe.Out -match 'duration=(2\.[5-9]|3\.[0-4])')) `
+                ('line=' + $autoPath + ' probe=' + $autoProbe.Out.Trim().Replace([Environment]::NewLine, ' '))
+        }
+        else {
+            Skip 'the hardware decode product check' 'this machine decoded the clip in software'
+        }
+        $autoDesc = 'none reported'
+        if ($autoPath) { $autoDesc = $autoPath }
+        Write-Host ('  note decode path on this machine: ' + $autoDesc)
+
+        foreach ($tmp in $dtemps) {
+            if (-not $tmp -or -not (Test-Path -LiteralPath $tmp)) { continue }
+            if (-not $pythonExe) { continue }
+            Invoke-Proc -File $pythonExe -Arguments @(
+                '-c', 'import os,sys;os.remove(sys.argv[1])', $tmp) -Timeout 60 | Out-Null
+        }
+    }
+}
+
 Write-Host '== what is plugged in'
 if (Select-Phase 'device') {
     # Whether the app is telling the truth about the device is the one question a

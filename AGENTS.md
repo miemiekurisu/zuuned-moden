@@ -53,11 +53,12 @@ header-only edit silently links a stale object: force a full rebuild, with
 `--clean-first`, after any header-only change until that changes.
 The Windows usability gate is finished and passing:
 `pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1` reports
-`launches=17 checks=77 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
+`launches=17 checks=83 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
 built app once per page (music, videos, photos, podcasts, audiobooks, and the device
 page with no device attached), the five settings tabs, the header pinned at 0 and at
 1, a queue played through the compact island after a real `winshot --move` resize, the
-four command-line probes, a silent `playertool` seek, a muted
+four command-line probes, a silent `playertool` seek, a decode pair that has to name the
+pixel format the decoder really returned, a muted
 audible `playertool` run that has to bind WASAPI, single-instance refusal, and a
 before-and-after comparison of the real profile. `-Only` takes a comma list and pairs
 a phase with `fixture` because the scratch tree is rebuilt each run. It is software
@@ -132,8 +133,11 @@ folder named from code points and reads the spoken store's schema back through
 `tests/win-usability/inspect_spoken_db.py`, and `encode` makes the transcode layer
 produce rather than probe - FFmpeg-built H.264 source through profile 0 (ASF magic
 `30 26 b2 75`, source size, duration intact) and profile 2 (`ftyp`, 480x272), plus the
-LAME leg judged by probing the mp3 for the length of the tone. Full gate now
-`launches=17 checks=77 failures=0 skips=0 killed=0`. Two things deliberately left
+LAME leg judged by probing the mp3 for the length of the tone. `decode` then decodes a clip twice and reads the pixel format off
+the decoder rather than off its device context: forced software answers one decoder, no
+accelerator and `yuv420p`, and the default answered `cuda` on this machine, so NVDEC does
+engage on Windows. Full gate now
+`launches=17 checks=83 failures=0 skips=0 killed=0`. Two things deliberately left
 alone after being checked, so do not "fix" them again: `compat/win/` already decodes a
 narrow path as UTF-8 then ANSI, and CRT `access()` is ANSI-only, which is what the
 `QFile::encodeName()` callers in `LibraryScanner`, `ArtworkPipeline`, the artwork
@@ -149,10 +153,15 @@ opened a device handle.
 status page for the port - toolchain, what the two software gates prove and what
 they explicitly do not. Keep it current whenever a Windows gate changes, and never
 state a Windows hardware capability: the open gates are driver binding, transfers
-and readback, audible audio, hardware decode, a `spokenmediatool` gate and
+and readback, audible audio, a `spokenmediatool` gate and
 packaging. The only Windows audio fact this checkpoint states is that a muted
 audible `playertool` run binds WASAPI, as mpv reports through its
-`current-ao` property; nothing has been listened to. The port stays native MSVC -
+`current-ao` property; nothing has been listened to. The decode fact is narrower and
+measured: forcing software mode opens one decoder with no accelerator and a first frame
+in `yuv420p`, while the default Settings leaves on reported a first frame in `cuda` here
+and muxed a valid file through the hardware frame download path. Speed against software
+and every machine without an NVIDIA decoder stay unmeasured, so neither is ever claimed.
+The port stays native MSVC -
 no WSL, MinGW or Cygwin - which is why the Linux line is unchanged by construction
 at this checkpoint rather than re-verified.
 
