@@ -16,12 +16,22 @@
  *     VideoNaming self-test: the parsing cases the mac fixed one bug at
  *     a time, frozen as expectations.
  */
+/* Keep first on Windows: the compat shim declares the POSIX surface this
+ * file uses (64-bit struct stat, dirent, poll, ...) and the console code page
+ * helper below.  Whichever <sys/stat.h> the compiler parses first decides the
+ * struct layout, and the Qt headers include one.  See compat/win/posix_shim.h.
+ * Other platforms build without it.  */
+#if defined(_WIN32)
+#include "wincompat.h"
+#endif
+
 #include "LibraryDb.h"
 #include "LibraryScanner.h"
 #include "VideoMatcher.h"
 #include "VideoNaming.h"
 
 #include <QCoreApplication>
+#include <QStringList>
 #include <QEventLoop>
 #include <QTemporaryDir>
 #include <QStandardPaths>
@@ -293,8 +303,23 @@ static int runCustomizeSelfTest() {
 
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
+#if defined(_WIN32)
+    /* The console renders the active ANSI code page, so every UTF-8 path this
+     * gate prints - the ones with Chinese, Hebrew or emoji in them - came out
+     * as '?'.  The arguments were already fixed by reading them back through
+     * Qt; this fixes what the operator can actually read. */
+    zuuned_win_console_utf8();
+#endif
 
-    const QString mode = argc >= 2 ? QString::fromUtf8(argv[1]) : QString();
+    /* Read the arguments back through Qt rather than argv.  On Windows the CRT
+     * builds narrow argv from the wide command line with the ANSI code page, so
+     * QString::fromUtf8(argv[n]) decoded every non-ASCII library folder into
+     * '?'-filled garbage; the scan then truthfully reported zero tracks and
+     * exited 0, which reads as an empty library rather than a broken argument.
+     * QCoreApplication re-reads GetCommandLineW() and survives the name. */
+    const QStringList arguments = app.arguments();
+
+    const QString mode = arguments.size() >= 2 ? arguments.at(1) : QString();
 
     if (mode == QLatin1String("names"))
         return runNamesSelfTest();
@@ -302,7 +327,7 @@ int main(int argc, char **argv) {
         return runCustomizeSelfTest();
 
     const bool videoMode = mode == QLatin1String("videoscan");
-    if (argc < 4 || (mode != QLatin1String("scan") && !videoMode)) {
+    if (arguments.size() < 4 || (mode != QLatin1String("scan") && !videoMode)) {
         fprintf(stderr,
                 "librarytool — library core gate\n"
                 "  librarytool scan <folder> <tmpdb>\n"
@@ -311,10 +336,10 @@ int main(int argc, char **argv) {
                 "  librarytool customize\n");
         return 2;
     }
-    const QString folder = QString::fromUtf8(argv[2]);
-    const QString dbPath = QString::fromUtf8(argv[3]);
+    const QString folder = arguments.at(2);
+    const QString dbPath = arguments.at(3);
     const QString folderType = videoMode
-        ? (argc >= 5 ? QString::fromUtf8(argv[4]) : QStringLiteral("tv"))
+        ? (arguments.size() >= 5 ? arguments.at(4) : QStringLiteral("tv"))
         : QStringLiteral("music");
 
     {

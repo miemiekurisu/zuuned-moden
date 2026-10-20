@@ -13,9 +13,19 @@ The CJK name is written from code points so this file stays ASCII: the whole
 point of the fixture is that nothing between the command line and the database
 has to survive a code page translation.
 
-    python make_scan_fixture.py <music-dir> [--ffmpeg <ffmpeg.exe>] [--force]
+``--extra-roots <dir>`` reproduces the same problem in the one place it takes a
+different road through the process: argv.  Three one-track trees whose *own root
+directory name* is the non-ASCII part - Hebrew, Hangul, and an emoji off the BMP,
+because a surrogate pair is precisely what a narrow-path code page conversion
+mangles.  A scan root is not a readdir result, and it used to fail on its own:
+the scan found nothing and still exited 0.  Three separate roots, scanned one at
+a time by the gate, so a root that works cannot mask one that does not.
 
-Prints ASCII key=value lines.  Exits 0 when all four tracks are on disk.
+    python make_scan_fixture.py <music-dir> [--ffmpeg <ffmpeg.exe>] [--force]
+                                [--extra-roots <dir>]
+
+Prints ASCII key=value lines.  Exits 0 when all four tracks are on disk, plus the
+three extra roots when they were asked for.
 """
 
 import argparse
@@ -25,6 +35,12 @@ import subprocess
 import sys
 
 CJK_ALBUM = "\u6f22\u8a5e Album (2024)"
+# Hebrew, Hangul, and an emoji outside the BMP - each spelled from code points.
+SCRIPT_ROOTS = [
+    "\u05db\u05ea\u05e8\u05d1\u05ea Root",
+    "\ud55c\uae00 Root",
+    "Emoji \U0001F600 Root",
+]
 NESTED = ["Nested Volume %02d" % i for i in range(1, 13)]
 
 
@@ -40,6 +56,8 @@ def main() -> int:
     ap.add_argument("music_dir")
     ap.add_argument("--ffmpeg", default="ffmpeg")
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--extra-roots", dest="extra_roots",
+                    help="create the three non-ASCII scan roots under this directory")
     a = ap.parse_args()
 
     if shutil.which(a.ffmpeg) is None and not os.path.isfile(a.ffmpeg):
@@ -60,19 +78,32 @@ def main() -> int:
 
     placed = []
 
-    def place(dst, src):
+    extras = []
+
+    def place(dst, src, into=placed):
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(src, dst)
-        placed.append(dst)
+        into.append(dst)
 
     place(os.path.join(root, "Tone A.mp3"), mp3)
     place(os.path.join(root, "Sneaky Wma.mp3"), asf)
     place(os.path.join(root, CJK_ALBUM, "Track One.mp3"), mp3)
     place(os.path.join(root, *NESTED, "Long Path Track.mp3"), mp3)
+
+    # The extra roots are scan roots in their own right, so they must not sit
+    # inside the music dir where the main scan would swallow them.
+    if a.extra_roots:
+        er = os.path.abspath(a.extra_roots)
+        if er == root or er.startswith(root + os.sep) or root.startswith(er + os.sep):
+            sys.exit("--extra-roots must sit outside the music dir")
+        shutil.rmtree(er, ignore_errors=True)
+        for name in SCRIPT_ROOTS:
+            place(os.path.join(er, name, "Track One.mp3"), mp3, extras)
     shutil.rmtree(tmp, ignore_errors=True)
 
     longest = max(placed, key=len)
     print("created=%d" % len(placed))
+    print("extra_roots=%d" % len(extras))
     print("longest_path_chars=%d" % len(longest))
     print("fixture=%s" % ascii(root)[1:-1])
     print("OVERALL=ok")

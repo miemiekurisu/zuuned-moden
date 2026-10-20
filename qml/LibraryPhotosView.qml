@@ -231,7 +231,7 @@ Item {
     }
     function photoSyncItem(p, albumName) {
         return {
-            filepath: decodeURIComponent(String(p.url).replace("file://", "")),
+            filepath: PathText.canonical(String(p.url)),
             filename: p.filename,
             album: albumName,
             filesize: p.filesize,

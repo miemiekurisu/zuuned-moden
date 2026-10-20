@@ -56,7 +56,10 @@ struct Stamp {
 Stamp stamp(const QString &path)
 {
     struct stat value {};
-    if (::stat(QFile::encodeName(path).constData(), &value) != 0 || !S_ISREG(value.st_mode)) return {};
+    // UTF-8, not QFile::encodeName(): on Windows the local 8-bit codec cannot
+    // spell a name outside the ANSI code page, and the stamp for an artwork file
+    // with such a name would come back empty on every call.
+    if (::stat(path.toUtf8().constData(), &value) != 0 || !S_ISREG(value.st_mode)) return {};
     return {quint64(value.st_dev), quint64(value.st_ino), value.st_size,
             qint64(value.st_mtim.tv_sec) * 1000000000 + value.st_mtim.tv_nsec,
             qint64(value.st_ctim.tv_sec) * 1000000000 + value.st_ctim.tv_nsec};

@@ -195,7 +195,7 @@ Item {
     function posterUrlFor(v) {
         const p = v.posterPath ?? v.poster ?? ""
         if (p === "") return ""
-        return p.startsWith("file:") ? p : "file://" + p
+        return p.startsWith("file:") ? p : PathText.url(p)
     }
     function playMovie(m) {
         m = currentVideo(m)

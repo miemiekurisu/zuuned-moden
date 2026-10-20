@@ -588,9 +588,7 @@ int unlinkat(int dir_fd, const char *path, int flags)
 
 /* ---- directory streams ---------------------------------------------------
  * FindFirstFileW already yields "." and "..", which POSIX readdir() yields too,
- * so the stream stays truthful by passing them through.  d_name uses the ANSI
- * code page, matching the narrow encoding the CRT and QFile::encodeName use on
- * Windows, because a directory entry has no UTF-8 twin to be re-parsed from. */
+ * so the stream stays truthful by passing them through. */
 struct zuuned_DIR {
     WIN32_FIND_DATAW find;
     HANDLE search;
@@ -1623,12 +1621,40 @@ static void ensure_invalid_parameter_guard(void)
     InitOnceExecuteOnce(&zuuned_guard_once, zuuned_install_guard_once, NULL, NULL);
 }
 
+/* The console owns its own code page, and it is not UTF-8 by default, so the
+ * UTF-8 text this tree writes arrives as mojibake - on a CP936 host every line
+ * naming a CJK track read as garbage, which turns the main Windows diagnostic
+ * channel into a false report.  Because the setting belongs to the shared
+ * console rather than to this process, it goes back on the way out. */
+static UINT zuuned_console_output_cp;
+
+static void zuuned_restore_console_output_cp(void)
+{
+    if (!zuuned_console_output_cp) return;
+    const UINT previous = zuuned_console_output_cp;
+    zuuned_console_output_cp = 0;
+    SetConsoleOutputCP(previous);
+}
+
+void zuuned_win_console_utf8(void)
+{
+    if (zuuned_console_output_cp) return;
+    const UINT previous = GetConsoleOutputCP();
+    if (previous == 0 || previous == CP_UTF8) return;
+    if (!SetConsoleOutputCP(CP_UTF8)) { set_last_error(); return; }
+    zuuned_console_output_cp = previous;
+    /* If the handler cannot be queued, leave the console alone rather than
+     * restore a code page nobody remembers. */
+    if (atexit(zuuned_restore_console_output_cp) != 0) zuuned_console_output_cp = 0;
+}
+
 void zuuned_win_runtime_init(void)
 {
     _fmode = _O_BINARY;
     _setmode(_fileno(stdout), _O_BINARY);
     _setmode(_fileno(stderr), _O_BINARY);
     setvbuf(stderr, NULL, _IONBF, 0);
+    zuuned_win_console_utf8();
 
     /* No system error dialog for a missing DLL or a failed drive either; the
      * app reports those through its own diagnostics, on stderr. */

@@ -1,4 +1,5 @@
 #include "LibraryDb.h"
+#include "LibraryPaths.h"
 #include "../ProfilePaths.h"
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -396,7 +397,65 @@ bool LibraryDb::open(const QString &path) {
     }
     exec("PRAGMA journal_mode=WAL;");
     exec("PRAGMA foreign_keys=ON;");
+    repairWatchFolderRoots();
     return true;
+}
+
+// A mangled root can never have produced media - the scanner asked the OS
+// whether it existed and the answer was no - so repairing the string is the
+// whole job: there is nothing underneath it whose prefix has to follow.  The
+// UNIQUE(path) constraint still holds because a row whose repaired spelling is
+// already registered is dropped instead of updated, which is also exactly what
+// the user just did by re-picking the folder in the dialog.
+int LibraryDb::repairWatchFolderRoots() {
+    if (!m_db)
+        return 0;
+    QVector<QPair<qint64, QString>> rows;
+    {
+        Stmt s(m_db, "SELECT id, path FROM watch_folders ORDER BY id");
+        if (!s.ok())
+            return 0;
+        while (s.step() == SQLITE_ROW)
+            rows.append({s.colInt64(0), s.colText(1)});
+    }
+    int repaired = 0;
+    for (const QPair<qint64, QString> &row : std::as_const(rows)) {
+        const QString clean = LibraryPaths::canonicalRoot(row.second);
+        if (clean.isEmpty() || clean == row.second)
+            continue;
+        bool taken = false;
+        {
+            Stmt probe(m_db, "SELECT 1 FROM watch_folders WHERE path=? AND id<>?");
+            if (!probe.ok())
+                continue;
+            probe.bindText(1, clean);
+            probe.bindInt64(2, row.first);
+            taken = probe.step() == SQLITE_ROW;
+        }
+        if (taken) {
+            Stmt drop(m_db, "DELETE FROM watch_folders WHERE id=?");
+            if (!drop.ok())
+                continue;
+            drop.bindInt64(1, row.first);
+            if (drop.step() != SQLITE_DONE)
+                continue;
+            fprintf(stderr, "[librarydb] watch folder %s dropped, %s is already registered\n",
+                    qPrintable(row.second), qPrintable(clean));
+        }
+        else {
+            Stmt up(m_db, "UPDATE watch_folders SET path=? WHERE id=?");
+            if (!up.ok())
+                continue;
+            up.bindText(1, clean);
+            up.bindInt64(2, row.first);
+            if (up.step() != SQLITE_DONE)
+                continue;
+            fprintf(stderr, "[librarydb] repaired watch folder %s to %s\n",
+                    qPrintable(row.second), qPrintable(clean));
+        }
+        ++repaired;
+    }
+    return repaired;
 }
 
 void LibraryDb::close() {

@@ -697,7 +697,7 @@ Item {
                             anchors.fill: parent
                             visible: backdropStep.hasImage
                             source: backdropStep.hasImage
-                                    ? "file://" + AppSettings.backgroundImagePath : ""
+                                    ? PathText.url(AppSettings.backgroundImagePath) : ""
                             fillMode: Image.PreserveAspectCrop
                             opacity: AppSettings.backgroundOpacity
                             asynchronous: true
@@ -1508,7 +1508,10 @@ Item {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: mpInput.text.length === 0
-                    text: "…or type a path (e.g. /mnt/MissionControl/" + mp.typeModel[0] + ")"
+                    text: "…or type a path (e.g. "
+                          + (Qt.platform.os === "windows"
+                             ? "C:\\Music\\" : "/mnt/MissionControl/")
+                          + mp.typeModel[0] + ")"
                     color: Theme.textGhost
                     font.pixelSize: 12
                 }
@@ -1816,7 +1819,7 @@ Item {
 
                     Text {
                         Layout.fillWidth: true
-                        text: modelData.path
+                        text: PathText.display(modelData.path)
                         font.pixelSize: 11
                         font.weight: Font.Light
                         color: Theme.textSecondary
@@ -1848,8 +1851,7 @@ Item {
         title: "Choose a " + pendingType + " folder"
         onAccepted: {
             console.warn("[onboarding] folder accepted:", selectedFolder)
-            const p = decodeURIComponent(
-                selectedFolder.toString().replace(/^file:\/\//, ""))
+            const p = PathText.canonical(selectedFolder.toString())
             if (p.length > 1)
                 root.addedFolders = root.addedFolders.concat([{ path: p, type: pendingType }])
         }
@@ -1862,8 +1864,7 @@ Item {
         title: "Choose a background image"
         nameFilters: ["Images (*.png *.jpg *.jpeg *.webp *.bmp)"]
         onAccepted: {
-            const path = decodeURIComponent(
-                selectedFile.toString().replace(/^file:\/\//, ""))
+            const path = PathText.canonical(selectedFile.toString())
             if (path.length > 1)
                 AppSettings.backgroundImagePath = path
         }

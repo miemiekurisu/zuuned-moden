@@ -50,8 +50,9 @@ bool install(const QByteArray &bytes, const QString &path, bool &published) {
     if (!staged.open() || staged.write(bytes) != bytes.size() || !staged.flush()) return false;
     staged.close();
     // Publish complete bytes without replacing a local or custom cover.
-    published = ::link(QFile::encodeName(staged.fileName()).constData(),
-                       QFile::encodeName(path).constData()) == 0;
+    // UTF-8, not the local 8-bit codec - see LibraryScanner::pathBytes().
+    published = ::link(staged.fileName().toUtf8().constData(),
+                       path.toUtf8().constData()) == 0;
     return published || QFile::exists(path);
 }
 }

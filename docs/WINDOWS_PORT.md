@@ -1,6 +1,6 @@
 # Windows port status
 
-Dated 2026-10-20.  This is where the native Windows build of Zuuned actually
+Dated 2026-10-20, updated 2026-10-21.  This is where the native Windows build of Zuuned actually
 stands: what compiles, what has been proven on a Windows machine, and what has
 not.  It exists so that nobody reads "the Windows gates pass" as "the Windows
 build works with a Zune".  Build steps and dependency locations live in
@@ -55,11 +55,14 @@ Three things it is not, each a gate with its own name.
   fail`: this development checkout has no MTPZ credentials, so the library read
   happened unauthenticated, which the ZMDB path permits.  MTPZ authentication has
   therefore still never run on Windows, and no write path should be attempted
-  until it has - see `docs/BUILD_WITH_MTPZ.md`.
+  until it has - see `docs/BUILD_WITH_MTPZ.md`.  That was a missing credential
+  file rather than a platform defect, and it is resolved below.
 - **Not a write.**  Nothing was sent, deleted, finalised or read back byte for
   byte.  Saving two device tracks into the library - still a read, but a
   different operation - answered `get_object 0x01000045: failed (response 0x200F)`
-  and the app reported `AccessDenied`.  Observed, not retried, not diagnosed here.
+  and the app reported `AccessDenied`.  Observed, not retried, not diagnosed here,
+  which was the right call: the answer was authentication, and the same save
+  completed once MTPZ credentials were on the machine.
 - **Not clean.**  `get_object_info 0x07000002` returns `0x2002` three times per
   scan against the very atom the scanner reports as a playlist record, and
   `get_representative_sample` reports `bad AUINT8 count 0 in 4-byte payload` for
@@ -73,9 +76,59 @@ command that clears it are in `BUILDING.md` under *Incremental builds and the
 compiler's include note*.
 
 So a Windows build may now be described as building, launching, painting,
-scanning, encoding, persisting, opening a Zune HD and reading its music library.
-It may not be described as authenticating over MTPZ, syncing, deleting, or playing
+scanning, encoding, persisting, opening a Zune HD, reading its music library,
+authenticating over MTPZ, and moving audio in both directions by hand.
+It may not be described as syncing a queue unattended, deleting, or playing
 anything back from a device.
+
+## MTPZ, and the first writes (2026-10-21)
+
+**MTPZ authenticated on Windows, and the first Windows device write completed.**
+
+The `credentials unavailable` line had the same cause on both platforms and only
+one platform showed it: the public source has no `libzune/src/mtpz_keys.h`, so
+`ZUNE_HAS_EMBEDDED_MTPZ` is undefined and a build from it has no compiled keys at
+all.  The development Linux checkout carries that header privately; the Windows
+checkout does not.  Putting the five-line file at `%USERPROFILE%\.mtpz-data`, which
+the loader already looks at because Windows never sets `HOME`, changed the log to
+
+```
+[mtpz] loaded keys from ~/.mtpz-data
+[mtpz] handshake complete
+[libzune] MTPZ authentication successful
+```
+
+With authentication in place the operator hand-tested both directions against the
+same Zune HD: a track from `E:\Temp\testmusic` sent to the player, and a device
+track saved back into the library.  Both completed and the operator confirmed both.
+That is the first Windows write and the first Windows read-back of bytes this app did
+not write on Linux.  Nobody has certified what the player does with either file:
+device-side playback stays its own gate below and is not claimed here.
+
+Three defects stood in front of it, all Windows-only, all root-caused, all now
+gated.  They were never protocol bugs - libzune was asked for a path that did not
+exist and answered truthfully:
+
+- **The `/E:/` watch-folder scar.**  Folder pickers hand QML a `file:` URL and the
+  UI stripped the scheme with string arithmetic, which on Linux happens to produce
+  the correct `/home/user/Music` and on Windows produces `/E:/Music` - not an
+  absolute path there, but a path relative to the current directory of drive E:.
+  The folder therefore scanned nothing, reported itself unreachable on every
+  health check, and any save built underneath it failed.  `src/library/LibraryPaths.h`
+  is now the single spelling rule and `LibraryDb` repairs rows an older build
+  already stored; `docs/WINDOWS_COMPAT_AUDIT.md` is the whole account.
+- **file:// built by concatenation.**  Prefixing a stored path with the file://
+  scheme by hand spells a Windows path as file://E:/Music, which parses as host
+  `E:` and loads nothing, so album art and wallpapers were blank for reasons that
+  had nothing to do with the image.  `PathText.url()` wraps
+  `QUrl::fromLocalFile()` instead.
+- **`librarytool` printing paths as `?`.**  The console renders the ANSI code page,
+  so a gate that scans a Hebrew album folder could not read its own output.
+
+Still not proven on Windows, each its own gate: a Classic, Draco or 80/120 (every
+Windows device fact here is one Pavo Zune HD); deletion or purge; podcast and
+audiobook transfer; photo and video transfer; device-side playback.  The
+finalise, re-index and readback evidence is still Linux evidence.
 
 ## Toolchain that works here
 
@@ -144,7 +197,7 @@ environment to reproduce them.
   object's `.CRT` subsection into `.rdata` (LNK4254) and start-up never ran it,
   which the gate caught by finding the handler still null.
 - The usability gate makes seventeen instrumented launches plus the tool,
-  encoder and profile probes and ends `launches=17 checks=83 failures=0
+  encoder and profile probes and ends `launches=17 checks=90 failures=0
   skips=0 killed=0` and `OVERALL=ok`.
 - What those launches actually establish: every page paints real content rather
   than an empty window (`winshot` captures the live swapchain and the app

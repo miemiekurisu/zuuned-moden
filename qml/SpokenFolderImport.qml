@@ -58,7 +58,7 @@ Popup {
                     ZuneSearchField { Layout.fillWidth: true; text: modelData.author; placeholderText: "Author"; enabled: !sheet.saving; onTextEdited: sheet.books[index].author = text }
                     ZuneSearchField { Layout.fillWidth: true; text: modelData.narrator; placeholderText: "Narrator"; enabled: !sheet.saving; onTextEdited: sheet.books[index].narrator = text }
                 }
-                Text { Layout.fillWidth: true; text: modelData.folder; elide: Text.ElideMiddle; color: Theme.textDim; font.pixelSize: Theme.spokenCaption }
+                Text { Layout.fillWidth: true; text: PathText.display(modelData.folder); elide: Text.ElideMiddle; color: Theme.textDim; font.pixelSize: Theme.spokenCaption }
                 SpokenButton { text: modelData.parts.length + " parts · review order"; enabled: !sheet.saving; onClicked: sheet.review(index) }
             }
             ScrollBar.vertical: ZuneScrollBar {}
@@ -75,7 +75,7 @@ Popup {
                 ColumnLayout {
                     Layout.fillWidth: true
                     Text { Layout.fillWidth: true; text: (index + 1) + ". " + modelData.title; elide: Text.ElideRight; color: Theme.textPrimary; font.pixelSize: Theme.spokenBody }
-                    Text { Layout.fillWidth: true; text: modelData.path; elide: Text.ElideMiddle; color: Theme.textDim; font.pixelSize: Theme.spokenCaption }
+                    Text { Layout.fillWidth: true; text: PathText.display(modelData.path); elide: Text.ElideMiddle; color: Theme.textDim; font.pixelSize: Theme.spokenCaption }
                 }
                 SpokenButton { text: "↑"; enabled: index > 0; onClicked: { let p = sheet.reviewParts.slice(); [p[index - 1], p[index]] = [p[index], p[index - 1]]; sheet.reviewParts = p } }
                 SpokenButton { text: "↓"; enabled: index + 1 < sheet.reviewParts.length; onClicked: { let p = sheet.reviewParts.slice(); [p[index + 1], p[index]] = [p[index], p[index + 1]]; sheet.reviewParts = p } }

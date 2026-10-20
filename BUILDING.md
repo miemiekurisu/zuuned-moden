@@ -180,7 +180,7 @@ real profile stayed untouched.
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 ```
 
-Expected: `launches=17 checks=83 failures=0 skips=0 killed=0` and `OVERALL=ok`. It
+Expected: `launches=17 checks=90 failures=0 skips=0 killed=0` and `OVERALL=ok`. It
 needs the same MSVC environment as the build and compiles its own capture tool into
 `build\win-usability\`. `-Only fixture,pages` and similar run a subset - the phase
 list is comma-separated, and because the scratch tree is rebuilt on every run a page
@@ -190,17 +190,22 @@ one ends with a capture of the live window plus the app's own `--qa-probe` accou
 what it decided to show, because a Qt Quick window can come up with a clean stderr
 and paint nothing.
 
-The gate opens no USB device handle and calls no libzune function, so it cannot
-certify the part that matters most on this platform: **no Zune has ever been
-connected to a Windows build**. The `what is plugged in` phase reads presence only —
-what libusb enumerated, what the PnP manager reports, and whether the two agree. `tests/win-usability/README.md` lists the phases and what they do not cover.
+The gate opens no USB device handle and calls no libzune function, so it certifies
+nothing about the wire. What a Windows build does on the wire is the hand test in
+`docs/WINDOWS_PORT.md`: one Pavo Zune HD bound to WinUSB, opened, MTPZ-authenticated,
+read, and sent audio that came back. The `what is plugged in` phase reads presence
+only - what libusb enumerated, what the PnP manager reports, and whether the two
+agree. `tests/win-usability/README.md` lists the phases and what they do not cover.
 
 ### Path encodings on a non-English Windows
 
-`compat/win/` decodes the narrow path it is handed with the **system ANSI code
-page**, matching `QFile::encodeName()`, so the shim and Qt agree with each other.
-A library with its own encoding policy has to be fed explicitly rather than
-inherit that: FFmpeg documents UTF-8 file names on Windows, which is why
+`compat/win/` decodes the narrow path it is handed as **UTF-8 first**, and as the
+**system ANSI code page** only when the bytes are not valid UTF-8. A caller that
+passes UTF-8 - which is what a POSIX filename already is, on every platform - is
+therefore never second-guessed, and that is the whole reason the rule is
+UTF-8-first rather than ACP-only. A library with its own encoding policy still
+has to be fed explicitly rather than inherit anything: FFmpeg documents UTF-8
+file names on Windows, which is why
 `src/library/AudioCopyFingerprint.h` passes `path.toUtf8()` and not
 `QFile::encodeName(path)`. On a GBK machine the difference is visible - a CJK song
 name becomes bytes FFmpeg cannot resolve, and the track is then indexed with no
@@ -212,8 +217,9 @@ unreadable, and mode bit 1 is not even a valid argument - `_access()` runs the
 invalid parameter handler, which `__fastfail()`s the process rather than setting
 `errno`. `X_OK` is therefore `0` in `compat/win/posix_shim.h`, and
 `LibraryScanner::accessibleDirectory()` lets the shim's UTF-16 `opendir()` prove
-read access. Names outside the local code page are still lossy on their way
-through the shim, exactly as they are through `QFile::encodeName()`.
+read access. The shim is not where a name gets lost: handed UTF-8 it decodes
+strictly and keeps every character, so the loss belongs to a caller that
+encoded with the local 8-bit codec before the call.
 
 Anything with its own encoding policy has to be named explicitly rather than inherit
 the ACP convention, and SQLite is the second one found after FFmpeg. Its Windows VFS
@@ -229,15 +235,31 @@ bytes on Linux, and the `cjkprofile` phase of the usability gate launches twice 
 Han-named profile folder and reads the store's schema back with
 `tests/win-usability/inspect_spoken_db.py`.
 
-Not every `QFile::encodeName()` caller is a bug waiting to happen, and each remaining
-one has been checked rather than guessed at: `compat/win/` decodes the bytes it is
-handed as UTF-8 first and as the ANSI code page second, and CRT `access()` is
-ANSI-only, so local 8-bit is the correct thing to give both. The `fixture` phase proves
-the scanner side of that by storing a Chinese album folder name and hashing the audio
-behind it. The one known loss is inside Qt itself: with a profile folder the ANSI code
-page cannot spell, Qt's own shader/pipeline cache cannot open its file even though the
-directory exists, so such a profile pays for a cold shader cache on every start. It is
-recorded by the gate, not asserted, and no data is involved.
+The section above used to close by claiming that local 8-bit was the correct
+thing to hand the shim. It is not, and that claim cost a scan that reported a
+healthy empty library. Every `QFile::encodeName()`
+call in the tree has now been read rather than assumed, and four of them were
+bugs: `LibraryScanner`, `ArtworkPipeline`, `ArtistImageService` and
+`OnlineAlbumArtService` were handing `stat()`, `opendir()` and `link()` the local
+8-bit form. Measured on this CP936 machine against five scan roots - ASCII,
+Chinese, Hebrew, Hangul, emoji - the scanner found its one track under the ASCII
+and Chinese roots and nothing under the other three: `stat()` failed, the copy
+fingerprint returned false, and the scan exited 0 looking complete. CP936 covers
+Han, so a Chinese host cannot see this defect at all; an English host meets it on
+its first Hebrew album. All four now pass `toUtf8()`, which is the identical byte
+string on Linux. The only remaining caller sits in the non-Windows branch of
+`#if defined(Q_OS_WIN)` in `src/diagnostics/SupportReport.cpp`, where local 8-bit
+is right because it reads ASCII sysfs paths on Linux.
+
+The `fixture` phase is what makes that measurable: `make_scan_fixture.py
+--extra-roots` lays out one scan root per script, and the gate scans each into its
+own database and asserts one track each, so a root that works cannot mask a root
+that does not - which is exactly how the Chinese root used to hide the other three.
+
+The one known loss is still inside Qt itself: with a profile folder the ANSI code
+page cannot spell, Qt's own shader/pipeline cache cannot open its file even though
+the directory exists, so such a profile pays for a cold shader cache on every
+start. It is recorded by the gate, not asserted, and no data is involved.
 
 ### Incremental builds and the compiler's include note
 

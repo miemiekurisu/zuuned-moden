@@ -87,6 +87,8 @@ When the app connects to your Zune, its logs identify the selected data source:
 
 - `using embedded keys`: the compiled header is being used.
 - `loaded keys from ~/.mtpz-data`: an external file overrides the compiled values.
+  The message says `~` on every platform; on Windows the loader reads
+  `%USERPROFILE%\.mtpz-data`, because Windows never sets `HOME`.
 - `credentials unavailable`: this build has neither usable external data nor
   compiled defaults. Check the header's exact path and rebuild libzune.
 
@@ -97,8 +99,23 @@ See [tester diagnostics](../packaging/TESTER_README.md) for collecting logs.
 ## Optional: use a file without embedding it
 
 The same public source can compile without `mtpz_keys.h`. To authenticate at
-runtime, place your five-line file at `~/.mtpz-data` instead. This existing loader
-is also an override for builds with embedded values. Preserve any working file
-already at that location. No rebuild is needed for changes to the runtime file.
+runtime, place your five-line file in your home directory as `.mtpz-data` instead:
+`$HOME/.mtpz-data` on Linux and macOS, `%USERPROFILE%\.mtpz-data` on Windows -
+typically `C:\Users\<you>\.mtpz-data`. This existing loader is also an override
+for builds with embedded values. Preserve any working file already at that
+location. No rebuild is needed for changes to the runtime file.
+
+On Windows the download is one line, and the file has to keep no `.txt` suffix:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -OutFile "$env:USERPROFILE\.mtpz-data" `
+  https://raw.githubusercontent.com/kbhomes/libmtp-zune/master/src/.mtpz-data
+```
+
+A build from public source has neither embedded keys nor a file until you supply
+one, and the symptom is not an obvious one: an unauthenticated session can still
+read the Zune's library, while sending and saving answer `AccessDenied` or a raw
+`0x200F`. If a Windows build reads a device and then refuses to write it, check
+this file before suspecting the platform.
 
 Protocol background: [libmtp-zune documentation](https://github.com/kbhomes/libmtp-zune/blob/master/mtpz.md).

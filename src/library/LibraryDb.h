@@ -181,6 +181,11 @@ public:
 
 private:
     bool exec(const char *sql);
+    // Rewrites watch folder rows stored in a spelling this platform cannot read
+    // (on Windows that is "/E:/Music" - see LibraryPaths.h).  Runs from open() so
+    // a database written before the fix self-heals on the next launch instead of
+    // sitting there labelled unreachable for ever.
+    int repairWatchFolderRoots();
     sqlite3 *m_db = nullptr;
     QString m_lastError;
 };

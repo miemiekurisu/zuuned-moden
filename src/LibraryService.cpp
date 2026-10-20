@@ -1,4 +1,5 @@
 #include "LibraryService.h"
+#include "PathText.h"
 #include "ProfilePaths.h"
 
 #include "library/AlbumArtService.h"
@@ -768,7 +769,7 @@ int LibraryService::photoCount() const { return m_photoCount; }
 QObject *LibraryService::tracksModel() const { return m_tracks; }
 
 void LibraryService::addWatchFolder(const QString &path, const QString &type) {
-    const QString local = QUrl(path).isLocalFile() ? QUrl(path).toLocalFile() : path;
+    const QString local = PathText::canonical(path);
     if (local.isEmpty())
         return;
     m_db->addWatchFolder(local, type.isEmpty() ? QStringLiteral("all") : type);
@@ -781,7 +782,7 @@ void LibraryService::addWatchFolders(const QVariantList &folders) {
     for (const QVariant &fv : folders) {
         const QVariantMap m = fv.toMap();
         const QString raw = m.value(QStringLiteral("path")).toString();
-        const QString local = QUrl(raw).isLocalFile() ? QUrl(raw).toLocalFile() : raw;
+        const QString local = PathText::canonical(raw);
         if (local.isEmpty())
             continue;
         const QString type = m.value(QStringLiteral("type")).toString();
@@ -1079,9 +1080,14 @@ QVariantList LibraryService::musicProbeFailures() const {
 void LibraryService::reloadFolders() {
     m_watchFolders.clear();
     for (const WatchFolder &f : m_db->watchFolders()) {
+        // canonical() on the way out too, not only on the way in: a row written
+        // by an older build still gets one identity, so its media can be
+        // counted and released instead of being orphaned by a separator.
+        const QString stored = PathText::canonical(f.path);
         m_watchFolders.append(QVariantMap{
             {"id", double(f.id)},
-            {"path", f.path},
+            {"path", stored},
+            {"displayPath", PathText::display(stored)},
             {"type", f.type},
         });
     }
@@ -2259,7 +2265,7 @@ QVariantList LibraryService::healthChecks() const {
                 {QStringLiteral("label"),
                  QStringLiteral("watch folder unreachable")},
                 {QStringLiteral("detail"),
-                 path + QStringLiteral(" — network mount offline? Fix or"
+                 PathText::display(path) + QStringLiteral(" — network mount offline? Fix or"
                                        " remove it; scans skip it.")}});
     }
     const QStorageInfo tmp(QDir::tempPath());

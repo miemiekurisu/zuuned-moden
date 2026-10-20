@@ -144,8 +144,8 @@ ColumnLayout {
                 anchors.fill: parent
                 treatmentEnabled: entry.type !== "photo"
                 source: entry.type === "photo" && entry.filepath
-                    ? "file://" + entry.filepath
-                    : entry.posterPath ? "file://" + entry.posterPath : ""
+                    ? PathText.url(entry.filepath)
+                    : entry.posterPath ? PathText.url(entry.posterPath) : ""
                 sourceSize.width: Theme.spaceHuge
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true

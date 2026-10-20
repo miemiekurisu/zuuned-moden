@@ -199,9 +199,15 @@ void DeviceWorker::doBreach() {
     ZuneDevice *dev = zune_breach();
     if (!dev) {
         const char *err = zune_get_error();
+#if defined(Q_OS_WIN)
+        // No udev here: a Windows tester needs the driver name, not a Linux rule.
+        const QString hint = QStringLiteral("check USB and bind the Zune to WinUSB");
+#else
+        const QString hint = QStringLiteral("check USB + udev rule");
+#endif
         r.error = err && err[0]
             ? QString::fromUtf8(err)
-            : QStringLiteral("No Zune found (check USB + udev rule)");
+            : QStringLiteral("No Zune found (%1)").arg(hint);
         emit breachDone(r);
         return;
     }

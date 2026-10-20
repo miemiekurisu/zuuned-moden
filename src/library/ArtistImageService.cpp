@@ -56,8 +56,11 @@ bool installAutomaticPortrait(const QByteArray &bytes, const QString &destinatio
     QTemporaryFile staged(destination + QStringLiteral(".XXXXXX"));
     if (!staged.open() || staged.write(bytes) != bytes.size() || !staged.flush()) return false;
     staged.close();
-    if (::link(QFile::encodeName(staged.fileName()).constData(),
-               QFile::encodeName(destination).constData()) == 0) { published = true; return true; }
+    // UTF-8 through the POSIX surface, see LibraryScanner::pathBytes(): under the
+    // local 8-bit codec a cache path the ANSI code page cannot spell fails
+    // link(), and the portrait never publishes.
+    if (::link(staged.fileName().toUtf8().constData(),
+               destination.toUtf8().constData()) == 0) { published = true; return true; }
     return errno == EEXIST && QFile::exists(destination);
 }
 } // namespace

@@ -210,6 +210,7 @@ qt_add_executable(zuuned
     src/ApplicationIdentity.h
     src/AppSettings.h
     src/ProfilePaths.h
+    src/PathText.h
     src/diagnostics/SessionLog.cpp
     src/diagnostics/SessionLog.h
     src/diagnostics/Redactor.cpp
@@ -250,6 +251,7 @@ qt_add_executable(zuuned
     src/library/LibraryTypes.h
     src/library/LibraryDb.cpp
     src/library/LibraryDb.h
+    src/library/LibraryPaths.h
     src/library/LibraryScanner.cpp
     src/library/LibraryScanner.h
     src/library/AudioCopyFingerprint.h

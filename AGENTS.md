@@ -63,7 +63,7 @@ header-only edit silently links a stale object: force a full rebuild, with
 `--clean-first`, after any header-only change until that changes.
 The Windows usability gate is finished and passing:
 `pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1` reports
-`launches=17 checks=83 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
+`launches=17 checks=90 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
 built app once per page (music, videos, photos, podcasts, audiobooks, and the device
 page with no device attached), the five settings tabs, the header pinned at 0 and at
 1, a queue played through the compact island after a real `winshot --move` resize, the
@@ -149,7 +149,7 @@ LAME leg judged by probing the mp3 for the length of the tone. `decode` then dec
 the decoder rather than off its device context: forced software answers one decoder, no
 accelerator and `yuv420p`, and the default answered `cuda` on this machine, so NVDEC does
 engage on Windows. Full gate now
-`launches=17 checks=83 failures=0 skips=0 killed=0`. Two things deliberately left
+`launches=17 checks=90 failures=0 skips=0 killed=0`. Two things deliberately left
 alone after being checked, so do not "fix" them again: `compat/win/` already decodes a
 narrow path as UTF-8 then ANSI, and CRT `access()` is ANSI-only, which is what the
 `QFile::encodeName()` callers in `LibraryScanner`, `ArtworkPipeline`, the artwork
@@ -1037,3 +1037,28 @@ locks and dirty replacement/cancel confirmation. Playlist/photo/book drafts stay
 independent in the shared sidebar location. `RoundedArtwork` clips rectangular
 spoken covers using Theme.radiusMd; fitted portraits retain their full image.
 See the spoken plan and `tests/spoken-organization/` for gesture/regression gates.
+
+**2026-10-21 Windows path compatibility:** MTPZ authentication and both audio
+directions now work against a real Zune HD on Windows by hand test. The three
+symptoms that blocked it were path spelling, not protocol: an upload answered
+`Fail to save`, the music root displayed as `/E:/Temp/testmusic`, and Settings
+called a visible folder unreachable. Folder pickers hand QML a `QUrl`; stripping
+the scheme by hand is correct by luck on Linux and produces a drive-relative
+`/E:/Music` on Windows. `src/library/LibraryPaths.h` now owns the one canonical
+storage form - decode with `QUrl::toLocalFile()`, forward slashes, repair a stored
+`/E:/` scar, fold the drive letter to upper case because `UNIQUE(path)` is a byte
+comparison - and `PathText.canonical/url/display` are the QML-facing forms. No QML
+site may strip a scheme or concatenate `file://` again: that form spells
+`file://E:/Music`, parses host `E:` and loads no image. `LibraryDb::open()` repairs
+`watch_folders` rows an older build wrote, dropping a row whose repaired spelling is
+already registered. `QFile::encodeName()` is the ANSI code page, not UTF-8:
+`LibraryScanner`, `ArtworkPipeline`, `ArtistImageService` and
+`OnlineAlbumArtService` pass `toUtf8()`, because a scan root the local code page
+cannot spell otherwise fails `stat()` and the scan still exits 0 looking complete
+- invisible on a Chinese host, met immediately on an English one. `librarytool` puts
+the console in UTF-8. Gates: `tests/win-usability/watch_folder_repair.py` and one
+scan root per script in the `fixture` phase. Read
+`docs/WINDOWS_COMPAT_AUDIT.md` before touching path handling, and note its
+deliberately-cleared list. Windows device scope remains exactly one Pavo Zune HD:
+read, authenticate, send audio, save audio back. No deletion, no podcast,
+audiobook, photo or video transfer, and no other model has been plugged in.

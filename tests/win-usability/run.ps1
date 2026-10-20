@@ -18,8 +18,9 @@
 #
 # Needs a built build\zuuned.exe (and librarytool, transcodetool, playertool) and
 # the MSVC x64 environment for winshot, loaded from msvc-env.ps1 when cl is not
-# already on PATH.  No Zune has ever been connected to a Windows build and nothing
-# here touches USB: this certifies the UI, the tools and the profile, not the wire.
+# already on PATH.  Nothing in this gate opens a USB device handle, so it certifies
+# the UI, the tools and the profile - never the wire.  The Windows wire evidence is
+# the hand test recorded in docs\WINDOWS_PORT.md: one Pavo Zune HD, opened.
 param(
     [string]$Deps = 'D:\dev\zuuned-deps',
     [string]$QtDir = 'D:\dev\Qt\6.11.0\msvc2022_64',
@@ -511,7 +512,8 @@ if (Select-Phase 'fixture') {
     else {
         $fx = Invoke-Proc -File $pythonExe -Arguments @(
             (Join-Path $PSScriptRoot 'make_scan_fixture.py'), $fixtureMusic,
-            '--ffmpeg', $ffmpeg, '--force') -WorkDir $out -Timeout 300
+            '--ffmpeg', $ffmpeg, '--force',
+            '--extra-roots', (Join-Path $fixture 'nonascii-roots')) -WorkDir $out -Timeout 300
         Check 'the fixture put four tracks on disk' `
             ($fx.Code -eq 0 -and $fx.Out -match 'created=4') `
             (Format-KvDetail -Out ($fx.Out + [Environment]::NewLine + $fx.Err))
@@ -532,6 +534,50 @@ if (Select-Phase 'fixture') {
         Check 'every scanned track was probed and left copy evidence' `
             ($insp.Out -match 'probe_failures=0' -and $insp.Out -match 'fingerprints=4' `
                 -and $insp.Out -match 'nonzero_durations=yes') (Format-KvDetail -Out $insp.Out)
+        # A non-ASCII scan root used to be the quiet failure: argv went over in
+        # the local ANSI code page, the scan found nothing, and it still exited 0.
+        # One scan per root so a root that works cannot mask one that does not.
+        $rootsDir = Join-Path $fixture 'nonascii-roots'
+        $rootDirs = @(Get-ChildItem -LiteralPath $rootsDir -Directory -ErrorAction SilentlyContinue |
+                      Sort-Object Name)
+        Check 'the fixture put three non-ASCII scan roots on disk' `
+            ($fx.Out -match 'extra_roots=3' -and $rootDirs.Count -eq 3) `
+            ('found=' + $rootDirs.Count)
+        $ri = 0
+        foreach ($rd in $rootDirs) {
+            $ri++
+            $named = $rd.Name -match '[^\x20-\x7E]'
+            $rs = Invoke-Proc -File $libraryTool -Arguments @(
+                'scan', $rd.FullName, (Join-Path $out ('nonascii-root-' + $ri + '.db'))) -Timeout 300
+            Check ('librarytool scan counts its one track in non-ASCII root ' + $ri) `
+                ($named -and $rs.Code -eq 0 -and $rs.Out -match ': 1 tracks added') `
+                ('code=' + $rs.Code + ' nonAsciiName=' + $named + ' ' `
+                 + ($rs.Out + ' ' + $rs.Err).Trim())
+        }
+        # A root stored as "/E:/Music" is not absolute on Windows: it resolves
+        # against that drive's current directory, so the folder scanned nothing
+        # and reported itself unreachable for ever.  LibraryDb repairs those
+        # rows when it opens the library - prove it through a real librarytool
+        # run rather than a unit test, because the scar came from the wiring
+        # between the picker and the database, not from the database alone.
+        $scarDb = Join-Path $out 'scarred-roots.db'
+        $emptyRoot = Join-Path $out 'empty-scan-root'
+        New-Item -ItemType Directory -Force -Path $emptyRoot | Out-Null
+        $scarSeed = Invoke-Proc -File $pythonExe -Timeout 120 -Arguments @(
+            (Join-Path $PSScriptRoot 'watch_folder_repair.py'), '--seed', $scarDb)
+        Check 'the mangled watch-folder fixture seeded four scarred roots' `
+            ($scarSeed.Code -eq 0 -and $scarSeed.Out -match 'seeded=4') `
+            (Format-KvDetail -Out ($scarSeed.Out + ' ' + $scarSeed.Err))
+        $scarScan = Invoke-Proc -File $libraryTool -Arguments @('scan', $emptyRoot, $scarDb) -Timeout 300
+        Check 'librarytool opens a library full of mangled watch-folder roots' `
+            ($scarScan.Code -eq 0) ('code=' + $scarScan.Code + ' ' `
+             + ($scarScan.Out + ' ' + $scarScan.Err).Trim())
+        $scarCheck = Invoke-Proc -File $pythonExe -Timeout 120 -WorkDir $out -Arguments @(
+            (Join-Path $PSScriptRoot 'watch_folder_repair.py'), '--check', $scarDb,
+            '--allow', $emptyRoot)
+        Check 'opening the library repaired every mangled watch-folder root' `
+            ($scarCheck.Code -eq 0 -and $scarCheck.Out -match 'OVERALL=ok') `
+            (Format-KvDetail -Out ($scarCheck.Out + ' ' + $scarCheck.Err))
         if ($insp.Code -eq 0) {
             Copy-Item -LiteralPath $scanDb -Destination $seedDb -Force
         }
@@ -1281,6 +1327,6 @@ if ($script:failures) {
 # Truthful scope: the audio phase does open the real Windows output, but
 # only muted, so nothing in this gate is certified by anyone listening to it.
 Write-Host ('scope: ' + $script:caseSeq + ' instrumented launches, no device, one real audio output opened muted and never heard')
-Write-Host 'NOT YET HARDWARE-TESTED: no Zune has ever been connected to a Windows build'
+Write-Host 'SCOPE: no device handle opened here; the Windows wire evidence is the hand test in docs\WINDOWS_PORT.md'
 Write-Host 'OVERALL=ok'
 exit 0

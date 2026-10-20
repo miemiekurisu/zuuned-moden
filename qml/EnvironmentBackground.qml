@@ -48,7 +48,7 @@ Item {
         anchors.fill: parent
         visible: AppSettings.backgroundImagePath.length > 0
         source: AppSettings.backgroundImagePath.length > 0
-                ? "file://" + AppSettings.backgroundImagePath : ""
+                ? PathText.url(AppSettings.backgroundImagePath) : ""
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
         cache: true

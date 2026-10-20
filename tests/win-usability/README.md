@@ -68,6 +68,25 @@ FFmpeg from `ZUUNED_WIN_DEPS` to make the audio. `BUILDING.md` has the three-com
 scan gate built from it, currently `created=4` then `4 tracks added` then
 `OVERALL=ok`.
 
+The same script answers for the one path a scan root takes that a folder name does
+not: argv.  `--extra-roots <dir>` builds three one-track trees whose own root
+folder name is the non-ASCII part - Hebrew, Hangul, and an emoji off the BMP,
+because a surrogate pair is precisely what a code page conversion mangles.  That
+road used to fail quietly: the scan found nothing and still exited 0.  The gate
+scans each root on its own so a root that works cannot mask one that does not.
+
+`watch_folder_repair.py` seeds and then audits the watch-folder rows an older
+build mangled.  `--seed <db>` creates the table with four rows - a root stored as
+`/E:/Scar Alone`, the same root again with a lowercase drive, that root spelled
+correctly, and a clean path - so the leading slash that made a Windows root
+relative, the drive letter case that turned one folder into two rows, and a row
+that must survive untouched are all in play at once.  `--check <db> [--allow
+<path>]` then asserts that opening the library repaired every one of them: no
+leading slash, no lowercase drive letter, and exactly the expected set left alive,
+where `--allow` names the root the scan itself legitimately added.  Run the same
+script on POSIX and it fails if any of the four rows moved, which keeps the
+repair provably Windows-only.
+
 `qml/Main.qml` answers to `--qa-probe`: while the flag is present the window logs
 one line per state change and then every 1.5 s, naming the page, the onboarding
 sheet, the Now-Playing island, the collapse state, the device panel, the window
@@ -82,7 +101,7 @@ silent unless asked, on either platform.
 
 `run.ps1` is that gate and it is complete.  An unfiltered run makes seventeen
 instrumented launches plus the tool, encoder, decode and profile probes and ends
-`launches=17 checks=83 failures=0 skips=0 killed=0` and `OVERALL=ok`:
+`launches=17 checks=90 failures=0 skips=0 killed=0` and `OVERALL=ok`:
 
     pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 
@@ -95,8 +114,10 @@ the seeded library (`-Only fixture,pages`).
   not, for the run deletes the scratch tree first.
 - `fixture` - the fixture, a real `librarytool scan` over it, and the inspector: four
   tracks, four fingerprints, zero probe failures, the Chinese album folder and a path
-  past 260 characters present in the database.  Also seeds the library the page cases
-  copy into their profiles.
+  past 260 characters present in the database.  Then the two roots bugs: one scan per
+  non-ASCII root folder, each expected to count its one track, and a seeded library
+  full of `//e:/`-style watch-folder roots that a real `librarytool` run has to heal
+  on open.  Also seeds the library the page cases copy into their profiles.
 - `pages` - one launch each for music, videos, photos, podcasts and audiobooks with
   the seeded library, plus the device page with no device attached.  Every one ends
   with a capture, a paint verdict and the app's own `[qa]` report.
@@ -149,8 +170,9 @@ the seeded library (`-Only fixture,pages`).
 
 Five things it cannot certify, and does not claim to:
 
-- **No Zune has ever been connected to a Windows build.**  Nothing here opens USB,
-  and the device page is checked only in its healthy no-device state.
+- **Nothing here drives a device.**  No USB handle is opened, and the device page is
+  checked only in its healthy no-device state.  The Windows wire evidence is the hand
+  test in `docs/WINDOWS_PORT.md`: one Pavo Zune HD, opened, authenticated and written.
 - The WASAPI run is muted.  It proves the Windows audio output opens and clocks
   playback; nobody listened to it, so it certifies no waveform.
 - Dismissing the Now Playing island by clicking its X needs a mouse.  The gate proves
@@ -226,5 +248,6 @@ names the same instance Windows names. A Zune 30 record from weeks ago is still 
 the registry, which is why the phase reports devnode records and attached devices as
 two numbers — `Win32_PnPEntity` hides that stale record and `Get-PnpDevice` does not.
 
-Seeing a device is not the same as driving one. The phase opens no handle, calls no
-libzune function, and **no Zune has ever been connected to a Windows build**.
+Seeing a device is not the same as driving one. The phase opens no handle and calls no
+libzune function, so the only Windows wire evidence stays the hand test recorded in
+`docs/WINDOWS_PORT.md`.

@@ -452,7 +452,7 @@ Item {
                                     anchors.fill: parent
                                     visible: AppSettings.backgroundImagePath.length > 0
                                     source: AppSettings.backgroundImagePath.length > 0
-                                            ? "file://" + AppSettings.backgroundImagePath : ""
+                                            ? PathText.url(AppSettings.backgroundImagePath) : ""
                                     fillMode: Image.PreserveAspectCrop
                                     opacity: AppSettings.backgroundOpacity
                                     asynchronous: true
@@ -597,7 +597,7 @@ Item {
                             delegate: Text {
                                 required property var modelData
                                 Layout.fillWidth: true
-                                text: modelData.filepath
+                                text: PathText.display(modelData.filepath)
                                 color: Theme.textSecondary
                                 font.pixelSize: Theme.customizeBodySize
                                 wrapMode: Text.WrapAnywhere
@@ -758,7 +758,7 @@ Item {
                                             spacing: 1
                                             Text {
                                                 Layout.fillWidth: true
-                                                text: wfRow.modelData.path
+                                                text: wfRow.modelData.displayPath
                                                 font.pixelSize: 13
                                                 font.weight: Font.Light
                                                 color: Theme.textPrimary
@@ -849,7 +849,10 @@ Item {
                                     Text {
                                         anchors.verticalCenter: parent.verticalCenter
                                         visible: manualPath.text.length === 0
-                                        text: "…or type a path (e.g. /mnt/MissionControl/music)"
+                                        text: "…or type a path (e.g. "
+                                              + (Qt.platform.os === "windows"
+                                                 ? "C:\\Users\\you\\Music" : "/mnt/MissionControl/music")
+                                              + ")"
                                         color: Theme.textGhost
                                         font.pixelSize: 12
                                     }
@@ -1607,8 +1610,10 @@ Item {
         title: "Choose a " + pendingType + " folder"
         onAccepted: {
             console.warn("[settings] folder accepted:", selectedFolder)
-            const p = decodeURIComponent(
-                selectedFolder.toString().replace(/^file:\/\//, ""))
+            // canonical(), not a hand-stripped scheme: file:///E:/Music has to
+            // become E:/Music.  Chopping "file://" leaves "/E:/Music", which is
+            // a valid absolute path on Linux and nothing at all on Windows.
+            const p = PathText.canonical(selectedFolder.toString())
             if (p.length > 1)
                 LibraryService.addWatchFolder(p, pendingType)
         }
@@ -1667,8 +1672,7 @@ Item {
         onAccepted: {
             // Store a plain local path (mac stores url.path); the mac also
             // resets opacity to 0.3 on every new pick — match that.
-            const path = decodeURIComponent(
-                selectedFile.toString().replace(/^file:\/\//, ""))
+            const path = PathText.canonical(selectedFile.toString())
             AppSettings.backgroundImagePath = path
             AppSettings.backgroundOpacity = 0.3
         }

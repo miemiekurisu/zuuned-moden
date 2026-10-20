@@ -69,9 +69,21 @@ struct WorkItem {
     bool isNew = true;
 };
 
+/* Every byte string this file hands the POSIX surface must be UTF-8 - which is
+ * what a POSIX filename already is on Linux, and what compat/win/wincompat.c
+ * decodes first on Windows.  QFile::encodeName() is NOT that: it is Qt's local
+ * 8-bit codec, the ANSI code page on Windows, so any name the active code page
+ * cannot spell arrives as a run of '?'.  Measured on a CP936 host: of five album
+ * folders the ASCII one and the Chinese one scanned and the Hebrew, Hangul and
+ * emoji ones vanished - stat() failed, fingerprint() returned false, and the
+ * scan finished clean and complete with two tracks in it.  The Chinese folder
+ * survived only because CP936 happens to cover Han, which is precisely the case
+ * a Chinese host cannot see and an English host hits on its first Hebrew album. */
+QByteArray pathBytes(const QString &path) { return path.toUtf8(); }
+
 bool fingerprint(const QString &path, WorkItem &out) {
     struct stat info {};
-    if (::stat(QFile::encodeName(path).constData(), &info) != 0 || !S_ISREG(info.st_mode)) return false;
+    if (::stat(pathBytes(path).constData(), &info) != 0 || !S_ISREG(info.st_mode)) return false;
     out.filepath = path;
     out.filesize = info.st_size;
     out.mtime = info.st_mtim.tv_sec;
@@ -81,7 +93,7 @@ bool fingerprint(const QString &path, WorkItem &out) {
 }
 
 bool accessibleDirectory(const QString &path, struct stat *identity = nullptr) {
-    const QByteArray encoded = QFile::encodeName(path);
+    const QByteArray encoded = pathBytes(path);
     DIR *directory = ::opendir(encoded.constData());
     if (!directory) return false;
     struct stat current {};
@@ -544,7 +556,7 @@ void LibraryScanner::scan() {
             if (owner.isEmpty() || !completedMusicRoots.contains(owner) || !accessibleDirectory(owner, &currentRoot)) continue;
             if (completedMusicRoots.value(owner) != qMakePair(quint64(currentRoot.st_dev), quint64(currentRoot.st_ino))) continue;
             struct stat file {};
-            const bool absent = ::stat(QFile::encodeName(path).constData(), &file) != 0
+            const bool absent = ::stat(pathBytes(path).constData(), &file) != 0
                 && (errno == ENOENT || errno == ENOTDIR);
             if (absent || db.isExcluded(path)) staleFailures.append(path);
         }
