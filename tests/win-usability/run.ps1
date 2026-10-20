@@ -159,20 +159,29 @@ function Invoke-Proc {
     }
 }
 
-$script:hwndU32 = { param($handle) [uint32]([int32]$handle.ToInt64() -band 0xFFFFFFFF) }
-
+# winshot prints and parses a handle as `%llu` of uintptr_t, in decimal, so the
+# wire form of a handle is the UNSIGNED decimal of the whole pointer.  A 64-bit
+# Windows handle is routinely above Int64.MaxValue - 0xFFFFFFFF80010E3A is one -
+# and the .NET handle property hands that back sign-extended and negative, so
+# both directions have to reinterpret the same bytes instead of shrinking or
+# signing them.  Masking to 32 bits, which these helpers used to do, quietly
+# renames the window: GetWindowRect then fails on a handle that exists.  Parsing
+# with [long]::Parse, which the pid scan did, throws "Value was either too large
+# or too small for an Int64" and took the whole harness down on a run that
+# needed the scan - chrome collapse pin, 2026-10-21.
 function ConvertTo-HwndDecimal {
     param([IntPtr]$Handle)
-    # A handle above 0x7FFFFFFF reaches this harness by two routes and they are not
-    # the same number: the .NET property sign-extends the 32-bit value, so it is
-    # negative, while `winshot --pid` prints unsigned decimal and
-    # Resolve-ZuunedWindowByPid widens that straight into an IntPtr.  Mask to 32
-    # bits, which is what both of them mean, and print unsigned because that is what
-    # winshot parses.  An earlier version of this line cast through [int] as well,
-    # which throws on precisely the large handles this is here for - and it only
-    # showed up on a run that needed the pid scan, because the property route hands
-    # back a negative value that the cast survived.
-    return (($Handle.ToInt64() -band 0xFFFFFFFFL).ToString())
+    $bytes = [BitConverter]::GetBytes([int64]$Handle.ToInt64())
+    if ([IntPtr]::Size -eq 8) { return ([BitConverter]::ToUInt64($bytes, 0)).ToString() }
+    return ([BitConverter]::ToUInt32($bytes, 0)).ToString()
+}
+
+function ConvertFrom-HwndDecimal {
+    # The exact inverse of the above; keep the two in step.
+    param([string]$Text)
+    $bytes = [BitConverter]::GetBytes([uint64]::Parse($Text))
+    if ([IntPtr]::Size -eq 8) { return [IntPtr][BitConverter]::ToInt64($bytes, 0) }
+    return [IntPtr][BitConverter]::ToInt32($bytes, 0)
 }
 
 # ---------------------------------------------------------------------------
@@ -213,7 +222,7 @@ function Resolve-ZuunedWindowByPid {
     if ($r.Code -ne 0) { return [IntPtr]::Zero }
     $m = [regex]::Match($r.Out, 'hwnd=(\d+)')
     if (-not $m.Success) { return [IntPtr]::Zero }
-    return [IntPtr][long]::Parse($m.Groups[1].Value)
+    return ConvertFrom-HwndDecimal -Text $m.Groups[1].Value
 }
 
 function Wait-ZuunedWindow {

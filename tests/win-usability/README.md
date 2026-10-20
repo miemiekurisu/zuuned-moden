@@ -228,8 +228,18 @@ route answered.  For the same reason `Stop-Zuuned` reports `124` rather than
 report a clean shutdown.
 
 A handle above 0x7FFFFFFF is the same trap somewhere else: it arrives negative from
-`Process.MainWindowHandle` and positive from `winshot --pid`, so widening it has to
-mask rather than cast, and only a run that needed the pid scan could find that.  And
+`Process.MainWindowHandle` and positive from `winshot --pid`, and only a run that
+needed the pid scan can ever find what is wrong with it.  Masking to 32 bits is not
+the answer - on a 64-bit Windows a window handle is a whole pointer, so masking
+renames the window and `GetWindowRect` fails on a handle that exists.  The rule is to
+carry the same eight bytes in the form `winshot` itself uses, unsigned decimal of
+`uintptr_t`, in both directions: `ConvertTo-HwndDecimal` reinterprets and
+`ConvertFrom-HwndDecimal` reverses it.  The parse side used to run the number through
+`[long]::Parse`, and a real handle like `0xFFFFFFFF80010E3A` reaches that as
+18446744071562137146, which does not fit a signed 64-bit integer, so on 2026-10-21 the
+harness aborted halfway through the collapse pin phase with "Value was either too
+large or too small for an Int64".  Both helpers are pinned by hand against those
+numbers.  And
 because a case can die halfway, the script carries a trap that closes every instance
 it started - an aborted run must not leave a live Zuuned holding a profile folder the
 next run intends to delete.

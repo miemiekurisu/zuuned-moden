@@ -356,6 +356,21 @@ environment to reproduce them.
 - The usability gate makes seventeen instrumented launches plus the tool,
   encoder and profile probes and ends `launches=17 checks=94 failures=0
   skips=0 killed=0` and `OVERALL=ok`.
+  Re-running it here on 2026-10-21 aborted at the chrome collapse pin instead.
+  Eight of the seventeen launches answer `Process.MainWindowHandle` with nothing
+  and fall back to the `winshot --pid` scan, and that scan parsed the handle it
+  got back with `[long]::Parse`.  `winshot` prints `%llu` of `uintptr_t`, and a
+  real 64-bit handle such as `0xFFFFFFFF80010E3A` reaches the harness as
+  18446744071562137146, which does not fit a signed 64-bit integer, so the whole
+  run died on "Value was either too large or too small for an Int64" having
+  proven nothing about the build.  The 32-bit mask on the way out was the mirror
+  of the same mistake: on a 64-bit Windows a handle is a whole pointer, so
+  masking renames the window and `GetWindowRect` fails on one that exists.  Both
+  directions now reinterpret the same eight bytes in the unsigned decimal
+  `winshot` uses, and the run is back to the counters above with
+  `pid-scan-fallbacks=8`.  A harness that cannot find its own window is not a
+  property of the application, so this is a checkpoint note rather than a
+  Windows defect.
 - What those launches actually establish: every page paints real content rather
   than an empty window (`winshot` captures the live swapchain and the app
   reports its own state through `--qa-probe`); the five settings tabs, the
