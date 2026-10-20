@@ -34,17 +34,37 @@ foreach ($node in $nodes) {
     Write-Host ('hwids    : {0}' -f ((Get-Prop $id 'DEVPKEY_Device_HardwareIds') -join ' '))
     Write-Host ('compat   : {0}' -f ((Get-Prop $id 'DEVPKEY_Device_CompatibleIds') -join ' '))
     Write-Host ('driver   : {0}' -f (Get-Prop $id 'DEVPKEY_Device_Driver'))
+    $nodeKey = 'HKLM:\SYSTEM\CurrentControlSet\Enum\{0}' -f $id
     $service = Get-Prop $id 'DEVPKEY_Device_DriverService'
+    if (-not $service) {
+        try { $service = (Get-ItemProperty -LiteralPath $nodeKey -ErrorAction Stop).Service }
+        catch { $service = $null }
+    }
     if ($service) { Write-Host ('service  : {0}' -f $service) }
     $children = Get-Prop $id 'DEVPKEY_Device_Children'
     Write-Host ('children : {0}' -f $(if ($children) { $children -join ' ' } else { 'none - single function' }))
-    $guids = Get-Prop $id 'DEVPKEY_Device_DeviceInterfaceGuids'
+    $guids = @(Get-Prop $id 'DEVPKEY_Device_DeviceInterfaceGuids' | Where-Object { $_ })
+    $source = 'DEVPKEY'
+    if (-not $guids) {
+        # Measured on a bound Zune HD: this DEVPKEY came back empty while the
+        # devnode's Device Parameters key carried the GUID libusb opens with, so
+        # the DEVPKEY alone must not be read as "no interface registered".
+        $dp = Join-Path $nodeKey 'Device Parameters'
+        try {
+            $p = Get-ItemProperty -LiteralPath $dp -ErrorAction Stop
+            $found = @($p.DeviceInterfaceGUIDs) + @($p.DeviceInterfaceGUID)
+            $guids = @($found | Where-Object { $_ })
+            if ($guids) { $source = 'registry Device Parameters' }
+        } catch { $guids = $null }
+    }
     if ($guids) {
-        Write-Host ('ifaces   : {0}' -f ($guids -join ' '))
+        $list = ($guids | Select-Object -Unique) -join ' '
+        Write-Host ('ifaces   : {0}  [{1}]' -f $list, $source)
     } else {
-        Write-Host 'ifaces   : none registered.  libusb reads DeviceInterfaceGUID(s)'
-        Write-Host '           and returns LIBUSB_ERROR_ACCESS without one, so an'
-        Write-Host '           openable player cannot be expected yet.'
+        Write-Host 'ifaces   : none in DEVPKEY and none in Device Parameters.  libusb'
+        Write-Host '           reads DeviceInterfaceGUID(s) and returns'
+        Write-Host '           LIBUSB_ERROR_ACCESS without one, so an openable player'
+        Write-Host '           cannot be expected yet.'
     }
     Write-Host ''
 }

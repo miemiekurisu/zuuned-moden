@@ -7,35 +7,75 @@ build works with a Zune".  Build steps and dependency locations live in
 `BUILDING.md`; the two gates are documented in `tests/win-compat/README.md` and
 `tests/win-usability/README.md`.
 
-## No Windows build has ever talked to a Zune
+## The first Windows device contact
 
-**No Zune has ever been connected to a Windows build, and no hardware claim in
-this repository carries across platforms.**  Read that as a release rule, not a
-formality:
+**A Zune HD has now been connected to a Windows build, opened, and read.**  What
+follows was measured on the development machine on 2026-10-20 and it is the whole
+of the Windows device evidence as of this checkpoint.  The rule this page exists
+for survives it: **a hardware fact proven on Linux still does not carry across
+platforms, and reading a library is not syncing one.**
 
-- Every hardware fact this project states - MTPZ authentication, library reads,
-  track, album, video, podcast and audiobook sends, on-device deletion, byte
-  readback, firmware category presentation, resume - is evidence gathered on
-  Linux over libusb.  None of it has been repeated on Windows.
-- Nothing in the Windows tree has ever called a libzune function against a
-  device handle.  The `what is plugged in` phase of the usability gate reads
-  presence only, and `devicetool` opens no handle by design.
-- On the development machine a Zune HD is attached and the PnP manager reports
-  it at `CM_PROB_FAILED_INSTALL` (problem 28): Windows sees the devnode, no
-  driver is bound, so `libusb_get_device_list()` does not contain it and
-  `devicetool` answers `blocked`.  `src/DevicePresenceWin.cpp` exists so the
-  device page says that in the user's terms instead of claiming nothing was
-  plugged in.
-- The driver route is now decided but still unproven: upstream Zadig installing
-  WinUSB, as `packaging/windows/DRIVER_INSTALL.md` documents - including the device
-  interface GUID rule that makes the in-box class picker on its own useless to
-  libusb.  No machine has run that recipe yet, so nothing here may be described as
-  a working Windows device path.  And `zunetool` - the tool every Linux hardware
-  gate was run with - is built by libzune's POSIX Makefile and is not part of the
-  Windows build, which compiles libzune directly as the `libzune_build` target.
+The driver first.  `packaging/windows/DRIVER_INSTALL.md` closes as written - a
+libwdi-generated WinUSB package is the devnode's function driver, the problem code
+is `CM_PROB_NONE`, the service is `WinUSB`, and the devnode registers the device
+interface GUID libusb 1.0.29 insists on.  `check-driver.ps1` reads all of that
+back and `build\devicetool.exe` answers `VERDICT=agree`.  That run did surface one
+documentation and tooling bug, now fixed in both: the GUID is readable only from
+the devnode's `Device Parameters` registry key, while
+`DEVPKEY_Device_DeviceInterfaceGuids` is empty on a player that opens perfectly
+well, so a script that trusts the DEVPKEY alone reports an openable device as
+unopenable.
 
-So a Windows build may be described as building, launching, painting, scanning,
-encoding and persisting.  It may not be described as syncing.
+Then the application, which is where the first Windows device traffic is:
+
+```
+[libusb] opened: bulk_in=0x81(512) bulk_out=0x01(512) int=0x82
+[ptp] detected split header/data mode (Zune/WMP)
+[libzune] GetDeviceInfo: model='Zune' serial=[redacted]
+[libzune] device family: Pavo (Zune HD) (0xD21A = 0x06040001)
+[libzune] connected: [device name] (Zune), battery: 100%, storage: 10491396096/15543730176
+[libzune-zmdb] totalSize=226688, payloadSize=226676, first chunk=12 bytes
+[libzune-zmdb] received 226676/226676 bytes
+[zunedb] scanned: 183 tracks, 0 videos, 0 photos, 9 albums, 10 artists, 0 playlists, 0 photo albums
+[device] storage: 5.1/15.5 GB (used/total), attributed: music 4.88 + video 0.00 + photo 0.00 GB
+```
+
+So on Windows a Zune HD is opened over WinUSB, answers `GetDeviceInfo`, is
+identified as Pavo by the same property read Linux uses, hands over all 226,676
+bytes of ZMDB, and the application turns that into 183 tracks in 9 albums by 10
+artists with per-category storage accounting and album thumbnails fetched off the
+player - and the device page is operable, which is what the crash below was
+blocking.  Unplugging and replugging produced a second identical read, so this is
+the hotplug path working rather than one lucky connection.
+
+Three things it is not, each a gate with its own name.
+
+- **Not MTPZ authentication.**  The same log says `credentials unavailable;
+  provide ~/.mtpz-data to authenticate a Zune` and `MTPZ authentication will
+  fail`: this development checkout has no MTPZ credentials, so the library read
+  happened unauthenticated, which the ZMDB path permits.  MTPZ authentication has
+  therefore still never run on Windows, and no write path should be attempted
+  until it has - see `docs/BUILD_WITH_MTPZ.md`.
+- **Not a write.**  Nothing was sent, deleted, finalised or read back byte for
+  byte.  Saving two device tracks into the library - still a read, but a
+  different operation - answered `get_object 0x01000045: failed (response 0x200F)`
+  and the app reported `AccessDenied`.  Observed, not retried, not diagnosed here.
+- **Not clean.**  `get_object_info 0x07000002` returns `0x2002` three times per
+  scan against the very atom the scanner reports as a playlist record, and
+  `get_representative_sample` reports `bad AUINT8 count 0 in 4-byte payload` for
+  objects whose thumbnails then fail every method.  Recorded rather than asserted;
+  `libzune/docs/` is where a diagnosis belongs, and neither code has been chased
+  on Linux either.
+
+The GUI crash that stood in front of all of this turned out to be a build
+artefact rather than a Windows fault in the application.  The account and the
+command that clears it are in `BUILDING.md` under *Incremental builds and the
+compiler's include note*.
+
+So a Windows build may now be described as building, launching, painting,
+scanning, encoding, persisting, opening a Zune HD and reading its music library.
+It may not be described as authenticating over MTPZ, syncing, deleting, or playing
+anything back from a device.
 
 ## Toolchain that works here
 
@@ -52,6 +92,10 @@ encoding and persisting.  It may not be described as syncing.
 - Native throughout, by decision: no WSL, no MinGW, no Cygwin.  The consequence
   is stated plainly below under what is not proven - the Linux bash gates are
   not run from this checkout.
+- Nothing on this machine rebuilds safely by accident.  `BUILDING.md` explains
+  why an edit to a header can relink the object that was already there, and the
+  first Windows device session died of exactly that.  When a change appears to do
+  nothing, `cmake --build build --clean-first` before believing any diagnosis.
 
 ## What the port consists of
 
@@ -129,11 +173,14 @@ environment to reproduce them.
 
 ## What is not proven here
 
-1. Device work of any kind, as stated at the top.  Driver binding first, then
-   enumeration, hotplug, transfers, readback and deletion, each a real gate
-   rather than a ported assumption.  WinUSB cannot reset a device either, so
-   `zune_breach()`'s recovery from an OpenSession wedge does not exist here and an
-   unplug/replug is the workaround - see the driver guide.
+1. Everything past the library read.  MTPZ authentication comes first, because this
+   machine has no credentials and every Linux write gate was run with them; then
+   one send, one deletion, byte readback, the firmware categories and firmware
+   resume, each a real gate rather than a ported assumption.  The unanswered
+   `0x2002` and `0x200F` recorded above sit in front of parts of that.  WinUSB
+   cannot reset a device either, so `zune_breach()`'s recovery from an OpenSession
+   wedge does not exist here and an unplug/replug is the workaround - see the
+   driver guide.
 2. Audio anyone can hear.  The gate opens WASAPI for real and asserts mpv reports it
    through `current-ao`, but always muted, so samples never reach the speaker.
    Audible playback, exclusive mode, a hot-plugged or Bluetooth endpoint, and anything
@@ -160,17 +207,29 @@ environment to reproduce them.
 9. Also recorded, not asserted: a GUI launch reaches musicbrainz.org for artwork
    discovery exactly as it does on Linux, and a 503 there is noise; a brand new
    profile legitimately shows onboarding rather than the requested page.
+10. Library folders display the way Qt spells a path internally -
+    `E:/Temp/testmusic`, not `E:\Temp\testmusic` - in Settings, in onboarding and
+    in the spoken-import pages, because nothing in `src/` or `qml/` has ever called
+    `QDir::toNativeSeparators()`.  Cosmetic here, invisible on Linux where the two
+    spellings are the same string, and a display-layer fix: the stored value, the
+    SQLite row and the scanner use one form on both platforms, and
+    `qml/OnboardingView.qml` removes a staged folder by comparing that very string,
+    so the conversion belongs at each label and nowhere else.
 
 ## Order to close it in
 
-1. Prove the driver route on a real machine: Zadig installing WinUSB per
-   `packaging/windows/DRIVER_INSTALL.md`, then `packaging/windows/check-driver.ps1`
-   showing a function driver plus a registered interface GUID, then `devicetool`
-   answering `agree` with a Zune actually attached.
-2. Repeat the Linux hardware gates in the same order on Windows: library read,
-   one album send, one deletion, readback, then the podcast and audiobook
-   categories and firmware resume - each with its own evidence, none inherited.
-3. Add the remaining software gates: audible (unmuted) playback and a
+1. Supply MTPZ credentials and authenticate a Zune on Windows, per
+   `docs/BUILD_WITH_MTPZ.md`.  Until that is done the write paths are not even
+   addressable from this checkout, so nothing below it can be attempted honestly.
+2. Repeat the Linux hardware gates in the order Linux used, from here: library
+   read (done 2026-10-20), one album send, one deletion, readback, then the podcast
+   and audiobook categories and firmware resume - each with its own evidence, none
+   inherited.
+3. Answer the two responses the first reads left unanswered, `0x2002` on
+   `GetObjectInfo(0x07000002)` and `0x200F` on `GetObject`, in `libzune/docs/`,
+   before either is assumed benign or changed.
+4. Add the remaining software gates: audible (unmuted) playback and a
    `spokenmediatool` phase.  Measure NVDEC against software on a real 1080p item before
    quoting a speed-up for Windows.
-4. Only then talk about Windows packaging or a Windows release channel.
+5. Native Windows path display for library folders - item 10 above.
+6. Only then talk about Windows packaging or a Windows release channel.

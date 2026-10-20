@@ -241,15 +241,42 @@ recorded by the gate, not asserted, and no data is involved.
 
 ### Incremental builds and the compiler's include note
 
-Where the Windows UI language is not English, `cl.exe /showIncludes` writes its
-"Note: including file:" line in that language, and Ninja's `deps = msvc` parser
-recognises only the English wording. The dependency line is dropped. The Ninja
-dependency query then answers `#deps 0` for a translation unit that did include
-headers, an edit
-to any header rebuilds nothing, and the link quietly reuses the old object.
-`VSLANG=1033` does not change the note, and Ninja 1.12's `MSVCPREFIX` alternative
-cannot match it either while the ANSI environment block and a UTF-8 note disagree.
-Until the build moves to `cmcldeps`, or the machine enables "Use Unicode UTF-8 for
+The note is the line Ninja cannot read, and on 2026-10-20 it cost a long chase
+after a crash that did not exist. What is actually on this machine, measured:
+
+- `cl.exe` writes its localised "including file" note in whatever code page the
+  console it is attached to uses. Under `chcp 936` the note begins `d7 a2 d2 e2
+  3a 20`; under `chcp 65001` the same note begins `e6 b3 a8 e6 84 8f 3a 20`.
+  `VSLANG=1033` changes neither, byte for byte, which is why that variable appears
+  in no recipe that works.
+- CMake captures the prefix once, at configure time, by running `cl` and decoding
+  the note as UTF-8 with the ANSI code page as a fallback. On this machine it was
+  handed GBK bytes, decoded them as UTF-8, and stored the result - so
+  `build\CMakeFiles\rules.ninja` says `msvc_deps_prefix = ` followed by
+  `e5 a8 89 e3 84 a6 e5 89 b0 3a 20`, mojibake of mojibake. It matches neither
+  form `cl` can emit, so `deps = msvc` never fires.
+- The result is silent, not noisy. `ninja -t deps` answers zero dependencies for a
+  translation unit that demonstrably includes headers, an edit to that header
+  rebuilds nothing, and the link reuses the object already on disk. Deleting
+  `build\CMakeFiles\<version>` and configuring again stores the same bytes: this
+  is a property of the machine, not a cache to clean.
+
+That is what killed the first Windows device session, and it is worth spelling out
+because it looked exactly like a device bug. A member had been added to
+`DeviceService` in the middle of its data section, so every member declared after
+it moved. The translation unit that owns `DeviceService` rebuilt; another, which
+includes its header and constructs a lambda over the same object, kept the object
+file it already had. The link joined both layouts into one `zuuned.exe` without a
+word, and at the moment a device arrived code compiled against the old layout
+incremented the reference count of the `QString` one member away from the one it
+meant: `0xc0000005` inside `Qt6Core.dll`, at `lock inc dword ptr [r8]` with
+`r8 = 0xf`. Both objects were correct for the header each saw. Nothing in the
+application was wrong, and reading the application could not have shown otherwise -
+`cmake --build build --clean-first` fixed it, 428 files removed, 329 rebuilt.
+
+Upstream has had this shape for years: Ninja issues 2205 and 1766, CMake issue
+24068, whose merge request is the `cmcldeps` work that removes the whole class of
+problem. Until that lands here, or the machine enables "Use Unicode UTF-8 for
 worldwide language support", or English compiler resources are installed, force a
 full rebuild after a header-only change:
 

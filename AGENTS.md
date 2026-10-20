@@ -11,9 +11,11 @@ the Windows section of `BUILDING.md`). `compat/win/` builds once as
 `zuuned_wincompat` and is force-included through `posix_shim.h` so libzune and the
 transcode C layer keep their POSIX surface without per-file `#ifdef`s; D-Bus/Mpris
 and the POSIX-only install rules are skipped on Windows; `regex.h` maps onto PCRE2.
-Gate: `tests/win-compat/run.ps1`, 171 software checks. **No Zune device has been
-tested on Windows yet** — WinUSB binding, enumeration, transfers and readback are
-validated on Linux only, so no hardware claim may be carried across platforms.
+Gate: `tests/win-compat/run.ps1`, 171 software checks.  Superseded the same day by
+the Windows hardware checkpoint below: WinUSB binding, enumeration, hotplug and the
+music library read have since been done on Windows against a Zune HD.  What this
+sentence forbids still stands - transfers, readback and every write are Linux
+evidence only, so no hardware claim may be carried across platforms.
 Runtime fixes proven on Windows: `LibraryDb` stages its pre-migration snapshot
 through SQLite's own backup API and publishes it with `QFile::rename`, because a
 live `QTemporaryFile` handle made that rename fail with a sharing violation and
@@ -125,7 +127,9 @@ id and problem code without ever asserting that a Zune *is* attached — on this
 machine the honest verdict is `blocked`, at problem 28, with both APIs naming the
 same instance. Seeing is not driving: WinUSB binding through Zadig has still never
 been done here, and **no Zune has ever been opened, transferred to or read back from
-on Windows.**
+on Windows.**  Superseded later the same day by the hardware checkpoint below.  The
+blocked wording stays right for every Windows machine where nobody has installed a
+driver yet, which is what a tester normally meets, so it stays.
 
 **2026-10-20 Windows path encoding checkpoint:** `src/spoken/SpokenStore.cpp` handed
 `sqlite3_open_v2` the `QFile::encodeName()` of its database and nothing else in the app
@@ -155,13 +159,16 @@ sixteen ASCII profiles of a run write `qqpc_opengl`, neither Han-named one does)
 byte-path open is inside Qt, the gate records it, and it costs a warm cache, not data.
 **Still no Zune hardware of any kind on Windows**: the attached Zune HD sits at PnP
 problem 28 with no driver bound, `devicetool` answers `blocked`, and nothing here has
-opened a device handle.
+opened a device handle.  Superseded the same day - see the hardware checkpoint
+below.
 
 **2026-10-20 Windows port checkpoint:** `docs/WINDOWS_PORT.md` is now the single
 status page for the port - toolchain, what the two software gates prove and what
 they explicitly do not. Keep it current whenever a Windows gate changes, and never
-state a Windows hardware capability: the open gates are driver binding, transfers
-and readback, audible audio, a `spokenmediatool` gate and
+state a Windows hardware capability the page has no capture of: since the hardware
+checkpoint the closed gates are driver binding, enumeration, hotplug and the music
+library read; the open ones are MTPZ authentication, transfers, readback and
+deletion, audible audio, a `spokenmediatool` gate, native path display and
 packaging. The only Windows audio fact this checkpoint states is that a muted
 audible `playertool` run binds WASAPI, as mpv reports through its
 `current-ao` property; nothing has been listened to. The decode fact is narrower and
@@ -172,6 +179,52 @@ and every machine without an NVIDIA decoder stay unmeasured, so neither is ever 
 The port stays native MSVC -
 no WSL, MinGW or Cygwin - which is why the Linux line is unchanged by construction
 at this checkpoint rather than re-verified.
+
+**2026-10-20 Windows hardware checkpoint - the first Zune on Windows:** the first
+hardware gate closed.  A Zune HD is bound to WinUSB on the development machine,
+`packaging/windows/check-driver.ps1` reads it back as `CM_PROB_NONE` with
+`service : WinUSB` and a real interface GUID, `devicetool` answers `VERDICT=agree`,
+and `build\zuuned.exe` opened the player over WinUSB, read `GetDeviceInfo`,
+identified Pavo (Zune HD) from `0xD21A`, took the whole 226,676-byte ZMDB payload
+and listed **183 tracks in 9 albums by 10 artists**, `music 4.88 GB` attributed,
+album thumbnails fetched off the device - the device page browses, which is what the
+user confirmed on screen.  Unplug and replug produced a second identical read, so
+Windows hotplug works rather than having got lucky once.  **That is a read, not an
+authentication and not a sync.**  The same log states `MTPZ authentication will
+fail`, because a development checkout carries no credentials and the ZMDB path reads
+anyway: Windows MTPZ has still never run, and nothing has been written, deleted or
+read back byte for byte.  Three responses went unanswered and are recorded, not
+diagnosed - `0x2002` on `get_object_info(0x07000002)`, the atom the scanner itself
+calls a playlist record, three times per scan; `0x200F` on `get_object` for two
+device tracks the UI reported as `AccessDenied`; and
+`get_representative_sample ... bad AUINT8 count 0 in 4-byte payload` for objects
+whose thumbnails then fail every method.  No Linux hardware evidence carried into
+any of it and none was used.
+
+**The crash in front of that was a build artefact, not the application.**  Windows
+`cl.exe` writes its `/showIncludes` note in the console code page, CMake stored the
+prefix as double mojibake in `build\CMakeFiles\rules.ninja`, Ninja's `deps = msvc`
+therefore never matched, and header dependencies were silently zero.  A member
+inserted into `DeviceService`'s data section rebuilt its own translation unit and
+left another one's object file as it was; the link joined both layouts of the class
+into one exe; and on device arrival a `QString` reference count got incremented one
+member away from the one the code meant - `0xc0000005` inside `Qt6Core.dll` at
+`lock inc dword ptr [r8]` with `r8 = 0xf`.  `VSLANG=1033` does not change one byte
+of the note, and deleting `build\CMakeFiles\<version>` and configuring again stores
+the same prefix, so there is nothing to repair in place: `cmake --build build
+--clean-first` is the rule (428 files removed, 329 rebuilt, and the app then
+started).  `BUILDING.md` has the byte-level account; Ninja issues 2205 and 1766 and
+CMake issue 24068 track it upstream.  Two habits fall out.  When a Windows change
+appears to do nothing, prove the object is new before believing the diagnosis.  And
+read a device interface GUID from the devnode's `Device Parameters` key, not from
+`DEVPKEY_Device_DeviceInterfaceGuids`, which is empty on a player that opens
+perfectly well - `check-driver.ps1` now falls back and prints which source answered.
+Next Windows gate: a build carrying MTPZ credentials (`docs/BUILD_WITH_MTPZ.md`),
+because every write path is unreachable without it.  After that, native Windows path
+display: a library folder added as `E:\Temp\testmusic` still shows as
+`E:/Temp/testmusic`, since nothing in `src/` or `qml/` has ever called
+`QDir::toNativeSeparators()`; fix it at the labels, because
+`qml/OnboardingView.qml` compares that same string to remove a staged folder.
 
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow
