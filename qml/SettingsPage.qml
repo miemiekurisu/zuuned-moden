@@ -978,15 +978,38 @@ Item {
                             : "Windows claims the Zune through a WinUSB driver - no rules, no sudo."
                         // Windows has no udev: name WinUSB instead of offering a rule install.
                         ColumnLayout {
+                            id: usbAccessCol
                             visible: !DeviceService.udevRulesApply
                             Layout.fillWidth: true
                             Layout.topMargin: Theme.spaceXs
                             spacing: 2
+                            // "present" and "visible to libusb" are different facts on
+                            // Windows: a Zune with no driver bound sits on the bus and
+                            // is still nowhere in libusb_get_device_list().
+                            readonly property bool blocked:
+                                DeviceService.devicePresent && DeviceService.usbAccessProblem
                             Text {
-                                text: DeviceService.devicePresent ? "Zune visible to libusb"
-                                                                  : "No Zune visible to libusb"
+                                text: usbAccessCol.blocked
+                                      ? "Zune plugged in, but not visible to libusb"
+                                      : DeviceService.devicePresent
+                                        ? "Zune visible to libusb"
+                                        : "No Zune visible to libusb"
                                 font.pixelSize: 14; font.weight: Font.Light
-                                color: DeviceService.devicePresent ? Theme.textPrimary : Theme.warning
+                                color: DeviceService.devicePresent && !usbAccessCol.blocked
+                                       ? Theme.textPrimary : Theme.warning
+                            }
+                            // The device id to pick in Zadig, copyable rather than
+                            // retyped: read-only selectable, same as the udev line.
+                            TextEdit {
+                                visible: usbAccessCol.blocked
+                                Layout.fillWidth: true
+                                readOnly: true
+                                selectByMouse: true
+                                text: DeviceService.usbAccessCommand
+                                font.family: "monospace"
+                                font.pixelSize: 9
+                                color: Theme.textDim
+                                wrapMode: TextEdit.WrapAnywhere
                             }
                             Text {
                                 Layout.fillWidth: true

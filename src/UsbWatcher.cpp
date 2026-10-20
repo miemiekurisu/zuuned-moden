@@ -1,5 +1,7 @@
 #include "UsbWatcher.h"
 
+#include "DevicePresence.h"
+
 #include <libusb.h>
 #include <cstdio>
 
@@ -7,11 +9,8 @@ namespace {
 constexpr uint16_t kZuneVid = 0x045e;
 
 bool isZunePid(uint16_t pid) {
-    // 0x0710 = Zune 4/8/16/30/80/120, 0x063e = Zune HD.
-    // 0x0711–0x0714 appear in recovery/other modes (the zune_usb DKMS
-    // module matches them too) — accept them so the UI can at least show
-    // presence.
-    return pid == 0x0710 || pid == 0x063e || (pid >= 0x0711 && pid <= 0x0714);
+    // One id set for the whole app, shared with the platform presence scan.
+    return Zuuned::isZuneUsbId(kZuneVid, pid);
 }
 
 // A libusb build without OS hotplug notifications still has to notice a Zune
@@ -36,12 +35,21 @@ void pollPresence(libusb_context *ctx, const std::atomic<bool> &stop,
             kIntervalMs, kZuneVid);
 
     bool present = false;
+    bool sighted = false;
     int absences = 0;
+    QString blockedDetail;   // what the platform last said about it; empty = nothing
+#ifdef Q_OS_WIN
+    // Every fourth pass is every two seconds: fast enough to notice a replug,
+    // slow enough to stay off the enumeration path.  Counted separately because
+    // only the passes where libusb saw nothing reach the platform scan.
+    constexpr int kPresenceScanEvery = 4;
+    unsigned passes = 0;
+#endif
     while (!stop) {
         libusb_device **devices = nullptr;
         const ssize_t found = libusb_get_device_list(ctx, &devices);
         if (found >= 0) {
-            bool sighted = false;
+            sighted = false;
             for (ssize_t i = 0; i < found && !sighted; ++i) {
                 libusb_device_descriptor desc{};
                 if (libusb_get_device_descriptor(devices[i], &desc) != 0)
@@ -54,12 +62,39 @@ void pollPresence(libusb_context *ctx, const std::atomic<bool> &stop,
                 present = true;
                 fprintf(stderr, "[usbwatcher] Zune arrived (poll)\n");
                 emit self->zuneArrived();
+                if (!blockedDetail.isEmpty()) {
+                    blockedDetail.clear();
+                    emit self->zuneUnblocked();
+                }
             } else if (absences >= kAbsencesBeforeLeft && present) {
                 present = false;
                 fprintf(stderr, "[usbwatcher] Zune left (poll)\n");
                 emit self->zuneLeft();
             }
         }
+
+#ifdef Q_OS_WIN
+        // libusb's silence here says nothing about the device, so ask Windows,
+        // and speak up only when the answer changes.  A Zune that gains a driver
+        // becomes visible to libusb on its own, which clears this through the
+        // arrival path above; a two-second cadence is fast enough to notice a
+        // replug and slow enough to stay off the enumeration path.
+        if (!sighted && ++passes % kPresenceScanEvery == 0) {
+            const Zuuned::ZuneSighting sighting = Zuuned::scanForZune();
+            const QString detail = Zuuned::describeSighting(sighting, sighted);
+            if (detail != blockedDetail) {
+                blockedDetail = detail;
+                if (sighting.present) {
+                    fprintf(stderr, "[usbwatcher] %s\n", qPrintable(detail));
+                    emit self->zuneBlocked(detail);
+                } else {
+                    fprintf(stderr, "[usbwatcher] no Zune devnode either\n");
+                    emit self->zuneUnblocked();
+                }
+            }
+        }
+#endif
+
         for (int waited = 0; waited < kIntervalMs && !stop; waited += 50)
             QThread::msleep(50);
     }

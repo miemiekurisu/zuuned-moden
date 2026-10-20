@@ -163,15 +163,15 @@ Each of those numbers has been wrong at some point during the port.
 Whether the built app is actually usable, as opposed to merely compiling: one
 instrumented launch per page (plus the device page with no device attached), the five
 settings tabs, both pinned chrome states, the compact Now Playing island reached by
-resizing a live window, the four command-line probes, a seek on the null audio
-driver, single-instance refusal, and before-and-after proof that the real profile
-stayed untouched.
+resizing a live window, the four command-line probes, a read-only account of what
+the machine can see about a Zune, a seek on the null audio driver, single-instance
+refusal, and before-and-after proof that the real profile stayed untouched.
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 ```
 
-Expected: `launches=15 checks=53 failures=0 skips=0 killed=0` and `OVERALL=ok`. It
+Expected: `launches=15 checks=59 failures=0 skips=0 killed=0` and `OVERALL=ok`. It
 needs the same MSVC environment as the build and compiles its own capture tool into
 `build\win-usability\`. `-Only fixture,pages` and similar run a subset - the phase
 list is comma-separated, and because the scratch tree is rebuilt on every run a page
@@ -181,9 +181,10 @@ one ends with a capture of the live window plus the app's own `--qa-probe` accou
 what it decided to show, because a Qt Quick window can come up with a clean stderr
 and paint nothing.
 
-The gate is software only and opens no USB, so it cannot certify the part that
-matters most on this platform: **no Zune has ever been connected to a Windows
-build**. `tests/win-usability/README.md` lists the phases and what they do not cover.
+The gate opens no USB device handle and calls no libzune function, so it cannot
+certify the part that matters most on this platform: **no Zune has ever been
+connected to a Windows build**. The `what is plugged in` phase reads presence only —
+what libusb enumerated, what the PnP manager reports, and whether the two agree. `tests/win-usability/README.md` lists the phases and what they do not cover.
 
 ### Path encodings on a non-English Windows
 
@@ -249,10 +250,31 @@ platform.
 
 ### Device access
 
-The Linux udev rules do nothing here. libusb on Windows needs the Zune
-interface bound to WinUSB before it can open the device (install the driver
-with Zadig); that binding step and everything behind it are untested on
-Windows.
+The Linux udev rules do nothing here, and a Zune plugged into a clean Windows
+machine has no driver at all: Windows enumerates it, marks it
+`CM_PROB_FAILED_INSTALL` (problem 28) and leaves it out of
+`libusb_get_device_list()` entirely, so libusb reports nothing rather than
+something useful.
+
+zuuned therefore asks the PnP manager as well as libusb (`src/DevicePresenceWin.cpp`,
+through `cfgmgr32`). A player that is on the bus but unopenable is named as such —
+status "Zune plugged in, but no driver zuuned can use" instead of the silent
+"waiting for a zune…" — and the device id to select in Zadig is printed where the
+Linux udev command would have been. Nothing is installed for you: bind WinUSB with
+the Zadig utility and replug. That binding step and everything behind it remain
+untested on Windows.
+
+`build\devicetool.exe` asks the same question in one command, with no app, no UI and
+no device handle:
+
+    build\devicetool.exe
+
+It prints both accounts and a verdict. On a machine holding a driver-less player the
+expected answer is `blocked`:
+
+    libusb_enumerated=1 libusb_devices=7 libusb_hotplug=0 libusb_sighted=0
+    os_supported=1 os_present=1 os_usable=0 os_problem=28
+    VERDICT=blocked
 
 ## Build the tester AppImage
 

@@ -38,6 +38,14 @@ class DeviceService : public QObject {
     // udev is a Linux concept. Every rule UI keys off this so Windows never
     // offers an install that could not possibly work there.
     Q_PROPERTY(bool udevRulesApply READ udevRulesApply CONSTANT)
+    // One view of "the Zune is here but zuuned cannot open it": a missing udev
+    // rule on Linux, a driver Windows never bound on Windows.  The fix-it card
+    // and Settings key off these instead of guessing which platform they run on.
+    Q_PROPERTY(bool usbAccessProblem READ usbAccessProblem NOTIFY usbAccessChanged)
+    Q_PROPERTY(bool usbAccessFixable READ usbAccessFixable CONSTANT)
+    Q_PROPERTY(QString usbAccessTitle READ usbAccessTitle NOTIFY usbAccessChanged)
+    Q_PROPERTY(QString usbAccessDetail READ usbAccessDetail NOTIFY usbAccessChanged)
+    Q_PROPERTY(QString usbAccessCommand READ usbAccessCommand NOTIFY usbAccessChanged)
     Q_PROPERTY(QString status READ status NOTIFY stateChanged)
     Q_PROPERTY(QString name READ name NOTIFY stateChanged)
     Q_PROPERTY(QString deviceSerial READ deviceSerial NOTIFY stateChanged)
@@ -120,6 +128,11 @@ public:
     bool udevRuleOk() const;
     QString udevInstallCommand() const;
     bool udevRulesApply() const;
+    bool usbAccessProblem() const;
+    bool usbAccessFixable() const;
+    QString usbAccessTitle() const;
+    QString usbAccessDetail() const;
+    QString usbAccessCommand() const;
     // W5/#28: install the udev rule with one click via pkexec — the
     // desktop's native password dialog, no terminal. Writes the rule,
     // reloads udev, and re-triggers so an already-plugged device picks
@@ -364,6 +377,7 @@ signals:
     void workerGrabPhotoThumb(quint32 itemId, const QString &cachePath);
     void udevRuleChanged();
     void udevRuleInstalled(bool ok, const QString &message);
+    void usbAccessChanged();
     void workerPurgeItems(const QVariantList &itemIds);
 
 private:
@@ -378,6 +392,11 @@ private:
     void onPurgeDone(int okCount, int failCount, const QVariantList &purgedIds);
     void onZuneArrived();
     void onZuneLeft();
+    // The operating system can see a Zune that libusb cannot (Windows with no
+    // driver bound).  Presence is then real but useless: say so, and do NOT
+    // schedule a breach into a device that cannot answer.
+    void onZuneBlocked(const QString &detail);
+    void onZuneUnblocked();
     void clearDeviceState();
     void requestImportedAlbumArt(quint32 itemId, const QString &artist,
                                  const QString &album);
@@ -389,6 +408,11 @@ private:
     bool m_connected = false;
     bool m_busy = false;
     bool m_devicePresent = false;
+    // Presence the operating system asserted while libusb stayed blind, and its
+    // evidence.  Kept apart from m_devicePresent so a real arrival is never
+    // mistaken for the blocked case, or the other way round.
+    QString m_usbBlockDetail;
+    bool m_blockedPresence = false;
     QString m_status = QStringLiteral("Waiting for a Zune…");
     QString m_name, m_model;
     QString m_serial;

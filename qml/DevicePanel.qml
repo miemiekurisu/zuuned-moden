@@ -1418,14 +1418,16 @@ Item {
                 wrapMode: Text.WordWrap
             }
 
-            // C3 fix-it card: a Zune is plugged in but the udev rule
-            // isn't installed — say so, with the exact fix, instead of
-            // letting a stranger stare at "waiting for a zune…".
+            // C3 fix-it card: a Zune is plugged in but zuuned cannot open it —
+            // the udev rule is missing on Linux, Windows never bound a usable
+            // driver.  Say so, with the exact fix for the platform we are on,
+            // instead of letting a stranger stare at "waiting for a zune…".
+            // Everything below reads DeviceService.usbAccess*, so no view has to
+            // know which of the two problems it is looking at.
             Rectangle {
                 visible: DeviceService.devicePresent
                          && !DeviceService.connected
-                         && !DeviceService.udevRuleOk
-                         && DeviceService.udevRulesApply
+                         && DeviceService.usbAccessProblem
                 Layout.fillWidth: true
                 Layout.topMargin: Theme.spaceMd
                 implicitHeight: udevCol.implicitHeight + Theme.spaceLg * 2
@@ -1448,7 +1450,7 @@ Item {
 
                     Text {
                         width: parent.width
-                        text: "your zune needs a USB permission rule"
+                        text: DeviceService.usbAccessTitle
                         font.pixelSize: 12
                         font.weight: Font.DemiBold
                         color: Theme.warning
@@ -1456,8 +1458,7 @@ Item {
                     }
                     Text {
                         width: parent.width
-                        text: "one click installs it — you'll get your system's "
-                              + "password prompt, no terminal needed."
+                        text: DeviceService.usbAccessDetail
                         font.pixelSize: 11
                         font.weight: Font.Light
                         color: Theme.textSecondary
@@ -1465,6 +1466,9 @@ Item {
                     }
 
                     Text {
+                        // Nothing to run by hand where the app can fix it in one
+                        // click, and nothing to click where it cannot.
+                        visible: DeviceService.usbAccessFixable
                         width: parent.width
                         text: udevCol.showManual ? "hide the manual command"
                                                 : "trouble? show the manual command"
@@ -1483,7 +1487,9 @@ Item {
                     }
 
                     // Primary action gets its own line, aligned to the right.
+                    // Hidden where one click could not possibly work (Windows).
                     Rectangle {
+                        visible: DeviceService.usbAccessFixable
                         anchors.right: parent.right
                         implicitWidth: fixLabel.implicitWidth + Theme.spaceXl
                         implicitHeight: fixLabel.implicitHeight + Theme.spaceLg
@@ -1509,8 +1515,10 @@ Item {
 
                     // Keep the long, selectable fallback command inside the
                     // panel instead of expanding the whole card off-screen.
+                    // On Windows this is the one part that is actionable: the
+                    // device id to pick in Zadig.  It needs no toggle.
                     ScrollView {
-                        visible: udevCol.showManual
+                        visible: udevCol.showManual || !DeviceService.usbAccessFixable
                         width: parent.width
                         height: Math.min(manualCommand.implicitHeight, Theme.spaceHuge * 3)
                         contentWidth: availableWidth
@@ -1522,7 +1530,7 @@ Item {
                             readOnly: true
                             selectByMouse: true
                             wrapMode: TextEdit.WrapAnywhere
-                            text: DeviceService.udevInstallCommand
+                            text: DeviceService.usbAccessCommand
                             font.family: "monospace"
                             font.pixelSize: 9
                             color: Theme.textPrimary

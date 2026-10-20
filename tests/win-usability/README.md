@@ -159,5 +159,23 @@ because a case can die halfway, the script carries a trap that closes every inst
 it started - an aborted run must not leave a live Zuuned holding a profile folder the
 next run intends to delete.
 
-No Zune has ever been connected to a Windows build, and nothing in this
-directory touches USB.
+## What is plugged in
+
+`devicetool.cpp` answers one question with no app, no UI and no USB device handle:
+can libusb reach a Zune, and can the operating system see one at all? On Windows
+those are different facts, because a player with no driver bound is enumerated by the
+PnP manager with `CM_PROB_FAILED_INSTALL` while `libusb_get_device_list()` does not
+contain it. The tool prints both accounts and a verdict — `agree`, `blocked`,
+`absent`, `contradictory` or `unknown` — and the `what is plugged in` phase
+(`-Only device`) holds them against a third, unrelated API, `Win32_PnPEntity`,
+including the exact instance id and problem code. Nothing asserts that a Zune *is*
+attached, so the phase tells the same truth on a machine with nothing plugged in.
+
+The honest verdict on the development machine today is `blocked`: a Zune HD is
+attached that Windows reports at problem 28 and libusb cannot open, and the scan
+names the same instance Windows names. A Zune 30 record from weeks ago is still in
+the registry, which is why the phase reports devnode records and attached devices as
+two numbers — `Win32_PnPEntity` hides that stale record and `Get-PnpDevice` does not.
+
+Seeing a device is not the same as driving one. The phase opens no handle, calls no
+libzune function, and **no Zune has ever been connected to a Windows build**.

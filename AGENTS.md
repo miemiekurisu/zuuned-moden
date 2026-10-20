@@ -53,15 +53,17 @@ header-only edit silently links a stale object: force a full rebuild, with
 `--clean-first`, after any header-only change until that changes.
 The Windows usability gate is finished and passing:
 `pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1` reports
-`launches=15 checks=53 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
+`launches=15 checks=59 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
 built app once per page (music, videos, photos, podcasts, audiobooks, and the device
 page with no device attached), the five settings tabs, the header pinned at 0 and at
 1, a queue played through the compact island after a real `winshot --move` resize, the
 four command-line probes, a silent `playertool` seek, single-instance refusal, and a
 before-and-after comparison of the real profile. `-Only` takes a comma list and pairs
 a phase with `fixture` because the scratch tree is rebuilt each run. It is software
-only and opens no USB: **no Zune has ever been connected to a Windows build**, and the
-device page is certified only in its healthy no-device state. `winshot`
+only: it opens no USB device handle and calls no libzune function, so **no Zune has
+ever been connected to a Windows build**. The device page is certified only in its
+healthy no-device state, and `what is plugged in` reads presence without touching the
+device. `winshot`
 captures what a live window actually paints, `--qa-probe` makes `qml/Main.qml`
 report the page, onboarding and island state it actually chose, and
 `inspect_scan_db.py` reports track, fingerprint, probe-failure and code-point
@@ -90,6 +92,30 @@ instance it started, because a harness that dies mid-case otherwise leaves a liv
 Zuuned holding a profile folder the next run intends to delete.
 Unrelated open item: the EnvironmentBackground spray halo shows a white-ring
 artifact under the Windows blur path; that file is still identical to HEAD.
+
+**2026-10-20 Windows device presence:** libusb on Windows cannot see a Zune that has
+no driver bound — a driver-less player is enumerated by the PnP manager with
+`CM_PROB_FAILED_INSTALL` (problem 28) and appears nowhere in
+`libusb_get_device_list()`, so "is the device there?" had no honest answer on this
+platform. `src/DevicePresence.{h,cpp}` asks both sources: libusb first, then, on
+Windows only, `src/DevicePresenceWin.cpp` through `cfgmgr32` when libusb is blind
+(`src/DevicePresenceUnix.cpp` keeps Linux answering from libusb alone, with the
+existing wording byte-identical). `UsbWatcher` gained a Windows-only `pollPresence`
+pass emitting `zuneBlocked(detail)`/`zuneUnblocked()`; a blocked sighting sets
+`DeviceService.devicePresent` and the status "Zune plugged in, but no driver zuuned
+can use" and deliberately schedules no breach. The fix-it card and Settings → Device
+now read `DeviceService.usbAccessTitle/Detail/Command/Fixable` instead of the
+udev-specific properties, so Windows names WinUSB and prints the exact device id to
+pick in Zadig where the Linux one-click command used to be; `usbAccessFixable` is
+`udevRulesApply`, and nothing here pretends to install a driver. `devicetool.exe`
+(`src/devicetool.cpp`) is that same question as one command, answering
+`agree`/`blocked`/`absent`/`contradictory`/`unknown`, and the gate phase
+`what is plugged in` (`-Only device`) holds it against `Win32_PnPEntity` for instance
+id and problem code without ever asserting that a Zune *is* attached — on this
+machine the honest verdict is `blocked`, at problem 28, with both APIs naming the
+same instance. Seeing is not driving: WinUSB binding through Zadig has still never
+been done here, and **no Zune has ever been opened, transferred to or read back from
+on Windows.**
 
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow

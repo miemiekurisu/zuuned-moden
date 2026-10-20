@@ -39,6 +39,7 @@ $exe = Join-Path $build 'zuuned.exe'
 $libraryTool = Join-Path $build 'librarytool.exe'
 $transcodeTool = Join-Path $build 'transcodetool.exe'
 $playerTool = Join-Path $build 'playertool.exe'
+$deviceTool = Join-Path $build 'devicetool.exe'
 $winshot = Join-Path $out 'winshot.exe'
 $python = (Get-Command python -ErrorAction SilentlyContinue)
 
@@ -772,6 +773,69 @@ if (Select-Phase 'tools') {
     $cust = Invoke-Proc -File $libraryTool -Arguments @('customize') -Timeout 900
     Check 'librarytool customize runs the v0/v2 to v9 migration chain' `
         ($cust.Code -eq 0 -and $cust.Out -match 'ALL PASS \(0 failures\)') ('code=' + $cust.Code)
+}
+
+Write-Host ''
+Write-Host '== what is plugged in'
+if (Select-Phase 'device') {
+    # Whether the app is telling the truth about the device is the one question a
+    # device-less gate usually waves away, and on Windows it is the question that
+    # bites first: a Zune with no driver bound is invisible to libusb while Windows
+    # still holds it on the bus.  devicetool asks libusb and the PnP manager, and
+    # Win32_PnPEntity is a third, unrelated API to hold them against each other.
+    # Nothing here asserts that a Zune IS attached, so the phase says the same true
+    # thing on a machine with nothing plugged in, which is what makes it portable.
+    if (-not (Test-Path -LiteralPath $deviceTool)) {
+        Skip 'devicetool' 'devicetool.exe is not in the build directory'
+    }
+    else {
+        $seen = Invoke-Proc -File $deviceTool -Timeout 120
+        $dev = $seen.Out
+        foreach ($line in ($dev -split '\r?\n')) {
+            if ($line.Trim()) { Write-Host ('  note ' + $line.Trim()) }
+        }
+        Check 'devicetool reads the bus and reaches a verdict' `
+            ($seen.Code -eq 0 -and $dev -match 'VERDICT=(agree|blocked|absent)') `
+            ('code=' + $seen.Code + ' ' + $dev.Trim())
+        Check 'libusb enumerated the bus' ($dev -match 'libusb_enumerated=1 libusb_devices=[1-9]') `
+            $seen.Err.Trim()
+
+        $osSees = [bool]($dev -match 'os_present=1')
+        $usbSees = [bool]($dev -match 'libusb_sighted=1')
+        $cim = @(Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
+            Where-Object { $_.DeviceID -match 'VID_045E&PID_(0710|063E|0711|0712|0713|0714)\\' -and
+                           $_.Present })
+        Check 'the devnode scan and Windows agree about whether a Zune is attached' `
+            ($osSees -eq ($cim.Count -gt 0)) `
+            ('scan_present=' + $osSees + ' wmi_present=' + ($cim.Count -gt 0))
+        Check 'a Zune libusb can open is one the platform sees too' `
+            (-not $usbSees -or $osSees) ('libusb_sighted=' + $usbSees + ' scan_present=' + $osSees)
+
+        if ($osSees -and $cim.Count -gt 0) {
+            $scanId = ''
+            if ($dev -match 'os_instance=(.+)') { $scanId = $Matches[1].Trim() }
+            Check 'the devnode scan names the device Windows names' `
+                ($scanId -eq [string]$cim[0].DeviceID) `
+                ('scan=' + $scanId + ' wmi=' + $cim[0].DeviceID)
+            $scanProblem = -1
+            if ($dev -match 'os_problem=(\d+)') { $scanProblem = [int]$Matches[1] }
+            Check 'the devnode scan reports the problem code Windows reports' `
+                ($scanProblem -eq [int]$cim[0].ConfigManagerErrorCode) `
+                ('scan=' + $scanProblem + ' wmi=' + $cim[0].ConfigManagerErrorCode)
+        }
+        else {
+            Skip 'the two checks that name a specific device' 'no Zune attached to compare'
+        }
+        # Records for hardware that left weeks ago are the trap here: a scan that
+        # counted them would report a Zune that nobody can touch.  Win32_PnPEntity
+        # hides precisely those records, so this count comes from Get-PnpDevice,
+        # the one API here that still sees a player unplugged weeks ago.  Reported
+        # rather than asserted, because a clean machine legitimately has none.
+        $records = @(Get-PnpDevice -ErrorAction SilentlyContinue |
+            Where-Object { $_.InstanceId -match 'VID_045E&PID_(0710|063E|0711|0712|0713|0714)\\' })
+        Write-Host ('  note devnode records Windows keeps: ' +
+            $records.Count + ', the scan counted as attached: ' + [int]$osSees)
+    }
 }
 
 Write-Host ''

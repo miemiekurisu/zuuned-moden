@@ -220,6 +220,8 @@ DeviceService::DeviceService(QObject *parent, bool watchDevice) : QObject(parent
         m_watcher = new UsbWatcher(this);
         connect(m_watcher, &UsbWatcher::zuneArrived, this, &DeviceService::onZuneArrived);
         connect(m_watcher, &UsbWatcher::zuneLeft, this, &DeviceService::onZuneLeft);
+        connect(m_watcher, &UsbWatcher::zuneBlocked, this, &DeviceService::onZuneBlocked);
+        connect(m_watcher, &UsbWatcher::zuneUnblocked, this, &DeviceService::onZuneUnblocked);
         m_watcher->start();
     }
 }
@@ -234,6 +236,13 @@ DeviceService::~DeviceService() {
 
 void DeviceService::onZuneArrived() {
     m_devicePresent = true;
+    // libusb can open it, which is the end of any access problem this platform
+    // was reporting.
+    if (!m_usbBlockDetail.isEmpty() || m_blockedPresence) {
+        m_usbBlockDetail.clear();
+        m_blockedPresence = false;
+        emit usbAccessChanged();
+    }
     if (m_awaitingDisconnect) {
         // Post-sync: the device may be re-indexing — do NOT breach into
         // it (mac connectDevice guards on awaitingDisconnect).
@@ -266,6 +275,50 @@ void DeviceService::onZuneLeft() {
     }
     clearDeviceState();
     m_status = QStringLiteral("Zune unplugged");
+    emit stateChanged();
+}
+
+void DeviceService::onZuneBlocked(const QString &detail) {
+    const QString next = detail.isEmpty()
+                             ? QStringLiteral("plugged in, but unusable")
+                             : detail;
+    const bool changed = next != m_usbBlockDetail;
+    m_usbBlockDetail = next;
+    if (m_connected || m_busy || m_awaitingDisconnect) {
+        // A transfer is live or the device is already ours: whatever Windows said,
+        // do not tear down a working connection over a devnode opinion.
+        if (changed)
+            emit usbAccessChanged();
+        return;
+    }
+    // Presence is honest here - the device IS on the bus - so the fix-it card can
+    // appear.  What must not happen is a breach: the watcher only reaches this
+    // path when libusb cannot even enumerate the thing, so there is nothing to
+    // open and a retry loop would just be noise.
+    m_blockedPresence = true;
+    m_devicePresent = true;
+    m_status = QStringLiteral("Zune plugged in, but no driver zuuned can use");
+    emit stateChanged();
+    if (changed)
+        emit usbAccessChanged();
+}
+
+void DeviceService::onZuneUnblocked() {
+    if (m_usbBlockDetail.isEmpty() && !m_blockedPresence)
+        return;
+    m_usbBlockDetail.clear();
+    const bool onlyBlockedPresence = m_blockedPresence;
+    m_blockedPresence = false;
+    emit usbAccessChanged();
+    if (!onlyBlockedPresence || m_connected || m_busy)
+        return;
+    // The blocked sighting is gone and libusb never had the device, so the
+    // truthful reading is that nothing usable is plugged in.  If Windows handed it
+    // to a real driver instead, zuneArrived() follows in a moment and puts
+    // presence back - the wording below holds either way.
+    m_devicePresent = false;
+    m_awaitingDisconnect = false;
+    m_status = QStringLiteral("Waiting for a Zune…");
     emit stateChanged();
 }
 
@@ -848,6 +901,40 @@ bool DeviceService::udevRulesApply() const {
 #endif
 }
 
+bool DeviceService::usbAccessProblem() const {
+    if (!m_usbBlockDetail.isEmpty())
+        return true;
+    return udevRulesApply() && !udevRuleOk();
+}
+
+bool DeviceService::usbAccessFixable() const {
+    // One click means pkexec plus a rule file this app owns.  Where that is not a
+    // thing - Windows - the card must not offer it.
+    return udevRulesApply();
+}
+
+QString DeviceService::usbAccessTitle() const {
+    if (!m_usbBlockDetail.isEmpty())
+        return QStringLiteral("your zune is plugged in but windows cannot use it");
+    return QStringLiteral("your zune needs a USB permission rule");
+}
+
+QString DeviceService::usbAccessDetail() const {
+    if (!m_usbBlockDetail.isEmpty())
+        return QStringLiteral("windows has not bound a driver zuuned can reach. give it "
+                              "WinUSB or libusbK with the Zadig utility, then replug. "
+                              "the device id below is what to pick there - zuuned never "
+                              "installs a driver itself.");
+    return QStringLiteral("one click installs it — you'll get your system's "
+                          "password prompt, no terminal needed.");
+}
+
+QString DeviceService::usbAccessCommand() const {
+    if (!m_usbBlockDetail.isEmpty())
+        return m_usbBlockDetail;
+    return udevInstallCommand();
+}
+
 QString DeviceService::udevInstallCommand() const {
     if (!udevRulesApply())
         return QString();
@@ -876,6 +963,7 @@ void DeviceService::installUdevRule() {
         const bool ok = (code == 0) && udevRuleOk();
         if (ok) {
             emit udevRuleChanged();
+            emit usbAccessChanged();
             emit udevRuleInstalled(true,
                 QStringLiteral("USB rule installed — replug the Zune if it "
                                "doesn't connect"));

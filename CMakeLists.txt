@@ -462,8 +462,36 @@ target_link_libraries(zuuned PRIVATE
     ${SQLITE3_LIBRARIES}
     zuuned_transcode
     zuuned_spoken
+    zuuned_presence
     ${ZUUNED_WINCOMPAT}
 )
+
+# ════════════════════════════════════════════════════════════
+# "Is a Zune plugged in, and may anyone open it?"  Not the same question on
+# every platform, and on Windows the two sources genuinely disagree (see
+# src/DevicePresence.h), so the answer is one small lib with one .cpp per
+# platform plus devicetool, the CLI that lets a script check it headlessly.
+# ════════════════════════════════════════════════════════════
+add_library(zuuned_presence STATIC
+    src/DevicePresence.cpp
+    src/DevicePresence.h
+)
+if(WIN32)
+    target_sources(zuuned_presence PRIVATE src/DevicePresenceWin.cpp)
+else()
+    target_sources(zuuned_presence PRIVATE src/DevicePresenceUnix.cpp)
+endif()
+target_include_directories(zuuned_presence PUBLIC src)
+target_link_libraries(zuuned_presence PUBLIC Qt6::Core)
+if(WIN32)
+    # Devnode enumeration lives in cfgmgr32.  Nothing else in the app touches
+    # the PnP manager, which keeps the device-side surface where it can be audited.
+    target_link_libraries(zuuned_presence PUBLIC cfgmgr32)
+endif()
+
+add_executable(devicetool src/devicetool.cpp)
+target_link_libraries(devicetool PRIVATE zuuned_presence Qt6::Core ${LIBUSB_LIBRARIES})
+target_include_directories(devicetool PRIVATE ${LIBUSB_INCLUDE_DIRS})
 
 # ═══════════════════════════════════════════════════════════════════
 # Phase 2: transcode layer (transcode/) — shared C logic with the mac
