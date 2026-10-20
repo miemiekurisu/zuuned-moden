@@ -144,6 +144,14 @@ byte-path open is inside Qt, the gate records it, and it costs a warm cache, not
 problem 28 with no driver bound, `devicetool` answers `blocked`, and nothing here has
 opened a device handle.
 
+**2026-10-20 Windows port checkpoint:** `docs/WINDOWS_PORT.md` is now the single
+status page for the port - toolchain, what the two software gates prove and what
+they explicitly do not. Keep it current whenever a Windows gate changes, and never
+state a Windows hardware capability: the open gates are driver binding, transfers
+and readback, real WASAPI output, hardware decode, a `spokenmediatool` gate and
+packaging. The port stays native MSVC - no WSL, MinGW or Cygwin - which is why the
+Linux line is unchanged by construction at this checkpoint rather than re-verified.
+
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow
 windows. Resizing an existing queue opens the island unless a builder is active;

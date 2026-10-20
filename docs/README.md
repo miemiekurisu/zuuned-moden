@@ -12,6 +12,7 @@ This application snapshot includes libzune as ordinary source files.
 | Download, launch and send a useful bug report | [Tester guide](../packaging/TESTER_README.md) |
 | Install device permissions or diagnose launch failure | [Tester installation](../packaging/TESTER_INSTALL.md) |
 | Compile the public application source | [Building](../BUILDING.md) |
+| Build or assess the Windows port | [Windows port status](WINDOWS_PORT.md) |
 | Supply authentication data for a source build | [Building with MTPZ](BUILD_WITH_MTPZ.md) |
 | Use libzune directly | [Library README](../libzune/README.md), [API reference](../libzune/docs/API_REFERENCE.md), [source index](../libzune/docs/TOC.md) |
 | Understand logs and debug reports | [Diagnostics](DIAGNOSTICS.md) |
@@ -48,6 +49,7 @@ for an older migrated executable. Preserve the recorded provenance limitations.
   [queue feedback](QUEUE_AND_FEEDBACK.md), [action rules](ACTION_AUDIT_FIXES.md).
 - Desktop integration: [native file dialogs](DESKTOP_FILE_DIALOGS.md),
   [compact playback layout and dismissal](PLAYER_LAYOUT_AUDIT_2026-10-12.md).
+- Windows: [native port status, what its gates prove and the outstanding device gate](WINDOWS_PORT.md).
 - Maintenance: [cleanup record](CODEBASE_CLEANUP.md), [feature scope](FEATURE_COMPLETION.md),
   [port plan](PORT_PLAN.md).
 - Spoken media implementation and remaining hardware gates: [podcasts, audiobooks and deferred HD artist backgrounds](SPOKEN_MEDIA_AND_DEVICE_ART.md).

@@ -496,8 +496,8 @@ target_include_directories(devicetool PRIVATE ${LIBUSB_INCLUDE_DIRS})
 # ═══════════════════════════════════════════════════════════════════
 # Phase 2: transcode layer (transcode/) — shared C logic with the mac
 # app, built against SYSTEM FFmpeg + LAME. Standalone static lib +
-# the transcodetool CLI gate. NOT yet linked into the zuuned app
-# (that lands with Phase 3's library scanner).
+# the transcodetool CLI gate.  The zuuned app links this library too, so
+# sync transcodes in-process instead of shelling out to the CLI gate.
 # ═══════════════════════════════════════════════════════════════════
 if(NOT WIN32)
     pkg_check_modules(FFMPEG REQUIRED
