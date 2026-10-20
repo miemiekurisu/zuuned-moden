@@ -178,6 +178,74 @@ now latches on the sync summary.  Both are accounted for in
 What this does not say: nobody has listened to either file.  Device-side
 playback stays its own gate, below.
 
+## The ordinary controls, both directions, in one sitting (2026-10-21)
+
+The `--qa-device` harness above puts one track on the wire because that is what
+a harness is for.  What a person does with the application is the rest of it,
+and the rest of it was then done by hand through the ordinary controls on the
+same machine and the same Pavo, against the build that carries MTPZ credentials.
+
+Two files went onto the queue from the Music page with `+ all music` - one from
+`E:/Temp/testmusic/QA Windows`, one from the folder named in Chinese - and
+`sync now` was the only command given:
+
+```
+[sync] retagged to ID3v2.3: E:/Temp/testmusic/QA Windows/Sine QA 440.mp3
+[sync] retagged to ID3v2.3: E:/Temp/testmusic/测试音乐/正弦 660.mp3
+[libzune] created album "QA Windows" by "Unknown Artist" (1 tracks, id=100663563)
+[libzune] created album "测试音乐" by "Unknown Artist" (1 tracks, id=100663564)
+[sync] forge done: 2 ok, 0 failed
+[libzune-finalize] 0x9108 result: 0 (0=ok)
+[libusb] closed
+```
+
+Two albums, the second named in Chinese, `2 ok, 0 failed`, and the device browser
+header counted from 187 tracks to 189 while the window stayed open - that number
+is the player's listing, not this app's idea of it.  The queue tab reads
+`last sync: 2 tracks` over `no items queued`.  Vendor finalise answered `0x9201`
+and `0x9202` with `0x2005` exactly as it does on Linux, CleanDataStore answered 0.
+
+The other direction was a right-click on a row of the device browser:
+`Save to Library` wrote 20,992,730 bytes to
+
+```
+C:\Users\Kurisu Chan\Music\Zuuned Imports\J. S. Bach\Messe in h-Moll, BWV 232\ Gloria- Cum Sancto Spiritu.mp3
+```
+
+and the library re-counted itself to `8 source rows, 6 displayed songs` and pulled
+the embedded artwork out of the file.  Three facts from that one file are worth
+keeping because none of them was expected:
+
+- the first four bytes on disk are `30 26 b2 75`, the ASF GUID, while the object
+  name the device gave ends `.mp3` - the WMA-inside-an-mp3 case the sync layer
+  already sniffs for.  A pull keeps the device's own name and the scanner judged
+  the payload, so the track indexed and gained art.  Anything that trusted the
+  extension would have called that file broken.
+- the album name the device reported ends in a space, visible in the app's own
+  log line as `.../Messe in h-Moll, BWV 232/ Gloria-...`.  A Windows directory
+  cannot keep a trailing space and the one on disk reads
+  `Messe in h-Moll, BWV 232`, so the name landed in the only spelling this
+  platform accepts.  Nothing was written back to the device to agree with it.
+- `~/Music/Zuuned Imports/...` in that same log line is
+  `src/diagnostics/Redactor.cpp` masking the home directory, not a mangled path:
+  the file sits where the row says it does.  The same false lead is recorded in
+  `docs/WINDOWS_COMPAT_AUDIT.md`.
+
+Settings said the rest without being asked: the Library tab lists both roots the
+way Windows spells them (`C:\Users\Kurisu Chan\Music\Zuuned Imports` and
+`E:\Temp\testmusic`), and the Health tab reads `Watch folders reachable` `2 of 2`
+and `Zune connected` `ready`.  Item 10 below says how far that display goes and
+which part of it still has no gate.
+
+One thing a finished sync still costs here: the panel reads `Disconnected - the
+Zune is re-indexing` and does not come back on its own.  `libusb_hotplug` reports
+no capability on this machine, so `src/UsbWatcher.cpp` polls the device list every
+500 ms for a change, and a player that re-indexes without leaving the bus gives it
+no arrival to act on.  `connect` brings it back and the browser fills in again.
+Recorded rather than fixed, and deliberately not worked around by force:
+`awaitingDisconnect` refuses to breach back in while the player re-indexes, on
+both platforms.
+
 ## Toolchain that works here
 
 - Qt 6.11.0 `msvc2022_64`.  `CMakeLists.txt` requires Qt 6.8, so this kit is
@@ -310,14 +378,22 @@ environment to reproduce them.
 9. Also recorded, not asserted: a GUI launch reaches musicbrainz.org for artwork
    discovery exactly as it does on Linux, and a 503 there is noise; a brand new
    profile legitimately shows onboarding rather than the requested page.
-10. Library folders display the way Qt spells a path internally -
-    `E:/Temp/testmusic`, not `E:\Temp\testmusic` - in Settings, in onboarding and
-    in the spoken-import pages, because nothing in `src/` or `qml/` has ever called
-    `QDir::toNativeSeparators()`.  Cosmetic here, invisible on Linux where the two
-    spellings are the same string, and a display-layer fix: the stored value, the
-    SQLite row and the scanner use one form on both platforms, and
-    `qml/OnboardingView.qml` removes a staged folder by comparing that very string,
-    so the conversion belongs at each label and nowhere else.
+10. Native path display is in and was read off the screen rather than gated.  A
+    library folder added as `E:\Temp\testmusic` now reads back
+    `E:\Temp\testmusic` and not `E:/Temp/testmusic`, in Settings, in
+    onboarding and in the spoken-import pages: every one of those labels goes
+    through `PathText::display()` (`src/PathText.h:49`) or prints the string it
+    produced: the `displayPath` a Settings row builds
+    (`src/LibraryService.cpp:1090`) and the watch-folder row that renders it
+    (`qml/SettingsPage.qml:761`), `qml/SettingsPage.qml:600`,
+    `qml/OnboardingView.qml:1822` and both lists in
+    `qml/SpokenFolderImport.qml:61`, with `src/LibraryService.cpp:2268` for
+    the offline-folder detail line.  Storage is deliberately untouched: SQLite, the
+    scanner and the QML row filters keep Qt's forward-slash spelling, which is
+    what makes the repair in `docs/WINDOWS_COMPAT_AUDIT.md` and the
+    `watch_folder_repair` gate possible at all.  What remains is the assertion,
+    not the fix - both gates read a stored path at tool level and nothing reads
+    the string a label decided to show.
 
 ## Order to close it in
 
@@ -334,5 +410,6 @@ environment to reproduce them.
 4. Add the remaining software gates: audible (unmuted) playback and a
    `spokenmediatool` phase.  Measure NVDEC against software on a real 1080p item before
    quoting a speed-up for Windows.
-5. Native Windows path display for library folders - item 10 above.
+5. Give the native path display an assertion of its own - item 10 above is a
+   fix read off the screen, which is the weakest evidence in this document.
 6. Only then talk about Windows packaging or a Windows release channel.

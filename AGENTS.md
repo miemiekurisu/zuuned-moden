@@ -166,10 +166,11 @@ below.
 status page for the port - toolchain, what the two software gates prove and what
 they explicitly do not. Keep it current whenever a Windows gate changes, and never
 state a Windows hardware capability the page has no capture of: since the hardware
-checkpoint the closed gates are driver binding, enumeration, hotplug and the music
-library read; the open ones are MTPZ authentication, transfers, readback and
-deletion, audible audio, a `spokenmediatool` gate, native path display and
-packaging. The only Windows audio fact this checkpoint states is that a muted
+checkpoint the closed gates are driver binding, enumeration, hotplug, the music
+library read, MTPZ authentication, one music send with byte readback, the same two
+directions through the ordinary controls, and native path display; the open ones
+are deletion, the podcast, audiobook, photo and video categories, every model but
+this Pavo, audible audio, a `spokenmediatool` gate and packaging. The only Windows audio fact this checkpoint states is that a muted
 audible `playertool` run binds WASAPI, as mpv reports through its
 `current-ao` property; nothing has been listened to. The decode fact is narrower and
 measured: forcing software mode opens one decoder with no accelerator and a first frame
@@ -219,12 +220,30 @@ appears to do nothing, prove the object is new before believing the diagnosis.  
 read a device interface GUID from the devnode's `Device Parameters` key, not from
 `DEVPKEY_Device_DeviceInterfaceGuids`, which is empty on a player that opens
 perfectly well - `check-driver.ps1` now falls back and prints which source answered.
-Next Windows gate: a build carrying MTPZ credentials (`docs/BUILD_WITH_MTPZ.md`),
-because every write path is unreachable without it.  After that, native Windows path
-display: a library folder added as `E:\Temp\testmusic` still shows as
-`E:/Temp/testmusic`, since nothing in `src/` or `qml/` has ever called
-`QDir::toNativeSeparators()`; fix it at the labels, because
-`qml/OnboardingView.qml` compares that same string to remove a staged folder.
+Both gates that paragraph ended on closed the same day: the development build now
+carries MTPZ credentials and every write path became reachable, and the path labels
+go through `PathText::display()`, so a folder added as `E:\Temp\testmusic` reads
+back with backslashes while SQLite keeps the one forward-slash identity that
+`qml/OnboardingView.qml` compares.
+
+**2026-10-21 Windows GUI checkpoint - both directions through the ordinary controls:**
+on the build that carries MTPZ credentials, `+ all music` then `sync now` from the Music
+page put two tracks on a Zune HD - `forge done: 2 ok, 0 failed`, one of the two albums
+named in Chinese, and the device browser header going from 187 tracks to 189 - and a
+right-click `Save to Library` on a device row wrote 20,992,730 bytes into
+`Music\Zuuned Imports`, where the file indexed and gave up its embedded art. Two facts
+from that one download are worth carrying: its first four bytes are the ASF GUID behind
+an `.mp3` name the device itself supplied, and its album directory lost a trailing space
+that Windows will not store. A pull keeps the device name and judges the payload. Health
+reads `Watch folders reachable 2 of 2` and both roots display natively. **Nobody has
+listened to anything**: device-side playback, deletion, the spoken and photo/video
+categories and every model but this Pavo stay open, and none of it is inherited from
+Linux. A finished sync also leaves the panel on `Disconnected - the Zune is
+re-indexing` until `connect` is clicked - `libusb_hotplug` reports no capability here, so
+`src/UsbWatcher.cpp` polls for a device-list change and a player that re-indexes without
+leaving the bus produces no arrival. Gates at this checkpoint: `171 checks, 0 failures,
+0 skips` from `tests/win-compat` and `launches=17 checks=90 failures=0 skips=0 killed=0`
+from `tests/win-usability`.
 
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow
