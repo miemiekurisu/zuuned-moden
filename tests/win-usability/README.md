@@ -71,15 +71,53 @@ silent unless asked, on either platform.
 
 ## Status
 
-`winshot` and the two companions above work.  `run.ps1` is the launch gate being
-written around them and is **not finished**: it implements the capture-tool phase,
-then prints the cases it still owes and exits non-zero, so a partial run cannot be
-read as a green light.  What it still owes is one case per `--page`, the five
-settings tabs, both collapse states, the CJK and long-path `librarytool scan`
-fixture, `transcodetool probe`, a silent `playertool` seek, single-instance
-refusal, session-log creation and settings persistence, and a before-and-after
-comparison of the real profile - each asserting a painted frame plus a stderr free
-of `qml:`/`TypeError`/`ReferenceError`.
+`run.ps1` is that gate and it is complete.  An unfiltered run makes fifteen
+instrumented launches plus the tool probes and ends `launches=15 checks=53
+failures=0 skips=0 killed=0` and `OVERALL=ok`:
+
+    pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
+
+Phases run in this order.  `-Only` takes a comma list, and the scratch tree is
+rebuilt at the start of every run, so pair a phase with `fixture` whenever it needs
+the seeded library (`-Only fixture,pages`).
+
+- `winshot` - compiles this tool into `build\win-usability\` and proves the build
+  left no incremental `vc140.pdb` in the checkout.  Built on every run, filtered or
+  not, for the run deletes the scratch tree first.
+- `fixture` - the fixture, a real `librarytool scan` over it, and the inspector: four
+  tracks, four fingerprints, zero probe failures, the Chinese album folder and a path
+  past 260 characters present in the database.  Also seeds the library the page cases
+  copy into their profiles.
+- `pages` - one launch each for music, videos, photos, podcasts and audiobooks with
+  the seeded library, plus the device page with no device attached.  Every one ends
+  with a capture, a paint verdict and the app's own `[qa]` report.
+- `settings` - the five settings tabs, each proving it is on the settings page.
+- `collapse` - the header pinned at 0 and at 1, with the value the window reports.
+- `compact` - one real file in the queue, then `winshot --move` through tall, narrow
+  and tall again, reading the app's own ribbon and island state at each stage: the
+  ribbon is retired below the headroom breakpoint, a queue plays through the island,
+  growing the window brings the ribbon back, and shrinking it retires the ribbon with
+  the island already up.
+- `tools` - `transcodetool probe` on a real MP3 and on a WMA stream named `.mp3`,
+  `librarytool names`, `librarytool customize`.
+- `seek` - `playertool seek` and `play`, on the null audio driver.
+- `single` - a second instance pointed at the same profile and the same lock suffix
+  refuses in its own words and never builds a scene, while the holder keeps its window
+  and still closes politely.
+- `profile` - session log, settings ini, both databases, the instance lock and the Qt
+  pipeline cache inside the profile, and the real profile unchanged before and after.
+
+Four things it cannot certify, and does not claim to:
+
+- **No Zune has ever been connected to a Windows build.**  Nothing here opens USB,
+  and the device page is checked only in its healthy no-device state.
+- Dismissing the Now Playing island by clicking its X needs a mouse.  The gate proves
+  the island opens on resize and that the ribbon retires and returns with the window.
+- Nothing needs the network, but a GUI launch does reach musicbrainz.org for artwork
+  discovery exactly as it does on Linux, and a 503 there is recorded, not asserted.
+- On a 1080p-class logical desktop the default 1280x800 window is already below
+  `Theme.headroomCompactBelow`, so the compact island is the ordinary Windows view and
+  the top ribbon needs an enlarged window by design.
 
 Profile isolation, the piece that made any of that impossible to run honestly, is
 now in place.  Every profile-owned path in the application goes through
@@ -89,6 +127,14 @@ folder; a probe run proved that while the real `%APPDATA%\Zuuned` stayed
 untouched.  `ZUUNED_LOCK_SUFFIX` isolates the single-instance lock so an
 instrumented instance can run beside the daily one, `ZUUNED_MPV_AO=null` keeps it
 silent, and with the variables unset every path stays where Qt would put it.
+
+Qt's automatic shader/pipeline cache is the one profile file this application does
+not open itself: Qt6Quick asks `QStandardPaths::CacheLocation` directly, so it wrote
+into the real `%LOCALAPPDATA%` while the rest of the profile was elsewhere.
+`src/main.cpp` now names `QSG_RHI_PIPELINE_CACHE_LOAD` and `QSG_RHI_PIPELINE_CACHE_SAVE`
+inside the profile whenever `ZUUNED_PROFILE_DIR` is set.  A brand new profile logs one
+`Could not open pipeline cache source file` warning before Qt has written that file
+once: expected, recorded, and the price of leaving the real cache alone.
 
 Three probe findings shape the gate.  A fresh profile shows the onboarding wizard
 instead of the requested `--page`, so a page case has to dismiss onboarding first
@@ -105,6 +151,13 @@ see - one probe found no handle on 30 consecutive healthy launches, while
 route answered.  For the same reason `Stop-Zuuned` reports `124` rather than
 `ExitCode` after it had to destroy a process: a killed app must not be able to
 report a clean shutdown.
+
+A handle above 0x7FFFFFFF is the same trap somewhere else: it arrives negative from
+`Process.MainWindowHandle` and positive from `winshot --pid`, so widening it has to
+mask rather than cast, and only a run that needed the pid scan could find that.  And
+because a case can die halfway, the script carries a trap that closes every instance
+it started - an aborted run must not leave a live Zuuned holding a profile folder the
+next run intends to delete.
 
 No Zune has ever been connected to a Windows build, and nothing in this
 directory touches USB.

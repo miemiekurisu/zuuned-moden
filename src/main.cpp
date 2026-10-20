@@ -93,6 +93,24 @@ int main(int argc, char *argv[]) {
     // OpenGL-only — pin the RHI backend before any window exists.
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 
+    // Qt's automatic shader/pipeline cache is the one profile file this binary
+    // does not open: Qt6Quick asks QStandardPaths::CacheLocation directly, so it
+    // would land in %LOCALAPPDATA%\Zuuned even when ZUUNED_PROFILE_DIR put the
+    // rest of the profile elsewhere.  Name both ends of it explicitly so a
+    // throwaway profile neither reads nor writes the real one's cache.  The
+    // filename matches Qt's own per-backend name; OpenGL is pinned above, so it
+    // is the only backend this process can have.  A brand new profile logs one
+    // "Could not open pipeline cache source file" warning before Qt has written
+    // the file once: that is the isolation working, not a fault.  With
+    // ZUUNED_PROFILE_DIR unset nothing here runs and Qt keeps its default.
+    if (!Zuuned::ProfilePaths::root().isEmpty()) {
+        const QString pipelineCache = Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation)
+                                      + QStringLiteral("/qqpc_opengl");
+        qputenv("QSG_RHI_PIPELINE_CACHE_LOAD", pipelineCache.toUtf8());
+        qputenv("QSG_RHI_PIPELINE_CACHE_SAVE", pipelineCache.toUtf8());
+        std::fprintf(stderr, "[profile] Qt pipeline cache goes to \"%s\"\n", qPrintable(pipelineCache));
+    }
+
     QGuiApplication app(argc, argv);
     app.setApplicationName("Zuuned");
     app.setOrganizationName("Zuuned");

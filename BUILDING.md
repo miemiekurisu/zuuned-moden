@@ -54,8 +54,8 @@ and hardware checks on that machine, but it is not the distributable AppImage.
 
 ## Build on Windows
 
-The Windows port compiles and runs natively with MSVC, and its software gate
-passes, but it has **not been tested against a real Zune device on Windows
+The Windows port compiles and runs natively with MSVC, and its two software gates
+pass, but it has **not been tested against a real Zune device on Windows
 yet**. Every libusb path, the WinUSB driver binding and all transfers are still
 unverified on this platform. Treat the outputs as development builds.
 
@@ -157,6 +157,33 @@ characters, the scan exits 0 reporting `4 tracks added`, and the inspector repor
 `fingerprints=4 probe_failures=0 codepoint_path_rows=1 OVERALL=ok`. The stored path
 is a little shorter than the one on disk because the folder was given relative.
 Each of those numbers has been wrong at some point during the port.
+
+### Windows usability gate
+
+Whether the built app is actually usable, as opposed to merely compiling: one
+instrumented launch per page (plus the device page with no device attached), the five
+settings tabs, both pinned chrome states, the compact Now Playing island reached by
+resizing a live window, the four command-line probes, a seek on the null audio
+driver, single-instance refusal, and before-and-after proof that the real profile
+stayed untouched.
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
+```
+
+Expected: `launches=15 checks=53 failures=0 skips=0 killed=0` and `OVERALL=ok`. It
+needs the same MSVC environment as the build and compiles its own capture tool into
+`build\win-usability\`. `-Only fixture,pages` and similar run a subset - the phase
+list is comma-separated, and because the scratch tree is rebuilt on every run a page
+phase has to be paired with `fixture`. Each launch gets its own
+`ZUUNED_PROFILE_DIR`, its own `ZUUNED_LOCK_SUFFIX` and `ZUUNED_MPV_AO=null`, and every
+one ends with a capture of the live window plus the app's own `--qa-probe` account of
+what it decided to show, because a Qt Quick window can come up with a clean stderr
+and paint nothing.
+
+The gate is software only and opens no USB, so it cannot certify the part that
+matters most on this platform: **no Zune has ever been connected to a Windows
+build**. `tests/win-usability/README.md` lists the phases and what they do not cover.
 
 ### Path encodings on a non-English Windows
 

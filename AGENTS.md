@@ -51,21 +51,43 @@ this locale-936 machine `cl.exe /showIncludes` emits its note in UTF-8 while
 Ninja matches only the English text, so `ninja -t deps` reports `#deps 0` and a
 header-only edit silently links a stale object: force a full rebuild, with
 `--clean-first`, after any header-only change until that changes.
-Windows usability testing is under way in `tests/win-usability/`: `winshot`
+The Windows usability gate is finished and passing:
+`pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1` reports
+`launches=15 checks=53 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
+built app once per page (music, videos, photos, podcasts, audiobooks, and the device
+page with no device attached), the five settings tabs, the header pinned at 0 and at
+1, a queue played through the compact island after a real `winshot --move` resize, the
+four command-line probes, a silent `playertool` seek, single-instance refusal, and a
+before-and-after comparison of the real profile. `-Only` takes a comma list and pairs
+a phase with `fixture` because the scratch tree is rebuilt each run. It is software
+only and opens no USB: **no Zune has ever been connected to a Windows build**, and the
+device page is certified only in its healthy no-device state. `winshot`
 captures what a live window actually paints, `--qa-probe` makes `qml/Main.qml`
 report the page, onboarding and island state it actually chose, and
 `inspect_scan_db.py` reports track, fingerprint, probe-failure and code-point
-counts from a scan database. `run.ps1` is the gate being written around them and
-is deliberately incomplete: it implements the capture-tool phase, prints the
-outstanding cases and exits non-zero, so a partial run cannot be mistaken for a
-passed Windows gate.  Two harness faults found there are worth remembering because
-both blame the app for a bug in the test: PowerShell 7 caches
+counts from a scan database.
+Two harness faults found there are worth remembering because both blame the
+app for a bug in the test: PowerShell 7 caches
 `Process.MainWindowHandle` after the first zero read, so an instrumented launch
 whose property was polled during the splash looks like a windowless hang (30 of 30
 healthy launches looked that way), and `Process.Kill()` leaves the caller reading an
 exit code the application never chose, so a destroyed app looks like it exited
 cleanly.  The window is now resolved by process id through `winshot --pid`, which
 route answered is recorded, and a forced kill is reported as `124`.
+Four more findings from finishing it. Qt's automatic shader/pipeline cache asks
+`QStandardPaths::CacheLocation` from inside Qt6Quick, so it ignored
+`ZUUNED_PROFILE_DIR` and wrote into the real profile; `src/main.cpp` now sets
+`QSG_RHI_PIPELINE_CACHE_LOAD`/`_SAVE` inside the profile whenever that variable is
+set, and a brand new profile logs one expected
+`Could not open pipeline cache source file` warning before Qt has written the file.
+An `HWND` above 0x7FFFFFFF arrives negative from `Process.MainWindowHandle` and
+positive from `winshot --pid`, so widening it must mask rather than cast through
+`[int]`, and only a run that needed the pid scan could ever show that. The
+single-instance lock lives *inside* the profile, so a refusal test that hands the
+rival a second profile proves nothing but the test; the rival has to name the same
+profile and the same suffix. And the gate now carries a `trap` that closes every
+instance it started, because a harness that dies mid-case otherwise leaves a live
+Zuuned holding a profile folder the next run intends to delete.
 Unrelated open item: the EnvironmentBackground spray halo shows a white-ring
 artifact under the Windows blur path; that file is still identical to HEAD.
 
