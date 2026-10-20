@@ -1,4 +1,5 @@
 #include "LibraryDb.h"
+#include "../ProfilePaths.h"
 #include <QJsonDocument>
 #include <QJsonObject>
 
@@ -210,7 +211,7 @@ bool LibraryDb::open(const QString &path) {
     QString dbPath = path;
     if (dbPath.isEmpty()) {
         const QString dir =
-            QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+            Zuuned::ProfilePaths::writableLocation(QStandardPaths::AppDataLocation);
         QDir().mkpath(dir);
         dbPath = dir + QStringLiteral("/library.db");
     }

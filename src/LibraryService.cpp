@@ -1,4 +1,5 @@
 #include "LibraryService.h"
+#include "ProfilePaths.h"
 
 #include "library/AlbumArtService.h"
 #include "library/OnlineAlbumArtService.h"
@@ -200,7 +201,7 @@ LibraryService::LibraryService(QObject *parent) : QObject(parent) {
 
     // ── Video matcher (own thread — blocking TMDB client) ──
     m_matcher = new VideoMatcher(
-        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+        Zuuned::ProfilePaths::writableLocation(QStandardPaths::AppDataLocation)
         + QStringLiteral("/library.db"));
     m_matcher->moveToThread(&m_matcherThread);
     connect(&m_matcherThread, &QThread::finished, m_matcher, &QObject::deleteLater);
@@ -384,7 +385,7 @@ void LibraryService::recordArtworkResult(const QString &kind, const QVariantMap 
     if (prior == stored) return;
     stored.insert("recordedAt", QDateTime::currentMSecsSinceEpoch());
     stored.insert("revision", QVariant::fromValue(++m_artworkResultRevision));
-    const QString dbPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/library.db");
+    const QString dbPath = Zuuned::ProfilePaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/library.db");
     auto *watcher = new QFutureWatcher<bool>(this);
     connect(watcher, &QFutureWatcher<bool>::finished, this, [watcher] {
         if (!watcher->result()) fprintf(stderr, "[artwork] discovery state not saved; it will be checked again next session\n");
@@ -1402,7 +1403,7 @@ QVariantList LibraryService::playlistTracks(double id) {
 // ═══ Videos ═══
 
 QString LibraryService::stillsCacheDir() const {
-    return QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+    return Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation)
         + QStringLiteral("/stills");
 }
 
@@ -1474,7 +1475,7 @@ void LibraryService::runProbeRound() {
 
     m_probeBusy = true;
     const QString dbPath =
-        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+        Zuuned::ProfilePaths::writableLocation(QStandardPaths::AppDataLocation)
         + QStringLiteral("/library.db");
 
     auto future = QtConcurrent::run([todo, dbPath] {
@@ -1637,8 +1638,7 @@ void LibraryService::setVideoCustomArt(const QVariantList &ids,
     }
     if (img.width() > 780)
         img = img.scaledToWidth(780, Qt::SmoothTransformation);
-    const QString dir = QStandardPaths::writableLocation(
-        QStandardPaths::CacheLocation) + QStringLiteral("/vidthumbs");
+    const QString dir = Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/vidthumbs");
     QDir().mkpath(dir);
     const qint64 key = qint64(ids.first().toDouble());
     const QString dest = dir + QStringLiteral("/custom_%1.jpg").arg(key);
@@ -1929,8 +1929,7 @@ void LibraryService::fetchArtCandidates(const QString &kind,
 void LibraryService::fetchFrameGrabs(double videoId, const QString &filepath,
                                      int durationMs) {
     const qint64 id = qint64(videoId);
-    const QString dir = QStandardPaths::writableLocation(
-        QStandardPaths::CacheLocation) + QStringLiteral("/vidthumbs");
+    const QString dir = Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/vidthumbs");
     QDir().mkpath(dir);
     QString fp = filepath;
     if (fp.startsWith(QLatin1String("file://")))
@@ -2095,7 +2094,7 @@ void LibraryService::assignTmdbResult(const QVariantList &ids, int tmdbId,
         return;
 
     const QString thumbsDir =
-        QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+        Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation)
         + QStringLiteral("/vidthumbs");
 
     auto future = QtConcurrent::run([tmdbId, tv, thumbsDir] {
@@ -2301,13 +2300,13 @@ static QString humanWhen(const QDateTime &dt) {
 }
 
 static QString backupDir() {
-    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+    return Zuuned::ProfilePaths::writableLocation(QStandardPaths::AppDataLocation)
            + QStringLiteral("/backups");
 }
 
 QString LibraryService::backupDatabase() {
     const QString dbPath =
-        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+        Zuuned::ProfilePaths::writableLocation(QStandardPaths::AppDataLocation)
         + QStringLiteral("/library.db");
     if (!QFileInfo::exists(dbPath))
         return QString();
@@ -2559,7 +2558,7 @@ void LibraryService::requestCustomizeArt(const QString &requestId, const QString
             break;
         }
     }
-    const QString cache = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    const QString cache = Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation);
     auto *watcher = new QFutureWatcher<CustomizeLookup>(this);
     connect(watcher, &QFutureWatcher<CustomizeLookup>::finished, this, [this, watcher, requestId] {
         const auto result = watcher->result();
@@ -2709,9 +2708,9 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
         emit customizationFinished(requestId, false, QStringLiteral("This item is no longer in the library."));
         return;
     }
-    const QString dbPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+    const QString dbPath = Zuuned::ProfilePaths::writableLocation(QStandardPaths::AppDataLocation)
         + QStringLiteral("/library.db");
-    const QString cache = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    const QString cache = Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation);
     m_customizationBusy = true;
     if (music) m_onlineAlbumArt->setPaused(true);
     if (kind == QLatin1String("artist")) {

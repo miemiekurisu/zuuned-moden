@@ -8,6 +8,7 @@
 #endif
 
 #include "OnlineAlbumArtService.h"
+#include "../ProfilePaths.h"
 #include "AlbumArtService.h"
 #include "MusicIdentityClient.h"
 #include <QBuffer>
@@ -56,7 +57,7 @@ bool install(const QByteArray &bytes, const QString &path, bool &published) {
 }
 
 OnlineAlbumArtService::OnlineAlbumArtService(QObject *parent)
-    : OnlineAlbumArtService(Resolve{}, QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+    : OnlineAlbumArtService(Resolve{}, Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation)
                            + QStringLiteral("/art"), parent) {
     m_download = [](const QUrl &url) { return ArtworkHttp::getBody(url, false); };
     m_typedResolve = [](const QString &artist, const QString &album, const QVariantMap &context) {

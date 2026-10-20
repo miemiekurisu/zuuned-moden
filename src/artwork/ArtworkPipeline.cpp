@@ -8,6 +8,7 @@
 #endif
 
 #include "ArtworkPipeline.h"
+#include "../ProfilePaths.h"
 
 #include <QBuffer>
 #include <QCache>
@@ -332,7 +333,7 @@ public:
     Impl(Pipeline *owner, Config config, Renderer renderer) : owner(owner)
     {
         if (config.cacheDirectory.isEmpty())
-            config.cacheDirectory = QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+            config.cacheDirectory = Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation)
                 + QStringLiteral("/printed-art");
         config.cacheDirectory = QDir(config.cacheDirectory).absolutePath();
         config.workers = std::clamp(config.workers, 1, 2);

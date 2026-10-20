@@ -22,8 +22,23 @@ legacy fixture now rewinds the v6 probe columns, v7 photo-album tables and the
 v9 fingerprint, so the whole v0/v2 to v9 migration chain is exercised there
 (`ci/check.sh` itself stays Linux-only). Settings are an ini in
 `%APPDATA%\Zuuned`, not the registry, with a one-time import of any older
-`HKCU\Software\Zuuned\Zuuned` values, so a Windows profile is as inspectable and
-isolatable as `$HOME` on Linux.
+`HKCU\Software\Zuuned\Zuuned` values, so a Windows profile is as inspectable as
+`$HOME` on Linux. For isolation `ZUUNED_PROFILE_DIR` names one folder that owns
+every profile file - library and spoken databases, artwork and thumbnail caches,
+session logs, the single-instance lock and the settings ini - because
+`QStandardPaths` asks the shell known folders and ignores
+`LOCALAPPDATA`/`APPDATA` overrides, so an instrumented Windows launch would
+otherwise read and write the real profile and lose the log-capture lock to the
+instance already running. Only locations a profile owns are redirected: the
+user's music, video, picture and document folders plus the temp dir and home pass
+through to Qt, and with the variable unset every call is exactly what Qt returns,
+so the Linux line and its gates keep their behaviour. The implementation is
+header-only `inline` on purpose because `src/library/LibraryDb.cpp` is also
+compiled stand-alone by Linux gate scripts, which a separate translation unit
+would break.
+Windows usability testing is under way in `tests/win-usability/`, where `winshot`
+captures what a live window actually paints; the capture eye and the profile
+lever exist, the launch gate that drives them does not yet.
 Unrelated open item: the EnvironmentBackground spray halo shows a white-ring
 artifact under the Windows blur path; that file is still identical to HEAD.
 

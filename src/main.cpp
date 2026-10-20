@@ -23,6 +23,7 @@
 #include "ZuunedBuildInfo.h"
 
 #include "ApplicationIdentity.h"
+#include "ProfilePaths.h"
 #include "AppSettings.h"
 #include "GrungeMaskProvider.h"
 #include "LibraryService.h"
@@ -66,9 +67,14 @@ int main(int argc, char *argv[]) {
     // profile, so the only values to honour are pre-file ones (see below).
     QSettings::setDefaultFormat(QSettings::IniFormat);
 #endif
+    // ZUUNED_PROFILE_DIR, when set, owns every profile file including the
+    // settings file from here on, before the first QSettings object exists.  It
+    // has to follow setDefaultFormat, which decides the file the path applies
+    // to.  Unset, this is a no-op and the platform layout is exactly as before.
+    Zuuned::ProfilePaths::applySettingsPath();
     auto &sessionLog = Zuuned::Diagnostics::SessionLog::instance();
     sessionLog.setRedactionContext(DiagnosticsService::redactionContext());
-    const QString logRoot = QStandardPaths::writableLocation(QStandardPaths::StateLocation);
+    const QString logRoot = Zuuned::ProfilePaths::writableLocation(QStandardPaths::StateLocation);
     if (!sessionLog.start(logRoot.isEmpty() ? QString() : logRoot + QStringLiteral("/logs")))
         std::fprintf(stderr, "[diagnostics] Local logs unavailable: %s\n", qUtf8Printable(sessionLog.error()));
     struct LogLifetime {
@@ -140,7 +146,7 @@ int main(int argc, char *argv[]) {
     // C2: single instance. Two instances share the library DB and fight
     // over the USB claim — a data hazard, not a convenience question.
     const QString runDir =
-        QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+        Zuuned::ProfilePaths::writableLocation(QStandardPaths::RuntimeLocation);
     // Test harness (scale profiles): ZUUNED_LOCK_SUFFIX isolates the
     // lock so an instrumented instance can run beside the daily one.
     QLockFile instanceLock(

@@ -8,6 +8,7 @@
 #endif
 
 #include "ArtistImageService.h"
+#include "../ProfilePaths.h"
 #include "MusicIdentityClient.h"
 
 #include <QBuffer>
@@ -63,7 +64,7 @@ bool installAutomaticPortrait(const QByteArray &bytes, const QString &destinatio
 
 ArtistImageService::ArtistImageService(QObject *parent)
     : ArtistImageService(Resolve{}, [](const QUrl &url) { return ArtworkHttp::getBody(url, false); },
-        QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/artistart"), parent) {
+        Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/artistart"), parent) {
     m_typedResolve = [](const QString &name, const QVariantMap &context) {
         const auto result = MusicIdentityClient().resolveArtistArtwork(name, context);
         return QVariantMap{{"status", result.status}, {"reason", result.reason},

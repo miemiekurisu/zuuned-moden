@@ -143,11 +143,20 @@ including the pre-migration backup). Both pass; neither touches a device.
 
 A Windows Zuuned profile lives in files, not the registry: settings are the ini
 at `%APPDATA%\Zuuned\Zuuned.ini`, while the library, cache, logs and the
-single-instance lock stay under `%LOCALAPPDATA%\Zuuned\Zuuned`. That mirrors the
-`$HOME`-isolated profile on Linux, so a test redirects one variable to a
-throwaway folder. On first start the app copies any values an earlier build left
-in `HKCU\Software\Zuuned\Zuuned` into the ini and logs
-`[settings] imported N value(s)`.
+single-instance lock stay under `%LOCALAPPDATA%\Zuuned\Zuuned`. On first start the
+app copies any values an earlier build left in `HKCU\Software\Zuuned\Zuuned` into
+the ini and logs `[settings] imported N value(s)`.
+
+Set `ZUUNED_PROFILE_DIR` to an absolute directory to keep the whole profile in one
+folder instead - a portable folder you carry with you, or a throwaway one for a
+test run. That is the Windows equivalent of relocating `$HOME` on Linux, and it is
+needed because `QStandardPaths` here asks the shell known folders and ignores
+`LOCALAPPDATA`/`APPDATA` overrides. The settings ini moves with it, to
+`<profile>\Zuuned\Zuuned.ini`, and the app logs
+`[profile] every profile file goes to "..."` so the effective location is never a
+guess. Your music, video, picture and document folders are deliberately left where
+the platform puts them. Unset, every path is as described above, on either
+platform.
 
 ### Device access
 

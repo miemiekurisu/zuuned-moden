@@ -1,4 +1,5 @@
 #include "SpokenMediaService.h"
+#include "../ProfilePaths.h"
 #include "../player/PlayerService.h"
 #include "AudiobookProbe.h"
 #include "PodcastFeed.h"
@@ -396,7 +397,7 @@ int writeBook(SpokenStore &s, const QVariantMap &draft, const QString &title, co
 
 SpokenMediaService::SpokenMediaService(QObject *parent)
     : QObject(parent), m_cancel(std::make_shared<std::atomic_bool>(false)) {
-    m_root = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/spoken";
+    m_root = Zuuned::ProfilePaths::writableLocation(QStandardPaths::AppDataLocation) + "/spoken";
     m_worker = new QObject;
     m_worker->moveToThread(&m_thread);
     connect(&m_thread, &QThread::finished, m_worker, &QObject::deleteLater);

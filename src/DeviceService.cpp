@@ -1,4 +1,5 @@
 #include "DeviceService.h"
+#include "ProfilePaths.h"
 #include "TrackImportPath.h"
 #include "DevicePlaylistState.h"
 #include "UsbWatcher.h"
@@ -19,7 +20,7 @@ DeviceService::DeviceService(QObject *parent) : DeviceService(parent, true) {}
 
 DeviceService::DeviceService(QObject *parent, bool watchDevice) : QObject(parent) {
     m_spokenArtSession = QUuid::createUuid().toString(QUuid::Id128);
-    m_artCacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+    m_artCacheDir = Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation)
                     + QStringLiteral("/art");
     QDir().mkpath(m_artCacheDir);
 

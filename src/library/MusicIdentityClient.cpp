@@ -1,4 +1,5 @@
 #include "MusicIdentityClient.h"
+#include "../ProfilePaths.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -248,7 +249,7 @@ QVariantList exactArtists(const QVariantList &artists, const QString &name) {
 MusicIdentityClient::MusicIdentityClient(Fetch fetch, QString cacheDirectory)
     : m_fetch(fetch ? std::move(fetch) : Fetch([](const QUrl &url, bool mb) { return ArtworkHttp::get(url, mb); })),
       m_cacheDirectory(cacheDirectory.isEmpty()
-          ? QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/music-identity-v1")
+          ? Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/music-identity-v1")
           : std::move(cacheDirectory)) {}
 
 bool MusicIdentityClient::validMbid(const QString &id) {

@@ -1,4 +1,5 @@
 #include "AlbumArtService.h"
+#include "../ProfilePaths.h"
 
 #include "libav_transcode.h"
 
@@ -132,7 +133,7 @@ bool resolveArt(const QString &trackFilepath, const QString &cachePath) {
 
 AlbumArtService::AlbumArtService(QObject *parent)
     : QObject(parent), m_state(std::make_shared<State>()) {
-    m_cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+    m_cacheDir = Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation)
                  + QStringLiteral("/art");
     QDir().mkpath(m_cacheDir);
 }

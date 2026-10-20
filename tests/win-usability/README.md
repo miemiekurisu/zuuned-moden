@@ -44,15 +44,21 @@ a silent `playertool` seek, single-instance refusal, session-log creation and
 settings persistence, all asserting a painted frame plus a stderr free of
 `qml:`/`TypeError`/`ReferenceError`.
 
-One piece is missing before any of that can run honestly: **Windows has no
-profile isolation**.  Every native gate relocates its profile with `$HOME`, but
-`QStandardPaths` on Windows asks the shell known folders and ignores
-`LOCALAPPDATA`/`APPDATA` overrides, so an instrumented launch reads and writes
-the real profile and loses the diagnostic-capture `flock` to the instance that
-is already running.  `src/ProfilePaths.h` declares the intended fix -
-`ZUUNED_PROFILE_DIR` owns every profile file including `QSettings`, while the
-user media folders, the temp dir and the Linux line stay exactly as they are -
-and the implementation is still to come.
+Profile isolation, the piece that made any of that impossible to run honestly, is
+now in place.  Every profile-owned path in the application goes through
+`src/ProfilePaths.h`, so `ZUUNED_PROFILE_DIR` keeps a launch's `library.db`,
+`spoken/spoken.db`, `State/logs/*.log`, caches and `Zuuned/Zuuned.ini` inside one
+folder; a probe run proved that while the real `%APPDATA%\Zuuned` stayed
+untouched.  `ZUUNED_LOCK_SUFFIX` isolates the single-instance lock so an
+instrumented instance can run beside the daily one, `ZUUNED_MPV_AO=null` keeps it
+silent, and with the variables unset every path stays where Qt would put it.
+
+Two probe findings shape the gate.  A fresh profile shows the onboarding wizard
+instead of the requested `--page`, so a page case has to dismiss onboarding first
+or report the onboarding state rather than claim a page rendered.  And the splash
+lasts about two seconds plus a fade, so a window captured 1.5 s after it appears
+is the splash, not the page - settle for several seconds, or poll the capture
+statistics until the frame stops being one flat colour.
 
 No Zune has ever been connected to a Windows build, and nothing in this
 directory touches USB.

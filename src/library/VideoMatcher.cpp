@@ -1,4 +1,5 @@
 #include "VideoMatcher.h"
+#include "../ProfilePaths.h"
 
 #include "TmdbClient.h"
 #include "VideoNaming.h"
@@ -46,7 +47,7 @@ void bindQ(sqlite3_stmt *stmt, int idx, const QString &s) {
 VideoMatcher::VideoMatcher(const QString &dbPath, QObject *parent)
     : QObject(parent), m_dbPath(dbPath) {
     const QString cacheRoot =
-        QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+        Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation);
     m_thumbsDir = cacheRoot + QStringLiteral("/vidthumbs");
     m_stillsDir = cacheRoot + QStringLiteral("/stills");
     QDir().mkpath(m_thumbsDir);

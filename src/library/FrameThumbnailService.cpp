@@ -1,4 +1,5 @@
 #include "FrameThumbnailService.h"
+#include "../ProfilePaths.h"
 
 #include <QDir>
 #include <QFile>
@@ -13,7 +14,7 @@ extern "C" {
 
 FrameThumbnailService::FrameThumbnailService(QObject *parent)
     : QObject(parent) {
-    m_dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+    m_dir = Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation)
         + QStringLiteral("/stills");
     QDir().mkpath(m_dir);
 }

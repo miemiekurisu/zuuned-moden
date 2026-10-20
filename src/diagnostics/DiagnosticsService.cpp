@@ -1,4 +1,5 @@
 #include "DiagnosticsService.h"
+#include "../ProfilePaths.h"
 #include "SessionLog.h"
 #include "SupportReport.h"
 #include "ZuunedBuildInfo.h"
@@ -94,7 +95,7 @@ void DiagnosticsService::exportReport(const QUrl &destination) {
     QStringList protectedDirectories;
     for (const auto location : {QStandardPaths::AppDataLocation, QStandardPaths::AppConfigLocation,
                                 QStandardPaths::CacheLocation, QStandardPaths::StateLocation})
-        protectedDirectories.append(QStandardPaths::writableLocation(location));
+        protectedDirectories.append(Zuuned::ProfilePaths::writableLocation(location));
     protectedDirectories.append(logDirectory());
     auto *watcher = new QFutureWatcher<ReportResult>(this);
     connect(watcher, &QFutureWatcher<ReportResult>::finished, this, [this, watcher] {

@@ -1,4 +1,5 @@
 #include "SyncEngine.h"
+#include "../ProfilePaths.h"
 #include "RecoveryIdentity.h"
 
 #include "../DeviceService.h"
@@ -453,7 +454,7 @@ bool SyncEngine::queueDeviceMismatch() const {
 
 QString SyncEngine::queueStorePath() const {
     const QString dir =
-        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        Zuuned::ProfilePaths::writableLocation(QStandardPaths::AppDataLocation);
     QDir().mkpath(dir);
     return dir + QStringLiteral("/syncqueue.json");
 }
@@ -608,7 +609,7 @@ void SyncEngine::restoreQueue() {
 
 QString SyncEngine::inflightPath() const {
     const QString dir =
-        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        Zuuned::ProfilePaths::writableLocation(QStandardPaths::AppDataLocation);
     QDir().mkpath(dir);
     return dir + QStringLiteral("/inflight-send");
 }

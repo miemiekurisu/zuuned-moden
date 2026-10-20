@@ -209,6 +209,7 @@ qt_add_executable(zuuned
     src/ApplicationIdentity.cpp
     src/ApplicationIdentity.h
     src/AppSettings.h
+    src/ProfilePaths.h
     src/diagnostics/SessionLog.cpp
     src/diagnostics/SessionLog.h
     src/diagnostics/Redactor.cpp
