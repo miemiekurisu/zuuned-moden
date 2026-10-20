@@ -108,7 +108,7 @@ int main(int argc, char *argv[]) {
                                       + QStringLiteral("/qqpc_opengl");
         qputenv("QSG_RHI_PIPELINE_CACHE_LOAD", pipelineCache.toUtf8());
         qputenv("QSG_RHI_PIPELINE_CACHE_SAVE", pipelineCache.toUtf8());
-        std::fprintf(stderr, "[profile] Qt pipeline cache goes to \"%s\"\n", qPrintable(pipelineCache));
+        std::fprintf(stderr, "[profile] Qt pipeline cache goes to \"%s\"\n", qUtf8Printable(pipelineCache));
     }
 
     QGuiApplication app(argc, argv);
@@ -131,7 +131,7 @@ int main(int argc, char *argv[]) {
                 std::fprintf(stderr,
                              "[settings] imported %d value(s) from the Windows "
                              "registry into %s\n",
-                             int(keys.size()), qPrintable(fileSettings.fileName()));
+                             int(keys.size()), qUtf8Printable(fileSettings.fileName()));
             }
         }
     }

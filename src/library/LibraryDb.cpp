@@ -326,7 +326,7 @@ bool LibraryDb::open(const QString &path) {
             "library.db was written by a NEWER Zuuned (schema v%1, this "
             "app speaks v%2) — refusing to touch it. Update the app.")
             .arg(userVersion).arg(kSchemaVersion);
-        fprintf(stderr, "[librarydb] %s\n", qPrintable(m_lastError));
+        fprintf(stderr, "[librarydb] %s\n", qUtf8Printable(m_lastError));
         close();
         return false;
     }
@@ -370,7 +370,7 @@ bool LibraryDb::open(const QString &path) {
                 close();
                 return false;
             }
-            fprintf(stderr, "[librarydb] pre-migration backup: %s\n", qPrintable(backup));
+            fprintf(stderr, "[librarydb] pre-migration backup: %s\n", qUtf8Printable(backup));
         }
         for (const Migration &m : kMigrations) {
             if (!m.sql || m.to <= userVersion)
@@ -379,7 +379,7 @@ bool LibraryDb::open(const QString &path) {
             if (!exec("BEGIN") || !exec(m.sql) || !exec(stamp.constData()) || !exec("COMMIT")) {
                 exec("ROLLBACK");
                 fprintf(stderr, "[librarydb] migration to v%d FAILED: %s\n",
-                        m.to, qPrintable(m_lastError));
+                        m.to, qUtf8Printable(m_lastError));
                 close();
                 return false;
             }
@@ -440,7 +440,7 @@ int LibraryDb::repairWatchFolderRoots() {
             if (drop.step() != SQLITE_DONE)
                 continue;
             fprintf(stderr, "[librarydb] watch folder %s dropped, %s is already registered\n",
-                    qPrintable(row.second), qPrintable(clean));
+                    qUtf8Printable(row.second), qUtf8Printable(clean));
         }
         else {
             Stmt up(m_db, "UPDATE watch_folders SET path=? WHERE id=?");
@@ -451,7 +451,7 @@ int LibraryDb::repairWatchFolderRoots() {
             if (up.step() != SQLITE_DONE)
                 continue;
             fprintf(stderr, "[librarydb] repaired watch folder %s to %s\n",
-                    qPrintable(row.second), qPrintable(clean));
+                    qUtf8Printable(row.second), qUtf8Printable(clean));
         }
         ++repaired;
     }

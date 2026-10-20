@@ -278,7 +278,7 @@ static int runCustomizeSelfTest() {
     legacyError = nullptr;
     if (raw) sqlite3_close(raw);
     if (prepared && !legacy.open(legacyPath))
-        printf("      open failed: %s\n", qPrintable(legacy.lastError()));
+        printf("      open failed: %s\n", qUtf8Printable(legacy.lastError()));
     check(prepared && legacy.open(legacyPath), "v2 library upgrades to separate artwork pins");
     check(!legacy.allVideos().isEmpty() && legacy.allVideos().first().customPoster
           && QFile::exists(legacyPath + QStringLiteral(".v2-backup")),

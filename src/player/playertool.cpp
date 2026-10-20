@@ -16,6 +16,14 @@
  * from the null driver instead of trusting an exit code.
  */
 
+#if defined(_WIN32)
+/* The console renders the active ANSI code page, so every UTF-8 path and device
+ * string printed below would arrive to the operator as '?'.  This tool uses none
+ * of the POSIX surface, so only the console helper is declared here rather than
+ * forcing compat/win/wincompat.h through the Qt and vendor headers. */
+extern "C" void zuuned_win_console_utf8(void);
+#endif
+
 #include "PlayerService.h"
 
 #include <QCoreApplication>
@@ -29,6 +37,9 @@ static QVariantMap item(const QString &path) {
 }
 
 int main(int argc, char *argv[]) {
+#if defined(_WIN32)
+    zuuned_win_console_utf8();
+#endif
     // Default: silent audio output (decodes + advances time, no device)
     bool audible = false;
     bool mute = false;
@@ -79,7 +90,7 @@ int main(int argc, char *argv[]) {
             printf("duration=%.2f monotonic=%s final_pos=%.2f audio_out=%s\n",
                    player.durationMs() / 1000.0,
                    monotonic ? "yes" : "NO", lastPos,
-                   qPrintable(player.audioDriver()));
+                   qUtf8Printable(player.audioDriver()));
             exitCode = (monotonic && lastPos > 0) ? 0 : 1;
             app.quit();
         });
@@ -149,7 +160,7 @@ int main(int argc, char *argv[]) {
 
         QTimer::singleShot(20000, [&] { printf("TIMEOUT\n"); app.quit(); });
     } else {
-        fprintf(stderr, "unknown command: %s\n", qPrintable(cmd));
+        fprintf(stderr, "unknown command: %s\n", qUtf8Printable(cmd));
         return 2;
     }
 

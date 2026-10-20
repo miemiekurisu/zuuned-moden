@@ -85,7 +85,7 @@ void pollPresence(libusb_context *ctx, const std::atomic<bool> &stop,
             if (detail != blockedDetail) {
                 blockedDetail = detail;
                 if (sighting.present) {
-                    fprintf(stderr, "[usbwatcher] %s\n", qPrintable(detail));
+                    fprintf(stderr, "[usbwatcher] %s\n", qUtf8Printable(detail));
                     emit self->zuneBlocked(detail);
                 } else {
                     fprintf(stderr, "[usbwatcher] no Zune devnode either\n");

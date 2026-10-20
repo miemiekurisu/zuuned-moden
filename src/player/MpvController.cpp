@@ -50,7 +50,7 @@ bool MpvController::create(bool audioOnly) {
     // Audio language preference (same key the mac reads)
     const QString lang = QSettings().value(
         QStringLiteral("preferredAudioLang"), QStringLiteral("eng")).toString();
-    mpv_set_option_string(m_mpv, "alang", qPrintable(lang));
+    mpv_set_option_string(m_mpv, "alang", qUtf8Printable(lang));
 
     // Audio output: auto (pipewire on this system). ZUUNED_MPV_AO
     // overrides — playertool passes "null" so gates never hijack audio.
@@ -263,14 +263,14 @@ void MpvController::setAudioTrack(int id) {
     if (!m_mpv)
         return;
     mpv_set_property_string(m_mpv, "aid",
-                            id < 0 ? "no" : qPrintable(QString::number(id)));
+                            id < 0 ? "no" : qUtf8Printable(QString::number(id)));
 }
 
 void MpvController::setSubtitleTrack(int id) {
     if (!m_mpv)
         return;
     mpv_set_property_string(m_mpv, "sid",
-                            id < 0 ? "no" : qPrintable(QString::number(id)));
+                            id < 0 ? "no" : qUtf8Printable(QString::number(id)));
 }
 
 // ── Event loop (dedicated thread) ──

@@ -62,7 +62,7 @@ ArtworkHttp::Response artworkHttpAttempt(const QUrl &url, bool musicBrainz) {
     if (!result.success())
         fprintf(stderr, "[customize-http] HTTP %d, Qt error %d (%s)\n",
                 result.status, int(result.networkError),
-                qPrintable(url.toString(QUrl::RemoveUserInfo | QUrl::RemoveQuery)));
+                qUtf8Printable(url.toString(QUrl::RemoveUserInfo | QUrl::RemoveQuery)));
     reply->deleteLater();
     return result;
 }

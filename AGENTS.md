@@ -1062,3 +1062,27 @@ scan root per script in the `fixture` phase. Read
 deliberately-cleared list. Windows device scope remains exactly one Pavo Zune HD:
 read, authenticate, send audio, save audio back. No deletion, no podcast,
 audiobook, photo or video transfer, and no other model has been plugged in.
+
+**2026-10-21 Windows round trip, logged end to end:** the two audio directions are
+now proven from a log rather than from an operator's word. `--qa-device` in
+`qml/Main.qml` drives one real upload through the ordinary `SyncEngine` admission,
+or - with an empty file field - one Save-to-Library download of that title, and
+reports `[qa-device]` lines; without the flag it is inert on every platform. An
+upload out of a Chinese music root ended `forge done: 1 ok, 0 failed` and
+`sync-summary tracks=1 failed=0`, and the next session found the track again
+(187 tracks) and saved it back, where the MP3 audio is byte-for-byte the 401,239
+source bytes - the only difference is the ID3v2.3 retag this app writes before a
+send plus the ID3v1 it appends. A finished sync finalizes with CleanDataStore and
+releases the player, so upload and pull are deliberately separate launches and the
+second one also proves the upload survived the device's own re-index. Two
+Windows-only reporting faults found on the way: `qPrintable()` is `toLocal8Bit()`,
+so on a CP936 host every `[sync]` and `[sync-canon]` line naming a CJK path
+arrived as U+FFFD while the C layer was correct - `src/` now uses
+`qUtf8Printable()` throughout, the same bytes on Linux, and mpv's `alang` wants
+UTF-8 anyway; and the harness tested its own verdict behind a device-presence
+guard that a completed sync had already cleared, so it printed no verdict of its
+own - it now latches on `onSyncSummary`. `devicetool`, `playertool` and
+`spokenmediatool` put the console in UTF-8 too. Gates unchanged: `tests/win-compat`
+171 checks, `tests/win-usability` launches=17 checks=90 failures=0 skips=0
+killed=0. Still not claimed: anything listened to on the player, deletion,
+podcast, audiobook, photo or video transfer, and any model but this Pavo Zune HD.

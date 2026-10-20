@@ -170,8 +170,8 @@ void OnlineAlbumArtService::pump() {
                     }
                 }
                 emit discoveryResult(request.artist, request.album, result);
-                fprintf(stderr, "[album-art] %s: %s / %s (%s)\n", qPrintable(result.value("status").toString()),
-                        qPrintable(request.artist), qPrintable(request.album), qPrintable(result.value("reason").toString()));
+                fprintf(stderr, "[album-art] %s: %s / %s (%s)\n", qUtf8Printable(result.value("status").toString()),
+                        qUtf8Printable(request.artist), qUtf8Printable(request.album), qUtf8Printable(result.value("reason").toString()));
                 emit finished(request.artist, request.album, ok ? path : QString(), ok);
             }
             pump();

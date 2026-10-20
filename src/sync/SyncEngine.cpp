@@ -76,11 +76,11 @@ QVector<QVariantMap> SyncEngine::canonicalizeAlbumArtists(QVector<QVariantMap> e
         fprintf(stderr,
                 "[sync-canon] entry title='%s' artist='%s' albumartist='%s' "
                 "album='%s' folder='%s'\n",
-                qPrintable(e.value(QStringLiteral("title")).toString()),
-                qPrintable(e.value(QStringLiteral("artist")).toString()),
-                qPrintable(e.value(QStringLiteral("albumartist")).toString()),
-                qPrintable(e.value(QStringLiteral("album")).toString()),
-                qPrintable(folder));
+                qUtf8Printable(e.value(QStringLiteral("title")).toString()),
+                qUtf8Printable(e.value(QStringLiteral("artist")).toString()),
+                qUtf8Printable(e.value(QStringLiteral("albumartist")).toString()),
+                qUtf8Printable(e.value(QStringLiteral("album")).toString()),
+                qUtf8Printable(folder));
     }
 
     // Bucket by (album lowercased+trimmed, disc-normalized parent folder).
@@ -160,7 +160,7 @@ QVector<QVariantMap> SyncEngine::canonicalizeAlbumArtists(QVector<QVariantMap> e
         const QString originalAlbum =
             entries[idxs.first()].value(QStringLiteral("album")).toString();
         fprintf(stderr, "[sync-canon] bucket '%s' @ '%s' : %d tracks\n",
-                qPrintable(originalAlbum), qPrintable(bucketFolder[it.key()]),
+                qUtf8Printable(originalAlbum), qUtf8Printable(bucketFolder[it.key()]),
                 int(idxs.size()));
         QStringList votes;
         {
@@ -173,9 +173,9 @@ QVector<QVariantMap> SyncEngine::canonicalizeAlbumArtists(QVector<QVariantMap> e
                 votes << QStringLiteral("'%1'×%2").arg(p.first).arg(p.second);
         }
         fprintf(stderr, "[sync-canon]   votes: %s\n",
-                votes.isEmpty() ? "(none)" : qPrintable(votes.join(QStringLiteral(", "))));
+                votes.isEmpty() ? "(none)" : qUtf8Printable(votes.join(QStringLiteral(", "))));
         fprintf(stderr, "[sync-canon]   → canonical '%s' (strategy: %s)\n",
-                qPrintable(canonical), qPrintable(strategy));
+                qUtf8Printable(canonical), qUtf8Printable(strategy));
 
         for (int i : idxs) {
             entries[i][QStringLiteral("albumartist")] = canonical;
@@ -186,8 +186,8 @@ QVector<QVariantMap> SyncEngine::canonicalizeAlbumArtists(QVector<QVariantMap> e
                 int(idxs.size()));
         fprintf(stderr,
                 "[sync] canonicalized album '%s' (folder=%s) → '%s' (%d tracks, %d distinct sources)\n",
-                qPrintable(originalAlbum), qPrintable(bucketFolder[it.key()]),
-                qPrintable(canonical), int(idxs.size()), int(counts.size()));
+                qUtf8Printable(originalAlbum), qUtf8Printable(bucketFolder[it.key()]),
+                qUtf8Printable(canonical), int(idxs.size()), int(counts.size()));
     }
 
     return entries;
@@ -365,7 +365,7 @@ SyncEngine::SyncEngine(QObject *parent) : QObject(parent) {
         if (!m_interruptedSend.isEmpty())
             fprintf(stderr, "[sync] WARNING: previous run died mid-send: "
                     "'%s' may be truncated on the device\n",
-                    qPrintable(m_interruptedSend));
+                    qUtf8Printable(m_interruptedSend));
     }
 }
 
@@ -1248,7 +1248,7 @@ void SyncEngine::startSync() {
                               QStringLiteral("skipped"),
                               QStringLiteral("already on device"));
             fprintf(stderr, "[sync] step=dedup-skip title=%s\n",
-                    qPrintable(e.value(QStringLiteral("title")).toString()));
+                    qUtf8Printable(e.value(QStringLiteral("title")).toString()));
         } else if (match.kind == MusicIdentity::MatchKind::Ambiguous) {
             e[QStringLiteral("skip")] = true;
             m_queue.setStatus(e.value(QStringLiteral("entryId")).toString(),
@@ -1599,14 +1599,14 @@ void SyncEngine::prepareEntry(int idx) {
                 prepared = QString::fromUtf8(p);
                 free(p);
                 fprintf(stderr, "[sync] retagged to ID3v2.3: %s\n",
-                        qPrintable(filepath));
+                        qUtf8Printable(filepath));
             } else {
                 if (discNumber > 0) {
                     error = QStringLiteral("Could not prepare the requested disc tag; original file was not sent.");
                 } else {
                     prepared = filepath;
                     fprintf(stderr, "[sync] retag returned nil — sending original tags: %s\n",
-                            qPrintable(filepath));
+                            qUtf8Printable(filepath));
                 }
             }
         } else {
@@ -1812,9 +1812,9 @@ void SyncEngine::onPrepareFinished(const QString &entryId,
     // [sync-canon] pre-send snapshot — confirms the canonical artist
     // reaches the MTP layer (mac trace).
     fprintf(stderr, "[sync-canon] sendTrack artist='%s' title='%s' album='%s' file='%s'\n",
-            qPrintable(aartist), qPrintable(m_currentName),
-            qPrintable(e.value(QStringLiteral("album")).toString()),
-            qPrintable(QFileInfo(preparedPath).fileName()));
+            qUtf8Printable(aartist), qUtf8Printable(m_currentName),
+            qUtf8Printable(e.value(QStringLiteral("album")).toString()),
+            qUtf8Printable(QFileInfo(preparedPath).fileName()));
 
     m_queue.setStatus(entryId, QStringLiteral("syncing"));
     // Device-side sync display (0x922A) — name + batch position
@@ -2167,7 +2167,7 @@ void SyncEngine::dispatchVideoSend(const PreparedVideo &pv) {
         e.value(QStringLiteral("category")).toString(), series, episode);
 
     fprintf(stderr, "[sync] sending video '%s' (metagenre=0x%02X)\n",
-            qPrintable(wireName), metagenre);
+            qUtf8Printable(wireName), metagenre);
     m_queue.setStatus(pv.entryId, QStringLiteral("syncing"));
     // Device-side sync display (0x922A) — name + batch position
     emit workerSyncNotify(title, int(m_entries.size()) + pv.idx,

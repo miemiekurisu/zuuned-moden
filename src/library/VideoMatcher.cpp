@@ -157,7 +157,7 @@ void VideoMatcher::matchSeries(const QString &key, QVector<LibVideo> episodes,
         if (transient) {
             // Network/API failure — do NOT memoize, do NOT mark cached.
             fprintf(stderr, "[matcher] TV lookup error for %s (transient)\n",
-                    qPrintable(seriesName));
+                    qUtf8Printable(seriesName));
             sqlite3_exec(connection(), "BEGIN;", nullptr, nullptr, nullptr);
             for (const LibVideo &ep : episodes) {
                 writeAttempt(ep.id);
@@ -253,7 +253,7 @@ void VideoMatcher::matchSeries(const QString &key, QVector<LibVideo> episodes,
     sqlite3_exec(connection(), "COMMIT;", nullptr, nullptr, nullptr);
 
     fprintf(stderr, "[matcher] TV: %s (%s) — %d episodes committed\n",
-            qPrintable(res.title), qPrintable(res.year), int(resolved.size()));
+            qUtf8Printable(res.title), qUtf8Printable(res.year), int(resolved.size()));
 }
 
 VideoMatcher::SeriesResolution VideoMatcher::resolveSeries(
@@ -272,7 +272,7 @@ VideoMatcher::SeriesResolution VideoMatcher::resolveSeries(
     const int best = bestCandidate(query, results);
     if (best < 0) {
         fprintf(stderr, "[matcher] no acceptable TV match for: %s (%d candidates)\n",
-                qPrintable(query), int(results.size()));
+                qUtf8Printable(query), int(results.size()));
         return out; // failed (permanent) — Needs Match
     }
 
@@ -365,7 +365,7 @@ void VideoMatcher::matchMovie(const LibVideo &video, const QString &posterSource
     }
     if (bestId == 0) {
         fprintf(stderr, "[matcher] no acceptable movie match for: %s\n",
-                qPrintable(queries.join(QStringLiteral(" | "))));
+                qUtf8Printable(queries.join(QStringLiteral(" | "))));
         writeNoMatch(video.id);
         (*written)++;
         return;
@@ -400,7 +400,7 @@ void VideoMatcher::matchMovie(const LibVideo &video, const QString &posterSource
         meta.posterLocalPath = destPath;
 
     fprintf(stderr, "[matcher] movie: %s (%s)\n",
-            qPrintable(details.title), qPrintable(details.year));
+            qUtf8Printable(details.title), qUtf8Printable(details.year));
     writeMovieRow(video.id, meta);
     (*written)++;
 }

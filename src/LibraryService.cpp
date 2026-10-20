@@ -141,7 +141,7 @@ LibraryService::LibraryService(QObject *parent) : QObject(parent) {
         if (dupDropped > 0)
             fprintf(stderr, "[library] duplicate formats: dropped %d %s"
                             " twins\n", dupDropped,
-                    qPrintable(dupPref == QLatin1String("flac")
+                    qUtf8Printable(dupPref == QLatin1String("flac")
                                ? QStringLiteral("mp3")
                                : QStringLiteral("flac")));
         // Only reset the views when the scan ACTUALLY changed the
@@ -744,7 +744,7 @@ void LibraryService::ensureGvfsMounts() {
         const QString url = QStringLiteral("smb://%1/%2/")
                             .arg(m.captured(1), m.captured(2));
         fprintf(stderr, "[library] remounting gvfs share for watch folder: %s\n",
-                qPrintable(url));
+                qUtf8Printable(url));
         QProcess::startDetached(QStringLiteral("gio"),
                                 {QStringLiteral("mount"), QStringLiteral("-a"), url});
     }
@@ -811,7 +811,7 @@ void LibraryService::removeWatchFolder(double id) {
     if (!path.isEmpty()) {
         const int removed = m_db->purgeFolder(path);
         fprintf(stderr, "[library] released '%s' — purged %d items\n",
-                qPrintable(path), removed);
+                qUtf8Printable(path), removed);
     }
     m_db->removeWatchFolder(qint64(id));
     reloadFolders();
@@ -1633,13 +1633,13 @@ void LibraryService::setVideoCustomArt(const QVariantList &ids,
         src = QUrl(src).toLocalFile();
     if (src.isEmpty() || !QFile::exists(src)) {
         fprintf(stderr, "[customize] custom art source missing: %s\n",
-                qPrintable(src));
+                qUtf8Printable(src));
         return;
     }
     QImage img(src);
     if (img.isNull()) {
         fprintf(stderr, "[customize] custom art not an image: %s\n",
-                qPrintable(src));
+                qUtf8Printable(src));
         return;
     }
     if (img.width() > 780)
@@ -1671,19 +1671,19 @@ QString writeCustomArt(const QString &source, const QString &dest) {
     if (src.startsWith(QLatin1String("file://")))
         src = QUrl(src).toLocalFile();
     if (src.isEmpty() || !QFile::exists(src)) {
-        fprintf(stderr, "[customize] art source missing: %s\n", qPrintable(src));
+        fprintf(stderr, "[customize] art source missing: %s\n", qUtf8Printable(src));
         return QString();
     }
     QImage img(src);
     if (img.isNull()) {
-        fprintf(stderr, "[customize] art not an image: %s\n", qPrintable(src));
+        fprintf(stderr, "[customize] art not an image: %s\n", qUtf8Printable(src));
         return QString();
     }
     if (img.width() > 780)
         img = img.scaledToWidth(780, Qt::SmoothTransformation);
     QFile::remove(dest);
     if (!img.save(dest, "JPG", 90)) {
-        fprintf(stderr, "[customize] failed to write art: %s\n", qPrintable(dest));
+        fprintf(stderr, "[customize] failed to write art: %s\n", qUtf8Printable(dest));
         return QString();
     }
     return dest;
@@ -2134,7 +2134,7 @@ void LibraryService::assignTmdbResult(const QVariantList &ids, int tmdbId,
         const QString &poster = result.second.second;
         const QString category = tv ? QStringLiteral("tv") : QStringLiteral("movie");
         fprintf(stderr, "[tmdb] bulk assigning %d videos to '%s'\n",
-                int(videoIds.size()), qPrintable(details.title));
+                int(videoIds.size()), qUtf8Printable(details.title));
 
         // Season/episode preserved from the current rows.
         QHash<qint64, const LibVideo *> byId;
@@ -2213,7 +2213,7 @@ QString LibraryService::exportPlaylistsM3U() {
         written++;
     }
     fprintf(stderr, "[library] exported %d playlists to %s\n",
-            written, qPrintable(dir));
+            written, qUtf8Printable(dir));
     return dir;
 }
 

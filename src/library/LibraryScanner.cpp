@@ -456,7 +456,7 @@ void LibraryScanner::scan() {
                     bool copyInvalidated = false;
                     db.recordMusicProbeFailure(chunk[i].filepath, resolved[i].error, &copyInvalidated);
                     changed |= copyInvalidated;
-                    fprintf(stderr, "[scanner] retry song '%s': %s\n", qPrintable(chunk[i].filepath), qPrintable(resolved[i].error));
+                    fprintf(stderr, "[scanner] retry song '%s': %s\n", qUtf8Printable(chunk[i].filepath), qUtf8Printable(resolved[i].error));
                     continue;
                 }
                 if (db.upsertTrack(resolved[i].track)) {

@@ -668,7 +668,7 @@ void DeviceService::rebuildOnDeviceKeys() {
     if (!m_photoOnDeviceKeys.isEmpty())
         fprintf(stderr, "[device] %d photo stems on device, e.g. '%s'\n",
                 int(m_photoOnDeviceKeys.size()),
-                qPrintable(m_photoOnDeviceKeys.constBegin().key()));
+                qUtf8Printable(m_photoOnDeviceKeys.constBegin().key()));
 }
 
 void DeviceService::noteSyncedPhoto(const QString &name) {

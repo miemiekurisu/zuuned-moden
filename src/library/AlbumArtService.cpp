@@ -97,7 +97,7 @@ bool resolveArt(const QString &trackFilepath, const QString &cachePath) {
                         || suffix == QLatin1String("png"))) {
                     if (storeToCache(fi.absoluteFilePath(), cachePath)) {
                         fprintf(stderr, "[art] found folder art: %s\n",
-                                qPrintable(fi.fileName()));
+                                qUtf8Printable(fi.fileName()));
                         return true;
                     }
                 }
@@ -109,7 +109,7 @@ bool resolveArt(const QString &trackFilepath, const QString &cachePath) {
             if (isImageSuffix(fi.suffix().toLower())) {
                 if (storeToCache(fi.absoluteFilePath(), cachePath)) {
                     fprintf(stderr, "[art] found image in folder: %s\n",
-                            qPrintable(fi.fileName()));
+                            qUtf8Printable(fi.fileName()));
                     return true;
                 }
             }
@@ -122,7 +122,7 @@ bool resolveArt(const QString &trackFilepath, const QString &cachePath) {
                               cachePath.toUtf8().constData(), 400) == 0
         && QFile::exists(cachePath)) {
         fprintf(stderr, "[art] extracted embedded art from: %s\n",
-                qPrintable(trackInfo.fileName()));
+                qUtf8Printable(trackInfo.fileName()));
         return true;
     }
 

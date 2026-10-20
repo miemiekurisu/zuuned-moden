@@ -553,7 +553,7 @@ void DeviceWorker::doPurgeInterruptedVideo(const QString &filename) {
         ok = zune_purge_video(m_dev, ids.first().toUInt()) == 0;
     }
     fprintf(stderr, "[worker] interrupted video '%s': %d exact filename matches, purge %s\n",
-            qPrintable(filename), int(ids.size()), ok ? "OK" : "refused/failed");
+            qUtf8Printable(filename), int(ids.size()), ok ? "OK" : "refused/failed");
     emit purgeDone(ok ? 1 : 0, ok ? 0 : 1, ok ? ids : QVariantList());
     emit interruptedVideoPurged(filename, ok);
 }
@@ -650,7 +650,7 @@ void DeviceWorker::doSendTrack(const QString &entryId, const QString &filepath,
                     title.isEmpty() ? nullptr : title.toUtf8().constData(),
                     nullptr, 0) != 0) {
         fprintf(stderr, "[worker] verify mismatch for %s (item %u) — keeping\n",
-                qPrintable(title), itemId);
+                qUtf8Printable(title), itemId);
     }
 
     emit sendDone(entryId, true, itemId, autopsy);
@@ -679,7 +679,7 @@ void DeviceWorker::doSendVideo(const QString &entryId, const QString &filepath,
                          : reinterpret_cast<const uint8_t *>(poster.constData());
 
     fprintf(stderr, "[worker] sending video: %s (file=%s metagenre=0x%02X)\n",
-            qPrintable(title), qPrintable(objectFilename), metagenre);
+            qUtf8Printable(title), qUtf8Printable(objectFilename), metagenre);
     const QByteArray title8 = title.toUtf8();
     uint32_t itemId = 0;
     const int rc = zune_smuggle_video_named(m_dev, filepath.toUtf8().constData(),
@@ -732,7 +732,7 @@ void DeviceWorker::doSendPhoto(const QString &entryId, const QString &filepath,
     }
     zune_clear_abort(m_dev);
     fprintf(stderr, "[worker] sending photo: %s (album='%s')\n",
-            qPrintable(QFileInfo(filepath).fileName()), qPrintable(albumName));
+            qUtf8Printable(QFileInfo(filepath).fileName()), qUtf8Printable(albumName));
     const int rc = zune_smuggle_photo(
         m_dev, filepath.toUtf8().constData(),
         albumName.isEmpty() ? nullptr : albumName.toUtf8().constData());
@@ -763,7 +763,7 @@ void DeviceWorker::doExtractTrack(quint32 itemId, const QString &destPath) {
     }
     zune_clear_abort(m_dev);
     fprintf(stderr, "[worker] extracting track %u → %s\n", itemId,
-            qPrintable(destPath));
+            qUtf8Printable(destPath));
     const int rc = zune_extract_track(m_dev, itemId,
                                       destPath.toUtf8().constData());
     if (rc != 0)
@@ -779,7 +779,7 @@ void DeviceWorker::doExtractVideo(quint32 itemId, const QString &destPath) {
     }
     zune_clear_abort(m_dev);
     fprintf(stderr, "[worker] extracting video %u → %s\n", itemId,
-            qPrintable(destPath));
+            qUtf8Printable(destPath));
     const int rc = zune_extract_video(m_dev, itemId,
                                       destPath.toUtf8().constData());
     if (rc != 0)
@@ -815,7 +815,7 @@ void DeviceWorker::doRenameDevice(const QString &newName) {
     }
     const int rc = zune_rename(m_dev, newName.toUtf8().constData());
     fprintf(stderr, "[worker] rename device -> '%s': %s\n",
-            qPrintable(newName), rc == 0 ? "OK" : "FAILED");
+            qUtf8Printable(newName), rc == 0 ? "OK" : "FAILED");
     emit renameDeviceDone(newName, rc == 0);
 }
 
@@ -857,7 +857,7 @@ void DeviceWorker::doForgeAlbums(const QVariantList &buckets) {
         if (h == 0)
             fprintf(stderr, "[worker] forge_artist returned 0 for %s "
                     "(unsupported, unreadable inventory or creation failure; "
-                    "album artist metadata is retained)\n", qPrintable(aa));
+                    "album artist metadata is retained)\n", qUtf8Printable(aa));
     }
     QThread::msleep(500); // firmware breathing room after artist forging
 
@@ -922,7 +922,7 @@ void DeviceWorker::doForgeAlbums(const QVariantList &buckets) {
             match = &existingByName[album.toLower()];
             fprintf(stderr, "[worker] album '%s' matched by NAME only "
                     "(device artist string differs) — merging\n",
-                    qPrintable(album));
+                    qUtf8Printable(album));
         }
         if (match) {
             // Merge: existing ids + new ones, deduped, order preserved
@@ -947,7 +947,7 @@ void DeviceWorker::doForgeAlbums(const QVariantList &buckets) {
 
         if (albumId == 0) {
             fprintf(stderr, "[worker] forge/rewire album failed: %s (%s)\n",
-                    qPrintable(album),
+                    qUtf8Printable(album),
                     zune_autopsy_name(zune_autopsy(m_dev)));
             failCount++;
             QThread::msleep(300);

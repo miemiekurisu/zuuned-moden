@@ -12,6 +12,14 @@
 // VERDICT=absent   neither source sees a Zune
 // VERDICT=contradictory / =unknown  the sources disagree, or the bus could not
 //                  be read at all -> exit 1/2 so a gate stops here
+#if defined(_WIN32)
+/* The console renders the active ANSI code page, so every UTF-8 path and device
+ * string printed below would arrive to the operator as '?'.  This tool uses none
+ * of the POSIX surface, so only the console helper is declared here rather than
+ * forcing compat/win/wincompat.h through the Qt and vendor headers. */
+extern "C" void zuuned_win_console_utf8(void);
+#endif
+
 #include "DevicePresence.h"
 
 #include <QCoreApplication>
@@ -57,6 +65,9 @@ LibusbView readLibusb() {
 
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
+#if defined(_WIN32)
+    zuuned_win_console_utf8();
+#endif
     const LibusbView usb = readLibusb();
     const Zuuned::ZuneSighting os = Zuuned::scanForZune();
 

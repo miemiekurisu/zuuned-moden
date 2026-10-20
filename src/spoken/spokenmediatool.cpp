@@ -1,4 +1,12 @@
 // Local inspection gate. No USB, network, database writes or auto-import.
+#if defined(_WIN32)
+/* The console renders the active ANSI code page, so every UTF-8 path and device
+ * string printed below would arrive to the operator as '?'.  This tool uses none
+ * of the POSIX surface, so only the console helper is declared here rather than
+ * forcing compat/win/wincompat.h through the Qt and vendor headers. */
+extern "C" void zuuned_win_console_utf8(void);
+#endif
+
 #include "AudiobookProbe.h"
 #include "PodcastFeed.h"
 #include <QCoreApplication>
@@ -11,6 +19,9 @@
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
+#if defined(_WIN32)
+    zuuned_win_console_utf8();
+#endif
     const auto args = app.arguments();
     QString error;
     QJsonObject result;
@@ -21,7 +32,7 @@ int main(int argc, char **argv)
         }
         PodcastFeed feed;
         if (!Podcasts::parseRss(file.read(Podcasts::MaxFeedBytes + 1), QUrl(args[3]), &feed, &error)) {
-            fprintf(stderr, "%s\n", qPrintable(error)); return 1;
+            fprintf(stderr, "%s\n", qUtf8Printable(error)); return 1;
         }
         QJsonArray episodes;
         for (const auto &e : feed.episodes) episodes.append(QJsonObject{
@@ -33,7 +44,7 @@ int main(int argc, char **argv)
                   {"artwork", feed.artworkUrl.toString()}, {"skippedItems", feed.skippedItems}, {"episodes", episodes}};
     } else if (args.size() == 3 && args[1] == u"book") {
         AudiobookPart part;
-        if (!Audiobooks::probePart(args[2], &part, &error)) { fprintf(stderr, "%s\n", qPrintable(error)); return 1; }
+        if (!Audiobooks::probePart(args[2], &part, &error)) { fprintf(stderr, "%s\n", qUtf8Printable(error)); return 1; }
         QJsonArray chapters;
         for (const auto &c : part.chapters) chapters.append(QJsonObject{
             {"index", c.sourceIndex}, {"title", c.title}, {"startMs", c.startMs}, {"endMs", c.endMs}});

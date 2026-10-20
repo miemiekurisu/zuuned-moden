@@ -129,7 +129,7 @@ QByteArray TmdbClient::fetch(const QString &url, bool *ok, bool throttled,
         if (ok) *ok = true;
     } else {
         fprintf(stderr, "[tmdb] fetch failed (%d/%s): %s\n", status,
-                qPrintable(reply->errorString()), qPrintable(url.left(80)));
+                qUtf8Printable(reply->errorString()), qUtf8Printable(url.left(80)));
     }
     reply->deleteLater();
     return data;

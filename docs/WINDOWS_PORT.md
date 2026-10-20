@@ -127,8 +127,56 @@ exist and answered truthfully:
 
 Still not proven on Windows, each its own gate: a Classic, Draco or 80/120 (every
 Windows device fact here is one Pavo Zune HD); deletion or purge; podcast and
-audiobook transfer; photo and video transfer; device-side playback.  The
-finalise, re-index and readback evidence is still Linux evidence.
+audiobook transfer; photo and video transfer; device-side playback.  At that
+point the finalise, re-index and byte readback evidence was still Linux
+evidence; the next section is what closed part of it the same day.
+
+## The round trip, logged (2026-10-21)
+
+Those two directions were confirmed by an operator watching a window.  Both have
+since been run again so that the log says it, and the bytes that came back were
+compared with the bytes that went out.
+
+`qml/Main.qml` accepts `--qa-device "<file>|<artist>|<album>|<title>"`: it queues
+that one track through the ordinary `SyncEngine` admission, starts a sync, and
+reports every decision as a `[qa-device]` line.  With the file field left empty
+the same flag instead looks `<title>` up in the device inventory and runs the
+ordinary Save-to-Library download for it.  Without the flag the timer never
+starts and neither `Connections` block enables, so an ordinary launch behaves
+identically on both platforms.
+
+The upload used a folder and a file name in Chinese under `E:/Temp/testmusic`:
+
+```
+[qa-device] add added=1 duplicates=0 onDevice=0 rejected=0 ambiguous=0
+[sync] forge done: 1 ok, 0 failed
+[qa-device] sync-summary elapsedMs=1590 tracks=1 videos=0 photos=0 skipped=0 failed=0
+[qa-device] upload-settled deviceTracks=0 failed=0 tracks=1
+```
+
+The player went from 186 tracks to 187.  The next launch found 187, and the pull
+pass saved that title back into the library, where the MP3 audio stream is
+byte-for-byte the 401,239 bytes that went in.  The difference between the two
+files is metadata only: the source carries a 45-byte ID3v2.4 tag, the copy
+carries the 1,096-byte ID3v2.3 tag this app writes before a send plus the
+128-byte ID3v1 it appends.
+
+Two launches are what a finished sync forces rather than a shortcut taken: it
+finalizes with CleanDataStore and releases the device, and `awaitingDisconnect`
+refuses to breach back in.  The second run is therefore also the evidence that
+the upload survived the device's own re-index and was not merely accepted.
+
+Getting a legible log out of this was itself two Windows-only fixes.
+`qPrintable()` is `toLocal8Bit()`, so on this CP936 machine every `[sync]` line
+naming that Chinese path arrived as U+FFFD while the C layer printed the same
+path correctly - `src/` now uses `qUtf8Printable()` throughout.  And the harness
+first tested its own verdict behind a device-presence guard that the completed
+sync had already cleared, so a clean upload printed no verdict of its own; it
+now latches on the sync summary.  Both are accounted for in
+`docs/WINDOWS_COMPAT_AUDIT.md`.
+
+What this does not say: nobody has listened to either file.  Device-side
+playback stays its own gate, below.
 
 ## Toolchain that works here
 
@@ -226,11 +274,13 @@ environment to reproduce them.
 
 ## What is not proven here
 
-1. Everything past the library read.  MTPZ authentication comes first, because this
-   machine has no credentials and every Linux write gate was run with them; then
-   one send, one deletion, byte readback, the firmware categories and firmware
-   resume, each a real gate rather than a ported assumption.  The unanswered
-   `0x2002` and `0x200F` recorded above sit in front of parts of that.  WinUSB
+1. Everything past audio.  Deletion and purge, the firmware categories and
+   firmware resume, podcast, audiobook, photo and video transfer, and every model
+   but this Pavo Zune HD - each a real gate rather than a ported assumption.  Of
+   the two responses the first reads left open, `0x200F` on `GetObject` is
+   explained: the same save that added MTPZ credentials made that write succeed,
+   so it was an unauthenticated save and not a refusal.  One is still unanswered,
+   `0x2002` on `GetObjectInfo(0x07000002)`, three times per scan.  WinUSB
    cannot reset a device either, so `zune_breach()`'s recovery from an OpenSession
    wedge does not exist here and an unplug/replug is the workaround - see the
    driver guide.
@@ -271,16 +321,16 @@ environment to reproduce them.
 
 ## Order to close it in
 
-1. Supply MTPZ credentials and authenticate a Zune on Windows, per
-   `docs/BUILD_WITH_MTPZ.md`.  Until that is done the write paths are not even
-   addressable from this checkout, so nothing below it can be attempted honestly.
-2. Repeat the Linux hardware gates in the order Linux used, from here: library
-   read (done 2026-10-20), one album send, one deletion, readback, then the podcast
-   and audiobook categories and firmware resume - each with its own evidence, none
-   inherited.
-3. Answer the two responses the first reads left unanswered, `0x2002` on
-   `GetObjectInfo(0x07000002)` and `0x200F` on `GetObject`, in `libzune/docs/`,
-   before either is assumed benign or changed.
+1. Play back on the player what the round trip above put on it.  Both files are
+   there, in both directions, and nobody has heard either, so "it transfers"
+   still does not mean "it plays".
+2. Repeat the remaining Linux hardware gates in the order Linux used, from here,
+   each with its own evidence and none inherited: library read (done 2026-10-20),
+   one track send with byte readback (done 2026-10-21), then one deletion, then
+   the podcast and audiobook categories and firmware resume, then photos and
+   video, then a Classic, a Draco and an 80/120.
+3. Answer `0x2002` on `GetObjectInfo(0x07000002)` in `libzune/docs/` before it is
+   assumed benign or changed.  `0x200F` needs nothing further - see above.
 4. Add the remaining software gates: audible (unmuted) playback and a
    `spokenmediatool` phase.  Measure NVDEC against software on a real 1080p item before
    quoting a speed-up for Windows.

@@ -492,7 +492,8 @@ if(WIN32)
 endif()
 
 add_executable(devicetool src/devicetool.cpp)
-target_link_libraries(devicetool PRIVATE zuuned_presence Qt6::Core ${LIBUSB_LIBRARIES})
+target_link_libraries(devicetool PRIVATE zuuned_presence Qt6::Core ${LIBUSB_LIBRARIES}
+    ${ZUUNED_WINCOMPAT})
 target_include_directories(devicetool PRIVATE ${LIBUSB_INCLUDE_DIRS})
 
 # ═══════════════════════════════════════════════════════════════════
@@ -542,7 +543,7 @@ target_include_directories(zuuned_spoken PUBLIC src/spoken PRIVATE ${FFMPEG_INCL
 target_link_libraries(zuuned_spoken PUBLIC Qt6::Core
     PRIVATE ${FFMPEG_LIBRARIES} ${ZUUNED_WINCOMPAT})
 add_executable(spokenmediatool src/spoken/spokenmediatool.cpp)
-target_link_libraries(spokenmediatool PRIVATE zuuned_spoken)
+target_link_libraries(spokenmediatool PRIVATE zuuned_spoken ${ZUUNED_WINCOMPAT})
 
 # ═══════════════════════════════════════════════════════════════════
 # Phase 3: library core CLI gate (librarytool) — scans a folder into a
@@ -615,6 +616,7 @@ target_include_directories(playertool PRIVATE src/player ${MPV_INCLUDE_DIRS})
 target_link_libraries(playertool PRIVATE
     Qt6::Core Qt6::Qml
     ${MPV_LIBRARIES}
+    ${ZUUNED_WINCOMPAT}
 )
 
 # ── Install (E3 ship mechanics) ──

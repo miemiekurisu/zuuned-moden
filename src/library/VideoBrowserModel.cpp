@@ -86,7 +86,7 @@ void VideoBrowserModel::setDeviceVideos(const QVariantList &v) {
         }
         fprintf(stderr, "[videos] %d device keys, e.g.: %s\n",
                 int(m_deviceKeys.size()),
-                qPrintable(sample.join(QStringLiteral(" | "))));
+                qUtf8Printable(sample.join(QStringLiteral(" | "))));
     }
     emit deviceVideosChanged();
     scheduleRebuild();

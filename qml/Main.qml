@@ -106,6 +106,8 @@ ApplicationWindow {
             greetingTimer.start()
         reportQaState("startup")
         startQaQueue()
+        if (qaDeviceSpec)
+            qaDeviceTimer.start()
     }
     // QA harness (`--qa-probe`): one authoritative line about what this window
     // actually decided to show.  The usability gates need it because a painted
@@ -161,6 +163,159 @@ ApplicationWindow {
             window.reportQaState("tick" + ticks)
             if (ticks >= 40)
                 stop()
+        }
+    }
+
+    // QA harness (`--qa-device "<file>|<artist>|<album>|<title>|<durationMs>"`): one
+    // real audio upload, or with an empty file one device-to-library download of
+    // `<title>`, driven through the ordinary SyncEngine admission and
+    // Save-to-Library paths and reported as [qa-device] log lines.  A host round
+    // trip is then provable from a log rather than guessed from a screenshot, and
+    // none of it runs without the flag, so an ordinary launch behaves identically
+    // on every platform.
+    //
+    // The two passes are deliberately separate runs: a completed sync ends with
+    // finalize + CleanDataStore, after which the device re-indexes and the app
+    // releases it (awaitingDisconnect refuses to breach back in).  Pulling in the
+    // next session therefore also proves the upload survived the device's own
+    // re-index rather than merely being accepted.
+    readonly property var qaDeviceSpec: {
+        const args = Qt.application.arguments
+        const i = args.indexOf("--qa-device")
+        if (i < 0 || i + 1 >= args.length)
+            return null
+        const parts = String(args[i + 1]).split("|")
+        return parts.length >= 4 ? parts : null
+    }
+    readonly property bool qaDevicePull:
+        qaDeviceSpec !== null && String(qaDeviceSpec[0]).length === 0
+    property bool qaDeviceQueued: false
+    property bool qaDeviceSawFinish: false
+    property bool qaDeviceDone: false
+    function qaDeviceLog(note) {
+        console.log("[qa-device] " + note)
+    }
+    function qaDeviceRowFor(title) {
+        const rows = DeviceService.deviceTrackRows()
+        for (let i = 0; i < rows.length; i++)
+            if (rows[i].title === title)
+                return rows[i]
+        return null
+    }
+    function qaDeviceStep() {
+        const spec = qaDeviceSpec
+        if (!spec || qaDeviceDone)
+            return
+        qaDeviceLog("state pull=" + qaDevicePull
+            + " connected=" + DeviceService.connected
+            + " busy=" + DeviceService.busy
+            + " stage=" + DeviceService.connectionStage
+            + " deviceTracks=" + DeviceService.trackCount
+            + " syncing=" + SyncEngine.isSyncing
+            + " phase=" + SyncEngine.syncPhase
+            + " total=" + SyncEngine.totalCount
+            + " completed=" + SyncEngine.syncCompleted
+            + " seen=" + qaDeviceSawFinish)
+        if (qaDevicePull) {
+            if (!DeviceService.connected || DeviceService.busy)
+                return
+            const row = qaDeviceRowFor(spec[3])
+            if (!row) {
+                qaDeviceLog("download-missing title='" + spec[3] + "'")
+                return
+            }
+            qaDeviceLog("download-from itemId=" + row.itemId
+                + " readbackDurationMs=" + row.durationMs)
+            qaDeviceLog("download-into " + DeviceService.musicImportsDir())
+            DeviceService.saveTrackToLibrary(row.itemId, row.title,
+                                             row.artist, row.album)
+            qaDeviceDone = true
+            return
+        }
+        if (!qaDeviceQueued) {
+            // Queueing is the only pass that needs a live device.
+            if (!DeviceService.connected || DeviceService.busy)
+                return
+            const res = SyncEngine.addTracks([{
+                filepath: spec[0], artist: spec[1], album: spec[2],
+                title: spec[3], albumartist: spec[1], genre: "QA",
+                trackNumber: 1, discNumber: 0, year: 2026,
+                durationMs: spec.length > 4 ? parseInt(spec[4], 10) || 0 : 0,
+                filesize: 0, libraryId: -1
+            }])
+            qaDeviceLog("add added=" + res.added + " duplicates=" + res.duplicates
+                + " onDevice=" + res.onDevice + " rejected=" + res.rejected
+                + " ambiguous=" + res.ambiguous)
+            if (res.added === 0) {
+                qaDeviceLog("upload-refused")
+                qaDeviceDone = true
+                return
+            }
+            SyncEngine.startSync()
+            qaDeviceQueued = true
+            return
+        }
+        // Settling deliberately runs disconnected: a finished sync finalizes,
+        // releases the player and clears the row inventory before the next tick
+        // fires, so a presence guard here would refuse to report its own verdict.
+        if (SyncEngine.isSyncing || !qaDeviceSawFinish)
+            return
+        if (SyncEngine.lastError.length > 0)
+            qaDeviceLog("sync-error \"" + SyncEngine.lastError + "\"")
+        qaDeviceLog("upload-settled deviceTracks=" + DeviceService.trackCount
+            + " failed=" + SyncEngine.lastSync.failed
+            + " tracks=" + SyncEngine.lastSync.tracks)
+        qaDeviceDone = true
+    }
+    Timer {
+        id: qaDeviceTimer
+        interval: 2000
+        repeat: true
+        property int ticks: 0
+        onTriggered: {
+            ticks++
+            window.qaDeviceStep()
+            if (ticks >= 120 || window.qaDeviceDone)
+                stop()
+        }
+    }
+    Connections {
+        target: SyncEngine
+        enabled: window.qaDeviceSpec !== null
+        function onSyncSummary(elapsedMs, tracks, videos, photos, skipped,
+                               failed, podcasts, audiobooks) {
+            if (!window.qaDeviceSpec)
+                return
+            window.qaDeviceSawFinish = true
+            window.qaDeviceLog("sync-summary elapsedMs=" + Math.round(elapsedMs)
+                + " tracks=" + tracks + " videos=" + videos
+                + " photos=" + photos + " skipped=" + skipped
+                + " failed=" + failed)
+        }
+        function onLastSyncChanged() {
+            if (!window.qaDeviceSpec)
+                return
+            window.qaDeviceLog("last-sync " + JSON.stringify(SyncEngine.lastSync))
+        }
+    }
+    Connections {
+        target: DeviceService
+        enabled: window.qaDeviceSpec !== null
+        function onTrackSaved(filename, ok) {
+            if (!window.qaDeviceSpec)
+                return
+            window.qaDeviceLog("download-saved name='" + filename + "' ok=" + ok)
+            if (ok) {
+                // A QA row would otherwise survive as a "sent" queue entry in a
+                // profile that was only ever used for a round trip.
+                SyncEngine.clearQueue()
+                window.qaDeviceLog("queue-cleared remaining=" + SyncEngine.totalCount)
+            }
+        }
+        function onPullToast(message) {
+            if (!window.qaDeviceSpec)
+                return
+            window.qaDeviceLog("pull-toast '" + message + "'")
         }
     }
     Connections {

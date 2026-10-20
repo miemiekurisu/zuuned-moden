@@ -122,9 +122,24 @@ CP936 host its scan output was unreadable for precisely the folders worth
 testing; it now calls `zuuned_win_console_utf8()` directly
 (`src/library/librarytool.cpp:311`).
 
-`devicetool`, `spokenmediatool` and `playertool` do not call it.  They do not
-print user paths either, so they are listed under gaps rather than changed for
-symmetry.
+`devicetool`, `spokenmediatool` and `playertool` now put their console in UTF-8
+as well, each calling `zuuned_win_console_utf8()` at the top of its own `main()`.
+None of the three uses the POSIX surface, so each declares the helper itself
+rather than forcing `compat/win/wincompat.h` through the Qt and vendor headers,
+and `CMakeLists.txt` links those three targets against the compat objects.
+
+## Diagnostics print UTF-8, not the ANSI code page
+
+`qPrintable()` is `toLocal8Bit()`.  On a CP936 host every `[sync]`,
+`[sync-canon]` and `[worker]` line naming a Chinese path therefore arrived in the
+log as U+FFFD while the C layer beside it, which is handed `toUtf8()`, printed the
+same path correctly.  The mojibake is the smaller half of the problem: the channel
+an operator reads to find out why a save failed was naming a path that does not
+exist on disk, for exactly the roots worth testing.  Everything under `src/` now
+uses `qUtf8Printable()`, which is the same bytes on Linux.  The one call among
+them that is not logging is mpv's `alang` option (`src/player/MpvController.cpp:53`),
+where UTF-8 is what mpv expects anyway.  The harnesses under `tests/` and `tools/`
+keep `qPrintable()` - their lines are assertion text, not user paths.
 
 ## Checked and cleared - do not re-litigate these
 
@@ -180,7 +195,6 @@ account in `BUILDING.md` under *Path encodings on a non-English Windows*.
 ## Known gaps, on purpose
 
 - Case-insensitive dedup below the drive letter: see the reasoning above.
-- `devicetool`, `spokenmediatool`, `playertool` print in the ANSI code page.
 - UNC roots are produced for `file://host/share` on Windows and are untested
   against a real share; the code path is unit-probed, not device-probed.
 - `~/Music` in a log is the redactor, not a mangled path: see

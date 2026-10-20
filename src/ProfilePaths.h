@@ -44,16 +44,16 @@ inline QString root() {
         const QString path = QDir::cleanPath(declared);
         if (!QDir::isAbsolutePath(path)) {
             std::fprintf(stderr, "[profile] ignoring relative ZUUNED_PROFILE_DIR \"%s\"\n",
-                         qPrintable(declared));
+                         qUtf8Printable(declared));
             return QString();
         }
         if (!QDir().mkpath(path))
             std::fprintf(stderr,
                          "[profile] could not create \"%s\"; profile writes stay there "
                          "and will fail rather than touch the real profile\n",
-                         qPrintable(path));
+                         qUtf8Printable(path));
         else
-            std::fprintf(stderr, "[profile] every profile file goes to \"%s\"\n", qPrintable(path));
+            std::fprintf(stderr, "[profile] every profile file goes to \"%s\"\n", qUtf8Printable(path));
         return path;
     }();
     return cached;
@@ -101,7 +101,7 @@ inline void applySettingsPath() {
         return;
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, base);
     const QString file = QSettings().fileName();
-    std::fprintf(stderr, "[profile] settings live at \"%s\"\n", qPrintable(file));
+    std::fprintf(stderr, "[profile] settings live at \"%s\"\n", qUtf8Printable(file));
     if (!file.startsWith(base))
         std::fprintf(stderr,
                      "[profile] ZUUNED_PROFILE_DIR did not capture the settings file; "
