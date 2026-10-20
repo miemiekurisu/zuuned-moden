@@ -230,6 +230,17 @@ static int runCustomizeSelfTest() {
     // playlist tables. Merely lowering user_version on a current DB
     // leaves future tables behind and does not represent an old library.
     const QByteArray legacySchema =
+        // Rewind every later schema era, not just the Customize ones: a
+        // current-schema database still carries the v6 probe columns,
+        // the v7 photo-album tables and the v9 fingerprint, which would
+        // make the real migration chain fail on columns it never dropped.
+        "ALTER TABLE tracks DROP COLUMN discnumber;"
+        "ALTER TABLE tracks DROP COLUMN probe_mtime_ns;"
+        "ALTER TABLE tracks DROP COLUMN probe_ctime_ns;"
+        "ALTER TABLE tracks DROP COLUMN probe_version;"
+        "ALTER TABLE tracks DROP COLUMN audio_fingerprint;"
+        "DROP TABLE music_probe_failures;"
+        "DROP TABLE photo_album_photos; DROP TABLE photo_albums;"
         "ALTER TABLE videos DROP COLUMN custom_poster;"
         "DROP TABLE collection_customizations;"
         "DROP TABLE playlist_tracks; DROP TABLE playlists;"
@@ -239,6 +250,7 @@ static int runCustomizeSelfTest() {
         "CREATE INDEX idx_plt ON playlist_tracks(playlist_id,position);";
     const QString legacyPath = scratch.filePath(QStringLiteral("legacy.db"));
     LibraryDb legacy;
+    char *legacyError = nullptr;
     check(legacy.open(legacyPath) && legacy.insertVideo(seed), "migration fixture created");
     auto legacyVideo = legacy.allVideos().first();
     legacyVideo.tmdbPoster = QStringLiteral("/cache/vidthumbs/custom_1.jpg");
@@ -248,8 +260,15 @@ static int runCustomizeSelfTest() {
     bool prepared = sqlite3_open(legacyPath.toUtf8().constData(), &raw) == SQLITE_OK;
     if (prepared)
         prepared = sqlite3_exec(raw, (legacySchema + "PRAGMA user_version=2;").constData(),
-                                  nullptr, nullptr, nullptr) == SQLITE_OK;
+                                  nullptr, nullptr, &legacyError) == SQLITE_OK;
+    if (!prepared)
+        printf("      legacy setup failed: %s\n",
+               legacyError ? legacyError : (raw ? sqlite3_errmsg(raw) : "fixture open failed"));
+    sqlite3_free(legacyError);
+    legacyError = nullptr;
     if (raw) sqlite3_close(raw);
+    if (prepared && !legacy.open(legacyPath))
+        printf("      open failed: %s\n", qPrintable(legacy.lastError()));
     check(prepared && legacy.open(legacyPath), "v2 library upgrades to separate artwork pins");
     check(!legacy.allVideos().isEmpty() && legacy.allVideos().first().customPoster
           && QFile::exists(legacyPath + QStringLiteral(".v2-backup")),
@@ -259,7 +278,11 @@ static int runCustomizeSelfTest() {
     prepared = sqlite3_open(legacyPath.toUtf8().constData(), &raw) == SQLITE_OK;
     if (prepared)
         prepared = sqlite3_exec(raw, (legacySchema + "PRAGMA user_version=0;").constData(),
-                                  nullptr, nullptr, nullptr) == SQLITE_OK;
+                                  nullptr, nullptr, &legacyError) == SQLITE_OK;
+    if (!prepared)
+        printf("      v0 reset failed: %s\n",
+               legacyError ? legacyError : (raw ? sqlite3_errmsg(raw) : "fixture open failed"));
+    sqlite3_free(legacyError);
     if (raw) sqlite3_close(raw);
     check(prepared && legacy.open(legacyPath) && !legacy.allVideos().isEmpty()
           && legacy.allVideos().first().customPoster,

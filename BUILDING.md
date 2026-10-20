@@ -133,6 +133,12 @@ directories, `mkstemps`, UTF-8 and long paths, large files, directory
 descriptors, pipes, `mmap`-backed publishing and wide `stdio`. Expected result:
 `166 checks, 0 failures, 0 skips`.
 
+The bash suites in `ci/check.sh` need pkg-config and a POSIX shell, so on
+Windows the library core is covered by the native tools instead:
+`build\librarytool.exe names` and `build\librarytool.exe customize` (the latter
+rebuilds a pre-Customize database and runs the real v0/v2 to v9 migration chain,
+including the pre-migration backup). Both pass; neither touches a device.
+
 ### Device access
 
 The Linux udev rules do nothing here. libusb on Windows needs the Zune

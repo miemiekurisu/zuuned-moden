@@ -6,8 +6,8 @@
 #include <QCryptographicHash>
 #include <QFile>
 #include <QSet>
+#include <QCoreApplication>
 #include <QStandardPaths>
-#include <QTemporaryFile>
 
 #include <sqlite3.h>
 
@@ -335,21 +335,36 @@ bool LibraryDb::open(const QString &path) {
         if (!QFile::exists(backup)) {
             // A file copy omits committed pages still in the WAL. SQLite's
             // backup API snapshots the actual library, including those pages.
-            QTemporaryFile snapshot(backup + QStringLiteral(".XXXXXX"));
+            // SQLite stages the snapshot itself: a QTemporaryFile keeps its own
+            // handle open for its lifetime, and on Windows that handle makes the
+            // publishing rename fail with a sharing violation.
+            const QString temporaryPath = backup
+                + QStringLiteral(".%1.tmp").arg(QCoreApplication::applicationPid());
+            QFile::remove(temporaryPath); // an interrupted upgrade may leave this
             sqlite3 *destination = nullptr;
-            bool saved = snapshot.open();
-            const QString temporaryPath = snapshot.fileName();
-            snapshot.close();
-            if (saved) saved = sqlite3_open(temporaryPath.toUtf8().constData(), &destination) == SQLITE_OK;
+            bool saved = sqlite3_open(temporaryPath.toUtf8().constData(), &destination) == SQLITE_OK;
+            if (!saved)
+                m_lastError = destination ? QString::fromUtf8(sqlite3_errmsg(destination))
+                                          : QStringLiteral("sqlite3_open returned no handle");
             if (saved) {
                 sqlite3_backup *copy = sqlite3_backup_init(destination, "main", m_db, "main");
                 saved = copy && sqlite3_backup_step(copy, -1) == SQLITE_DONE;
                 if (copy) saved = sqlite3_backup_finish(copy) == SQLITE_OK && saved;
+                if (!saved)
+                    m_lastError = QStringLiteral("sqlite3_backup: %1")
+                                      .arg(QString::fromUtf8(sqlite3_errmsg(destination)));
             }
             if (destination) sqlite3_close(destination);
-            saved = saved && QFile::rename(temporaryPath, backup);
+            if (saved) {
+                QFile staged(temporaryPath);
+                if (!(saved = staged.rename(backup)))
+                    m_lastError = staged.errorString();
+            }
             if (!saved) {
-                m_lastError = QStringLiteral("Could not snapshot the library before migration.");
+                QFile::remove(temporaryPath);
+                m_lastError = QStringLiteral("Could not snapshot the library before migration (%1)")
+                                  .arg(m_lastError.isEmpty() ? QStringLiteral("unknown reason")
+                                                             : m_lastError);
                 close();
                 return false;
             }

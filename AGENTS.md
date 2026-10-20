@@ -14,6 +14,13 @@ and the POSIX-only install rules are skipped on Windows; `regex.h` maps onto PCR
 Gate: `tests/win-compat/run.ps1`, 166 software checks. **No Zune device has been
 tested on Windows yet** — WinUSB binding, enumeration, transfers and readback are
 validated on Linux only, so no hardware claim may be carried across platforms.
+Runtime fixes proven on Windows: `LibraryDb` stages its pre-migration snapshot
+through SQLite's own backup API and publishes it with `QFile::rename`, because a
+live `QTemporaryFile` handle made that rename fail with a sharing violation and
+blocked any library that still needed migrations; the `librarytool customize`
+legacy fixture now rewinds the v6 probe columns, v7 photo-album tables and the
+v9 fingerprint, so the whole v0/v2 to v9 migration chain is exercised there
+(`ci/check.sh` itself stays Linux-only).
 Unrelated open item: the EnvironmentBackground spray halo shows a white-ring
 artifact under the Windows blur path; that file is still identical to HEAD.
 
