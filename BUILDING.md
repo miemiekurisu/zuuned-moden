@@ -163,15 +163,17 @@ Each of those numbers has been wrong at some point during the port.
 Whether the built app is actually usable, as opposed to merely compiling: one
 instrumented launch per page (plus the device page with no device attached), the five
 settings tabs, both pinned chrome states, the compact Now Playing island reached by
-resizing a live window, the four command-line probes, a read-only account of what
-the machine can see about a Zune, a seek on the null audio driver, single-instance
-refusal, and before-and-after proof that the real profile stayed untouched.
+resizing a live window, the four command-line probes, the transcode layer making real
+ASF, MP4 and MP3 files instead of only probing them, two launches into a profile folder
+named in Chinese, a read-only account of what the machine can see about a Zune, a seek
+on the null audio driver, single-instance refusal, and before-and-after proof that the
+real profile stayed untouched.
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 ```
 
-Expected: `launches=15 checks=59 failures=0 skips=0 killed=0` and `OVERALL=ok`. It
+Expected: `launches=17 checks=75 failures=0 skips=0 killed=0` and `OVERALL=ok`. It
 needs the same MSVC environment as the build and compiles its own capture tool into
 `build\win-usability\`. `-Only fixture,pages` and similar run a subset - the phase
 list is comma-separated, and because the scratch tree is rebuilt on every run a page
@@ -204,9 +206,31 @@ invalid parameter handler, which `__fastfail()`s the process rather than setting
 `errno`. `X_OK` is therefore `0` in `compat/win/posix_shim.h`, and
 `LibraryScanner::accessibleDirectory()` lets the shim's UTF-16 `opendir()` prove
 read access. Names outside the local code page are still lossy on their way
-through the shim, exactly as they are through `QFile::encodeName()`; moving the
-shim and the remaining `QFile::encodeName()` callers to explicit UTF-8 is open
-work.
+through the shim, exactly as they are through `QFile::encodeName()`.
+
+Anything with its own encoding policy has to be named explicitly rather than inherit
+the ACP convention, and SQLite is the second one found after FFmpeg. Its Windows VFS
+decodes a path name with `CP_UTF8` and never consults the ANSI code page, so handing it
+`QFile::encodeName(path)` asked for a different file than the folder Qt had just made:
+a two-byte GBK sequence for a common Han character is very often valid UTF-8 as well
+(`U+4E00` is `D2 BB`, which reads back as `U+04BB`). Under a profile folder named in
+Chinese - a Chinese Windows user name is enough - `spoken/` appeared, `spoken.db` did
+not, and every podcast and audiobook operation answered "Cannot open spoken-media
+database", while `library.db` in the same folder opened fine because `LibraryDb` passes
+`toUtf8()`. `src/spoken/SpokenStore.cpp` passes `toUtf8()` now, which is the same
+bytes on Linux, and the `cjkprofile` phase of the usability gate launches twice into a
+Han-named profile folder and reads the store's schema back with
+`tests/win-usability/inspect_spoken_db.py`.
+
+Not every `QFile::encodeName()` caller is a bug waiting to happen, and each remaining
+one has been checked rather than guessed at: `compat/win/` decodes the bytes it is
+handed as UTF-8 first and as the ANSI code page second, and CRT `access()` is
+ANSI-only, so local 8-bit is the correct thing to give both. The `fixture` phase proves
+the scanner side of that by storing a Chinese album folder name and hashing the audio
+behind it. The one known loss is inside Qt itself: with a profile folder the ANSI code
+page cannot spell, Qt's own shader/pipeline cache cannot open its file even though the
+directory exists, so such a profile pays for a cold shader cache on every start. It is
+recorded by the gate, not asserted, and no data is involved.
 
 ### Incremental builds and the compiler's include note
 

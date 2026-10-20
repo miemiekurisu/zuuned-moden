@@ -54,7 +54,20 @@ bool SpokenStore::open(QString *error) {
         return false;
     }
     const QString path = m_root + QStringLiteral("/spoken.db");
-    if (sqlite3_open_v2(QFile::encodeName(path).constData(), &m_db,
+    /* SQLite takes UTF-8 path names on every platform: its Windows VFS decodes
+     * the name itself with CP_UTF8 and never asks the ANSI code page, while
+     * QFile::encodeName() is Qt's local-8-bit codec, which on a GBK machine is
+     * CP936.  A two-byte GBK sequence for a common Han character is very often
+     * also valid UTF-8 (U+4E00 encodes as D2 BB, which reads back as U+04BB),
+     * so a Chinese profile folder - a Chinese Windows user name is enough -
+     * reached SQLite as bytes naming a different file, the file could not be
+     * created, and every podcast and audiobook operation failed with "Cannot
+     * open spoken-media database".  Measured on this machine: the profile got
+     * its spoken/ directory and no spoken.db at all, while library.db in the
+     * same folder opened fine because LibraryDb passes toUtf8().  Linux paths
+     * are UTF-8 already, so this is the same bytes there. */
+    const QByteArray databasePath = path.toUtf8();
+    if (sqlite3_open_v2(databasePath.constData(), &m_db,
                         SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) != SQLITE_OK) {
         *error = QStringLiteral("Cannot open spoken-media database");
         return false;

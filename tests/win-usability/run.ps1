@@ -378,11 +378,14 @@ function Invoke-Case {
         [string]$Name,
         [string[]]$Arguments = @(),
         [switch]$Seed,
+        [string]$ProfileDir = '',
         [scriptblock]$Drive
     )
     $script:caseSeq++
     $tag = $script:caseSeq.ToString('00') + '-' + $Name
-    $profile = Join-Path $profiles $tag
+    # A case that has to re-open what an earlier launch left behind names its profile
+    # folder exactly instead of taking a fresh one under profiles\.
+    $profile = if ($ProfileDir) { $ProfileDir } else { Join-Path $profiles $tag }
     New-Item -ItemType Directory -Force -Path $profile | Out-Null
     if ($Seed) {
         Copy-Item -LiteralPath (Join-Path $out 'seed-library.db') -Destination (Join-Path $profile 'library.db')
@@ -776,6 +779,120 @@ if (Select-Phase 'tools') {
 }
 
 Write-Host ''
+Write-Host '== encode real media'
+if (Select-Phase 'encode') {
+    # Until now the Windows line had only ever asked the transcode layer to read: the
+    # gate probed fixtures with it and never once made it produce a byte, while video
+    # sync and FLAC sync are nothing but production.  Encoding walks the encoder
+    # table, the temporary-path helper, LAME superframes and the ASF muxer, none of
+    # which a probe touches, so it gets its own phase.  Containers are judged by
+    # their magic numbers because a file name proves nothing - this repository
+    # already learned that real libraries hold WMA streams inside .mp3 names.
+    # transcodetool writes through make_temp_path into the temporary directory, which
+    # is exactly where the application writes, so this is the real destination and
+    # this phase cleans up after itself there.
+    if (-not (Test-Path -LiteralPath $ffmpeg) -or -not (Test-Path -LiteralPath $transcodeTool)) {
+        Skip 'the encode phase' 'ffmpeg.exe or transcodetool.exe is missing'
+    }
+    else {
+        $clip = Join-Path $out 'encode-src.mp4'
+        $made = Invoke-Proc -File $ffmpeg -WorkDir $out -Timeout 300 -Arguments @(
+            '-hide_banner', '-loglevel', 'error', '-y',
+            '-f', 'lavfi', '-i', 'testsrc2=size=320x240:rate=15:duration=3',
+            '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3',
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+            '-c:a', 'aac', '-shortest', $clip)
+        Check 'a three-second H.264 source clip exists to encode from' `
+            (($made.Code -eq 0) -and (Test-Path -LiteralPath $clip)) ('code=' + $made.Code)
+
+        function Get-LeadBytes {
+            param([string]$Path, [int]$Count)
+            if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return '' }
+            $bytes = [System.IO.File]::ReadAllBytes($Path)
+            $take = [Math]::Min($Count, $bytes.Length)
+            return (($bytes[0..($take - 1)] | ForEach-Object { $_.ToString('x2') }) -join ' ')
+        }
+        function Get-EncodeSeconds {
+            param([string]$ProbeOut)
+            if ($ProbeOut -match 'duration=(\d+\.\d+)') { return [double]$Matches[1] }
+            return -1.0
+        }
+
+        # Profile 0 is wmv2 + wmav2 in an ASF container: what a Zune 30 plays, and the
+        # profile the Classic video season was synced with.
+        $enc0 = Invoke-Proc -File $transcodeTool -Timeout 900 -Arguments @('video', $clip, '0')
+        $path0 = $enc0.Out.Trim()
+        Check 'profile 0 encoded the clip and named the file it made' `
+            (($enc0.Code -eq 0) -and $path0 -and (Test-Path -LiteralPath $path0)) `
+            ('code=' + $enc0.Code + ' out=' + $path0)
+        Check 'profile 0 wrote an ASF container' `
+            ((Get-LeadBytes -Path $path0 -Count 4) -eq '30 26 b2 75') `
+            ('magic=' + (Get-LeadBytes -Path $path0 -Count 4))
+        $probe0 = Invoke-Proc -File $transcodeTool -Timeout 120 -Arguments @('probe', $path0)
+        $sec0 = Get-EncodeSeconds -ProbeOut $probe0.Out
+        Check 'profile 0 kept the three seconds and the source frame size' `
+            (($sec0 -gt 2.5) -and ($sec0 -lt 3.5) -and ($probe0.Out -match 'video=320x240')) `
+            ('seconds=' + $sec0 + ' out=' + $probe0.Out.Trim().Replace([Environment]::NewLine, ' '))
+
+        # Profile 2 is the H.264 path, which on this platform means libx264 out of the
+        # FFmpeg build the application links (src/transcode/libav_transcode.c picks it
+        # for anything that is not Apple) at the 480x272 the HD screen has.
+        $enc2 = Invoke-Proc -File $transcodeTool -Timeout 900 -Arguments @('video', $clip, '2')
+        $path2 = $enc2.Out.Trim()
+        Check 'profile 2 encoded the clip and named the file it made' `
+            (($enc2.Code -eq 0) -and $path2 -and (Test-Path -LiteralPath $path2)) `
+            ('code=' + $enc2.Code + ' out=' + $path2)
+        $lead2 = Get-LeadBytes -Path $path2 -Count 12
+        Check 'profile 2 wrote an ISO base-media container' `
+            ($lead2 -match '66 74 79 70') ('magic=' + $lead2)
+        $probe2 = Invoke-Proc -File $transcodeTool -Timeout 120 -Arguments @('probe', $path2)
+        $sec2 = Get-EncodeSeconds -ProbeOut $probe2.Out
+        Check 'profile 2 reached the 480x272 target with the same running time' `
+            (($sec2 -gt 2.5) -and ($sec2 -lt 3.5) -and ($probe2.Out -match 'video=480x272')) `
+            ('seconds=' + $sec2 + ' out=' + $probe2.Out.Trim().Replace([Environment]::NewLine, ' '))
+
+        # The audio leg is what FLAC sync needs: decode, resample, LAME.  A truncated
+        # superframe used to make LAME produce unusable files, and that is a Windows
+        # and Linux bug at once, so the product is probed for its running time rather
+        # than trusted for its extension.
+        $audioSec = -1.0
+        if (Test-Path -LiteralPath $tone) {
+            $encA = Invoke-Proc -File $transcodeTool -Timeout 900 -Arguments @('audio', $tone)
+            $pathA = $encA.Out.Trim()
+            Check 'the audio encoder produced an mp3 and named it' `
+                (($encA.Code -eq 0) -and $pathA -and (Test-Path -LiteralPath $pathA)) `
+                ('code=' + $encA.Code + ' out=' + $pathA)
+            $leadA = Get-LeadBytes -Path $pathA -Count 3
+            Check 'the audio encoder wrote an ID3 tag or a frame sync header' `
+                (($leadA -eq '49 44 33') -or ($leadA -match '^ff')) ('magic=' + $leadA)
+            $probeA = Invoke-Proc -File $transcodeTool -Timeout 120 -Arguments @('probe', $pathA)
+            $audioSec = Get-EncodeSeconds -ProbeOut $probeA.Out
+            Check 'the encoded audio is as long as the tone it came from' `
+                (($audioSec -gt 5.0) -and ($audioSec -lt 7.0)) ('seconds=' + $audioSec)
+        }
+        else {
+            Skip 'the audio encode checks' 'no fixture tone on disk'
+        }
+
+        # The encode runs leave their products in the temporary directory.  Remove
+        # them rather than teach the next run to tolerate strangers in %TEMP%.
+        $leftovers = @($path0, $path2)
+        if ($audioSec -gt 0) { $leftovers += $pathA }
+        $kept = @()
+        foreach ($tmp in $leftovers) {
+            if (-not $tmp -or -not (Test-Path -LiteralPath $tmp)) { continue }
+            if (-not $pythonExe) { $kept += $tmp; continue }
+            Invoke-Proc -File $pythonExe -Arguments @(
+                '-c', 'import os,sys;os.remove(sys.argv[1])', $tmp) -Timeout 60 | Out-Null
+        }
+        if ($kept.Count) {
+            Write-Host ('  note encode products left in the temporary directory: ' +
+                ($kept -join ' '))
+        }
+    }
+}
+
+Write-Host ''
 Write-Host '== what is plugged in'
 if (Select-Phase 'device') {
     # Whether the app is telling the truth about the device is the one question a
@@ -951,6 +1068,78 @@ if (Select-Phase 'profile') {
         ($ownCache.Count -gt 0) (($ownCache | ForEach-Object { $_.Name + '=' + $_.Length }) -join ' ')
     Write-Host ('  note real profile before the run: ' + $beforeFp)
     Write-Host ('  note real profile after the run:  ' + (Get-RealProfileFingerprint))
+}
+
+Write-Host ''
+Write-Host '== profile folder the ANSI code page cannot spell'
+if (Select-Phase 'cjkprofile') {
+    # Every path the application builds hangs off the profile folder, and on a Chinese
+    # Windows that folder usually sits under a Chinese user name, so a profile whose
+    # name cannot be spelled in the ANSI code page is the ordinary case for a large
+    # part of the people this port is for rather than an exotic one.
+    #
+    # SQLite is handed UTF-8 path bytes and decodes them itself on Windows.  The
+    # spoken-media store used to hand it QFile::encodeName() instead, which is the
+    # local code page, and a two-byte GBK sequence for a common Han character is very
+    # often valid UTF-8 as well (U+4E00 encodes as D2 BB, which reads back as U+04BB),
+    # so the store asked for a different file than the folder Qt had just made.
+    # Measured here before the fix: spoken\ existed, spoken\spoken.db did not, and
+    # every podcast and audiobook operation answered "Cannot open spoken-media
+    # database", while library.db in the same folder opened fine because LibraryDb
+    # passes toUtf8().
+    #
+    # The folder name is assembled from code points so that this script stays ASCII:
+    # Windows PowerShell 5.1 reads a BOM-less script as ANSI, which is the very code
+    # page under test.
+    $cjk = [string]::Join('', @([char]0x4E2D, [char]0x6587, [char]0x97F3, [char]0x4E50))
+    $cjkDir = Join-Path $out ($cjk + '-profile')
+    New-Item -ItemType Directory -Force -Path $cjkDir | Out-Null
+    $spokenDb = Join-Path $cjkDir 'spoken\spoken.db'
+
+    $hanFirst = Invoke-Case -Name 'cjk-spoken-first-launch' -ProfileDir $cjkDir `
+        -Arguments @('--page', 'music')
+    Assert-Case -Case $hanFirst -Label 'a first launch into a Han profile folder shows a painted window'
+    Check 'a Han profile folder gets a library database' `
+        (Test-Path -LiteralPath (Join-Path $cjkDir 'library.db')) ('profile=' + $cjkDir)
+    Check 'a Han profile folder gets the spoken-media database' `
+        (Test-Path -LiteralPath $spokenDb) ('db=' + $spokenDb)
+
+    # Re-opening is the half of the bug a single fresh profile cannot see: an importer,
+    # a podcast download or an audiobook added later only ever meets the next launch,
+    # and a store that cannot be found again is as dead as one that was never made.
+    $hanSecond = Invoke-Case -Name 'cjk-spoken-second-launch' -ProfileDir $cjkDir `
+        -Arguments @('--page', 'music')
+    Assert-Case -Case $hanSecond -Label 'a second launch re-opens the same Han profile folder'
+    $spokenBytes = 0
+    if (Test-Path -LiteralPath $spokenDb) { $spokenBytes = (Get-Item -LiteralPath $spokenDb).Length }
+    Check 'the second launch left a readable spoken-media database behind' `
+        ($spokenBytes -gt 0) ('bytes=' + $spokenBytes)
+    if (-not $pythonExe) {
+        Skip 'the schema of the database under the Han folder' 'no python on this machine'
+    }
+    elseif (Test-Path -LiteralPath $spokenDb) {
+        $insp = Invoke-Proc -File $pythonExe -Timeout 120 -Arguments @(
+            (Join-Path $PSScriptRoot 'inspect_spoken_db.py'), $spokenDb)
+        Check 'the database under the Han folder is a usable spoken-media store' `
+            (($insp.Code -eq 0) -and ($insp.Out -match 'OVERALL=ok')) `
+            ('code=' + $insp.Code + ' ' + $insp.Out.Trim().Replace([Environment]::NewLine, ' '))
+    }
+    else {
+        Check 'the database under the Han folder is a usable spoken-media store' $false `
+            'no database to inspect'
+    }
+
+    # Recorded, not asserted.  Qt writes its own shader/pipeline cache through a byte
+    # path, so under a folder the local code page cannot spell the directory exists,
+    # the open still fails, and Windows answers "the system cannot find the path
+    # specified".  All sixteen ASCII profiles of the same build in the last full run
+    # wrote their own qqpc_opengl, from 116,820 bytes upwards.  What a Han profile
+    # folder costs is the warm shader cache on every start, never a byte of data.
+    $cacheFile = @(Get-ChildItem -LiteralPath (Join-Path $cjkDir 'cache') -File -Force `
+        -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'qqpc_opengl' })
+    Write-Host ('  note the Qt shader cache wrote ' + $cacheFile.Count + ' file(s) under the' +
+        ' Han folder, where an ASCII profile writes one: Qt opens it through a byte path,' +
+        ' so a folder name the ANSI code page cannot spell costs the cache, not the data')
 }
 
 Write-Host ''

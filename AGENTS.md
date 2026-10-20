@@ -53,7 +53,7 @@ header-only edit silently links a stale object: force a full rebuild, with
 `--clean-first`, after any header-only change until that changes.
 The Windows usability gate is finished and passing:
 `pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1` reports
-`launches=15 checks=59 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
+`launches=17 checks=75 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
 built app once per page (music, videos, photos, podcasts, audiobooks, and the device
 page with no device attached), the five settings tabs, the header pinned at 0 and at
 1, a queue played through the compact island after a real `winshot --move` resize, the
@@ -116,6 +116,33 @@ machine the honest verdict is `blocked`, at problem 28, with both APIs naming th
 same instance. Seeing is not driving: WinUSB binding through Zadig has still never
 been done here, and **no Zune has ever been opened, transferred to or read back from
 on Windows.**
+
+**2026-10-20 Windows path encoding checkpoint:** `src/spoken/SpokenStore.cpp` handed
+`sqlite3_open_v2` the `QFile::encodeName()` of its database and nothing else in the app
+does that: SQLite's Windows VFS decodes path bytes as UTF-8 and never consults the ANSI
+code page, so on this GBK machine a profile folder with a Han character in it (a Chinese
+Windows user name is enough) made the store open a *different* file than the folder Qt
+had created. Measured before the fix: `spoken/` existed, `spoken.db` did not, and every
+podcast and audiobook operation failed with "Cannot open spoken-media database", while
+`library.db` beside it opened fine because `LibraryDb` passes `toUtf8()`. It passes
+`toUtf8()` now - the same bytes on Linux, where paths already are UTF-8. Two gate phases
+cover it and the encoder from here on: `cjkprofile` launches twice into one profile
+folder named from code points and reads the spoken store's schema back through
+`tests/win-usability/inspect_spoken_db.py`, and `encode` makes the transcode layer
+produce rather than probe - FFmpeg-built H.264 source through profile 0 (ASF magic
+`30 26 b2 75`, source size, duration intact) and profile 2 (`ftyp`, 480x272), plus the
+LAME leg judged by probing the mp3 for the length of the tone. Full gate now
+`launches=17 checks=75 failures=0 skips=0 killed=0`. Two things deliberately left
+alone after being checked, so do not "fix" them again: `compat/win/` already decodes a
+narrow path as UTF-8 then ANSI, and CRT `access()` is ANSI-only, which is what the
+`QFile::encodeName()` callers in `LibraryScanner`, `ArtworkPipeline`, the artwork
+services and `SupportReport` correctly hand it. And Qt's own shader/pipeline cache
+cannot open its file when the profile folder is outside the local code page (all
+sixteen ASCII profiles of a run write `qqpc_opengl`, neither Han-named one does); that
+byte-path open is inside Qt, the gate records it, and it costs a warm cache, not data.
+**Still no Zune hardware of any kind on Windows**: the attached Zune HD sits at PnP
+problem 28 with no driver bound, `devicetool` answers `blocked`, and nothing here has
+opened a device handle.
 
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow

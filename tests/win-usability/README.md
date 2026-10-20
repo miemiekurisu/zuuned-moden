@@ -51,6 +51,15 @@ console output has to survive a non-ASCII round trip. It is what proves a scan
 stored a Chinese folder name and hashed the audio behind it, rather than merely
 counting rows.
 
+`inspect_spoken_db.py` does the same job for the spoken-media store: it opens
+`<profile>/spoken/spoken.db` read-write (a launch the gate stopped can leave an
+un-checkpointed `-wal` that a read-only connection cannot recover), prints
+`user_version`, `tables`, `indexes`, `columns`, `rows`, `integrity` and
+`OVERALL=ok|fail` as ASCII, and fails unless the file really is the schema 1 `items`
+store the application means. It exists because the bug it gates leaves a folder behind:
+a file listing can prove something was written there, only the schema proves it is the
+database the next launch will find.
+
 `make_scan_fixture.py` builds the library fixture those checks turn on: a plain
 tone, a WMA stream inside a file named `.mp3`, an album folder named in Chinese
 characters, and twelve nested folders that push the leaf path to 277 characters. It
@@ -71,9 +80,9 @@ silent unless asked, on either platform.
 
 ## Status
 
-`run.ps1` is that gate and it is complete.  An unfiltered run makes fifteen
-instrumented launches plus the tool probes and ends `launches=15 checks=53
-failures=0 skips=0 killed=0` and `OVERALL=ok`:
+`run.ps1` is that gate and it is complete.  An unfiltered run makes seventeen
+instrumented launches plus the tool, encoder and profile probes and ends
+`launches=17 checks=75 failures=0 skips=0 killed=0` and `OVERALL=ok`:
 
     pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 
@@ -100,12 +109,27 @@ the seeded library (`-Only fixture,pages`).
   the island already up.
 - `tools` - `transcodetool probe` on a real MP3 and on a WMA stream named `.mp3`,
   `librarytool names`, `librarytool customize`.
+- `encode` - the transcode layer *producing*, not only reading, because video sync and
+  FLAC sync are nothing but production: FFmpeg makes a real three-second H.264 clip,
+  profile 0 has to return ASF (magic `30 26 b2 75`) at the source frame size with the
+  running time intact, profile 2 has to return `ftyp` at 480x272, and the LAME leg is
+  judged by probing the mp3 for the length of the tone it came from.  Containers are
+  read by magic number because a name proves nothing and this repository already knows
+  real libraries hold WMA streams inside `.mp3` files.  The products land in `%TEMP%`,
+  exactly where the application writes, and the phase deletes them again.
 - `seek` - `playertool seek` and `play`, on the null audio driver.
 - `single` - a second instance pointed at the same profile and the same lock suffix
   refuses in its own words and never builds a scene, while the holder keeps its window
   and still closes politely.
 - `profile` - session log, settings ini, both databases, the instance lock and the Qt
   pipeline cache inside the profile, and the real profile unchanged before and after.
+- `cjkprofile` - two launches into one profile folder whose name is Chinese, because a
+  Chinese Windows user name puts exactly that in front of every path the application
+  builds.  The folder has to gain both databases, the second launch has to re-open what
+  the first left behind, and `inspect_spoken_db.py` has to read the spoken store's own
+  schema back out of it.  This phase is the regression gate for `SpokenStore` handing
+  SQLite the local ANSI code page instead of UTF-8, which on a GBK machine opens a
+  different file and lost every podcast and audiobook silently.
 
 Four things it cannot certify, and does not claim to:
 
@@ -135,6 +159,13 @@ into the real `%LOCALAPPDATA%` while the rest of the profile was elsewhere.
 inside the profile whenever `ZUUNED_PROFILE_DIR` is set.  A brand new profile logs one
 `Could not open pipeline cache source file` warning before Qt has written that file
 once: expected, recorded, and the price of leaving the real cache alone.
+
+Under a profile folder whose name the local ANSI code page cannot spell, Qt's *save*
+fails as well - the `cache` folder is plainly there and Windows still answers that the
+path cannot be found. All sixteen ASCII profiles of one full run wrote their own
+`qqpc_opengl`; neither Han-named profile did. That byte-path open is inside Qt, so the
+gate records the warnings instead of asserting on them: what a Chinese profile folder
+costs is a cold shader cache on every start, never a byte of the library.
 
 Three probe findings shape the gate.  A fresh profile shows the onboarding wizard
 instead of the requested `--page`, so a page case has to dismiss onboarding first
