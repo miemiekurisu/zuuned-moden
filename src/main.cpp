@@ -7,12 +7,14 @@
 #endif
 
 #include <QDir>
+#include <QFile>
 #include <QGuiApplication>
 #include <QLockFile>
 #include <QQmlApplicationEngine>
 #include <QPalette>
 #include <QQuickWindow>
 #include <QStandardPaths>
+#include <QSettings>
 #include <QThreadPool>
 #include <QScopeGuard>
 #include <cstdio>
@@ -55,6 +57,15 @@ int main(int argc, char *argv[]) {
     // exists. The guard outlives the engine/application and their workers.
     QCoreApplication::setApplicationName(QStringLiteral("Zuuned"));
     QCoreApplication::setOrganizationName(QStringLiteral("Zuuned"));
+#ifdef Q_OS_WIN
+    // Windows' "native" settings format is the registry, but the rest of a
+    // Zuuned profile (library, logs, cache, instance lock) is one folder under
+    // %LOCALAPPDATA%. Keep settings in that model: an ini in %APPDATA%\Zuuned,
+    // so a profile can be inspected, moved, deleted or isolated by a test the
+    // way HOME isolates it on Linux. No Windows build shipped a registry
+    // profile, so the only values to honour are pre-file ones (see below).
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+#endif
     auto &sessionLog = Zuuned::Diagnostics::SessionLog::instance();
     sessionLog.setRedactionContext(DiagnosticsService::redactionContext());
     const QString logRoot = QStandardPaths::writableLocation(QStandardPaths::StateLocation);
@@ -80,6 +91,27 @@ int main(int argc, char *argv[]) {
     app.setApplicationName("Zuuned");
     app.setOrganizationName("Zuuned");
     app.setApplicationVersion(QString::fromLatin1(ZuunedBuild::version));
+#ifdef Q_OS_WIN
+    {
+        // One-time import for a profile that only ever lived in the registry.
+        QSettings fileSettings;
+        if (!QFile::exists(fileSettings.fileName())) {
+            // NativeFormat is the registry on Windows; Qt 6 has no alias.
+            QSettings registry(QSettings::NativeFormat, QSettings::UserScope,
+                               QStringLiteral("Zuuned"), QStringLiteral("Zuuned"));
+            const QStringList keys = registry.allKeys();
+            for (const QString &key : keys)
+                fileSettings.setValue(key, registry.value(key));
+            if (!keys.isEmpty()) {
+                fileSettings.sync();
+                std::fprintf(stderr,
+                             "[settings] imported %d value(s) from the Windows "
+                             "registry into %s\n",
+                             int(keys.size()), qPrintable(fileSettings.fileName()));
+            }
+        }
+    }
+#endif
     Zuuned::configureApplicationIdentity(app);
     std::fprintf(stderr, "[zuuned] %s; Qt runtime %s\n", ZuunedBuild::version, qVersion());
 

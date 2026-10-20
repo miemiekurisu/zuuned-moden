@@ -139,6 +139,16 @@ Windows the library core is covered by the native tools instead:
 rebuilds a pre-Customize database and runs the real v0/v2 to v9 migration chain,
 including the pre-migration backup). Both pass; neither touches a device.
 
+### Settings and profile location
+
+A Windows Zuuned profile lives in files, not the registry: settings are the ini
+at `%APPDATA%\Zuuned\Zuuned.ini`, while the library, cache, logs and the
+single-instance lock stay under `%LOCALAPPDATA%\Zuuned\Zuuned`. That mirrors the
+`$HOME`-isolated profile on Linux, so a test redirects one variable to a
+throwaway folder. On first start the app copies any values an earlier build left
+in `HKCU\Software\Zuuned\Zuuned` into the ini and logs
+`[settings] imported N value(s)`.
+
 ### Device access
 
 The Linux udev rules do nothing here. libusb on Windows needs the Zune

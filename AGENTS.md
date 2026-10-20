@@ -20,7 +20,10 @@ live `QTemporaryFile` handle made that rename fail with a sharing violation and
 blocked any library that still needed migrations; the `librarytool customize`
 legacy fixture now rewinds the v6 probe columns, v7 photo-album tables and the
 v9 fingerprint, so the whole v0/v2 to v9 migration chain is exercised there
-(`ci/check.sh` itself stays Linux-only).
+(`ci/check.sh` itself stays Linux-only). Settings are an ini in
+`%APPDATA%\Zuuned`, not the registry, with a one-time import of any older
+`HKCU\Software\Zuuned\Zuuned` values, so a Windows profile is as inspectable and
+isolatable as `$HOME` on Linux.
 Unrelated open item: the EnvironmentBackground spray halo shows a white-ring
 artifact under the Windows blur path; that file is still identical to HEAD.
 
