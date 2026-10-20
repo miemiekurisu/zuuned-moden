@@ -11,7 +11,7 @@ the Windows section of `BUILDING.md`). `compat/win/` builds once as
 `zuuned_wincompat` and is force-included through `posix_shim.h` so libzune and the
 transcode C layer keep their POSIX surface without per-file `#ifdef`s; D-Bus/Mpris
 and the POSIX-only install rules are skipped on Windows; `regex.h` maps onto PCRE2.
-Gate: `tests/win-compat/run.ps1`, 166 software checks. **No Zune device has been
+Gate: `tests/win-compat/run.ps1`, 171 software checks. **No Zune device has been
 tested on Windows yet** — WinUSB binding, enumeration, transfers and readback are
 validated on Linux only, so no hardware claim may be carried across platforms.
 Runtime fixes proven on Windows: `LibraryDb` stages its pre-migration snapshot
@@ -20,7 +20,15 @@ live `QTemporaryFile` handle made that rename fail with a sharing violation and
 blocked any library that still needed migrations; the `librarytool customize`
 legacy fixture now rewinds the v6 probe columns, v7 photo-album tables and the
 v9 fingerprint, so the whole v0/v2 to v9 migration chain is exercised there
-(`ci/check.sh` itself stays Linux-only). Settings are an ini in
+(`ci/check.sh` itself stays Linux-only). `fd_handle()` consults the CRT
+descriptor table before reading a number as an NT handle: Qt opens a `QFile`
+through `_wopen()`, so `QFile::handle()` is a descriptor even though its
+documentation says native, and the watermark that used to stand in front of the
+table only counted descriptors `compat/win` handed out - every Windows
+audiobook import died at `Audio source is not a regular file` because of it.
+The CRT invalid-parameter guard that makes asking the table safe now goes in
+lazily from `fd_handle()`, because a `.CRT$XIB` initialiser is folded into
+`.rdata` by the linker (LNK4254) and never runs. Settings are an ini in
 `%APPDATA%\Zuuned`, not the registry, with a one-time import of any older
 `HKCU\Software\Zuuned\Zuuned` values, so a Windows profile is as inspectable as
 `$HOME` on Linux. For isolation `ZUUNED_PROFILE_DIR` names one folder that owns

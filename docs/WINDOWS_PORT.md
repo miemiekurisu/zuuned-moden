@@ -83,10 +83,19 @@ Numbers below come from the development machine at this checkpoint.  Re-run
 `tests\win-usability\run.ps1` and `tests\win-compat\run.ps1` from an MSVC
 environment to reproduce them.
 
-- The shim gate reports `166 checks, 0 failures, 0 skips`: temporary names,
+- The shim gate reports `171 checks, 0 failures, 0 skips`: temporary names,
   long paths past 260 characters, 64-bit sizes, directory descriptors,
   `opendir` semantics and UTF-8 narrow names under the same force-include the
-  application builds with.
+  application builds with. Since 2026-10-20 it also pins how `fstat()` reads a
+  number: a raw NT handle *and* a descriptor the shim never created both resolve.
+  That closed a Windows-only bug which killed every audiobook import - Qt opens a
+  `QFile` through `_wopen()`, so `QFile::handle()` is a CRT descriptor rather than
+  the native handle its documentation promises, and the watermark in front of the
+  descriptor table only counted descriptors `compat/win` handed out. The
+  invalid-parameter guard that makes asking the table safe goes in lazily from
+  `fd_handle()`: a `.CRT$XIB` initialiser was tried first, the linker folded this
+  object's `.CRT` subsection into `.rdata` (LNK4254) and start-up never ran it,
+  which the gate caught by finding the handler still null.
 - The usability gate makes seventeen instrumented launches plus the tool,
   encoder and profile probes and ends `launches=17 checks=83 failures=0
   skips=0 killed=0` and `OVERALL=ok`.
@@ -129,7 +138,9 @@ environment to reproduce them.
    the GPU is faster than the software path here - the ~4x figure in the roadmap was
    measured on Linux.  A machine without an NVIDIA decoder legitimately takes the
    software path, and the gate asserts the software run only when it forces one.
-4. `spokenmediatool` builds but has no Windows gate of its own.
+4. `spokenmediatool` builds and both legs were driven by hand on 2026-10-20 - an
+   RSS feed with a Chinese item title, and the audiobook probe the descriptor fix
+   above unblocked - but the tool still has no phase in the usability gate.
 5. Packaging.  No installer, no `cmake --install` layout, no verified
    `windeployqt` directory and no release artifact.
 6. The Linux line is unchanged by construction rather than re-verified: this

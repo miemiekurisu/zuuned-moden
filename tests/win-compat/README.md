@@ -20,7 +20,7 @@ Keep the uppercase form and treat any `D9007` in this gate output as a broken
 gate rather than a passing run.
 
 A good run prints one `--- section` marker per group and ends with
-`166 checks, 0 failures, 0 skips` followed by `win-compat gate passed`. The
+`171 checks, 0 failures, 0 skips` followed by `win-compat gate passed`. The
 groups are:
 
 - `tmpdir` - `ZUUNED_TMPDIR` resolves to a directory the shim can write into and
@@ -35,7 +35,12 @@ groups are:
   to `stat()`/`fstat()` and `pread()` reaches the end of the sparse tail.
 - `directory_descriptor` - `O_DIRECTORY` via `zuuned_open_directory()`,
   `fstatat()`, `flock()`, `opendir()` on the descriptor and `unlinkat()` with
-  `AT_REMOVEDIR`.
+  `AT_REMOVEDIR`, plus both readings of a number passed to `fstat()`: a raw NT
+  handle and a descriptor the shim never handed out. The second is what
+  `QFile::handle()` reports on Windows - Qt opens a `QFile` with `_wopen()` - and
+  the audiobook importer is dead without it. The guard the raw-handle question
+  needs is cleared at the start of `main()` and asserted standing again here, so
+  the probe proves the shim reinstates it rather than a `main()` installing it.
 - `opendir` - enumeration returns names rather than paths, distinguishes
   `DT_REG` from `DT_DIR`, survives `rewinddir()` and `dirfd()` fstats as a
   directory.

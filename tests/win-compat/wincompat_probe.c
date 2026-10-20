@@ -6,6 +6,8 @@
  *  - paths past 260 characters and UTF-8 names open, stat and read back,
  *  - a directory descriptor is a real descriptor: fstat says S_ISDIR, flock
  *    guards it, and the at() family resolves relative names against it,
+ *  - fstat() also resolves a descriptor opened outside the shim, because that
+ *    is what QFile::handle() hands AudiobookProbe on Windows,
  *  - pipe readiness answers EOF instead of blocking (SessionLog drains pipes),
  *  - mmap/pread read a staged file, and zuuned_link publishes it atomically,
  *  - fopen/remove/unlink/rename go through the wide API, so a UTF-8 media name
@@ -367,8 +369,10 @@ static void test_opendir(void)
     CHECK(fstat(fd, &st) == 0 && S_ISDIR(st.st_mode), "fstat(dirfd()) is not a directory");
     CHECK(closedir(stream) == 0, "closedir failed");
 
-    /* fstat through a QFile-style raw NT handle: Qt hands the handle itself,
-     * not a CRT descriptor, and AudiobookProbe passes it straight to fstat. */
+    /* fstat() through a raw NT handle.  This is the fallback branch of
+     * fd_handle(), kept for callers that do pass a handle.  It is NOT what Qt
+     * does: Qt opens a QFile on Windows with _wopen(), so QFile::handle() is a
+     * CRT descriptor - the case the block below covers. */
     wchar_t file_ext[2600];
     _snwprintf(file_ext, 2600, L"%ls\\scan\\leaf-0.mp3", root_ext);
     const HANDLE raw = CreateFileW(file_ext, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -382,7 +386,31 @@ static void test_opendir(void)
         CHECK(S_ISREG(via_raw.st_mode), "raw handle is not a regular file");
         CloseHandle(raw);
     }
+
+    /* The descriptor Qt actually reports.  Nothing in this repository handed out
+     * this number, which is precisely the condition that used to break: the shim
+     * read it as a raw handle, GetFileType refused it, and every Windows
+     * audiobook import died on "Audio source is not a regular file". */
+    const int foreign = _wopen(file_ext, _O_RDONLY | _O_BINARY);
+    CHECK(foreign != -1, "opening the fixture outside the shim failed: errno %d", errno);
+    if (foreign != -1) {
+        struct stat via_descriptor;
+        CHECK(fstat(foreign, &via_descriptor) == 0,
+              "fstat on a foreign CRT descriptor failed: errno %d", errno);
+        CHECK(via_descriptor.st_size == 1, "foreign descriptor size %lld", via_descriptor.st_size);
+        CHECK(S_ISREG(via_descriptor.st_mode), "foreign descriptor is not a regular file");
+        _close(foreign);
+    }
     CHECK(fstat(-1, &st) == -1 && errno == EBADF, "fstat(-1) is not EBADF");
+
+    /* The guard that makes the two questions above safe to ask belongs to the
+     * shim, not to whoever wrote main(): a tool never calls anything first.  It is
+     * cleared before this function runs, so if it is standing here the shim put it
+     * back itself.  Without it, asking the descriptor table about a raw handle
+     * raises a CRT dialog on the calling thread, which in a headless run is a
+     * hang, and the two checks above would never have printed anything. */
+    CHECK(_get_invalid_parameter_handler() != NULL,
+          "fd_handle() did not install the invalid-parameter guard itself");
 }
 
 /* ---- 8. pipes and readiness: SessionLog drains both ends ---- */
@@ -719,6 +747,10 @@ int main(void)
 {
     zuuned_win_runtime_init();
     setvbuf(stdout, NULL, _IONBF, 0);
+    /* Undo what the runtime init above installs.  Everything from here on has to
+     * reinstate the guard on its own for the descriptor checks to be survivable,
+     * which is the contract the tools depend on. */
+    _set_invalid_parameter_handler(NULL);
 
     const char *tmp = zuuned_win_tmpdir();
     if (!tmp || !*tmp) { printf("FAIL no temporary directory\n"); return 1; }

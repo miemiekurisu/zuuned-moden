@@ -198,48 +198,37 @@ static char *wide_to_utf8(const wchar_t *wide)
     return out;
 }
 
-/* Highest descriptor this process has handed out, and the helper that keeps the
- * figure honest.  0, 1 and 2 exist from CRT start-up, so the watermark starts
- * there.
- *
- * fd_handle() only asks the CRT about a number that could plausibly be one of
- * its descriptors.  Probing the table with anything else goes through the
- * invalid-parameter machinery, which is survivable but noisy: a debug CRT logs
- * an assertion from inside the CRT before it returns the failure this file
- * actually wants.  A descriptor opened elsewhere - Qt, libusb, mpv - above the
- * watermark is read as a raw handle instead, which degrades honestly:
- * GetFileType fails on it, so the caller reports EBADF rather than guessing. */
-static volatile long highest_descriptor = 2;
-
-static int zuuned_track_descriptor(int fd)
-{
-    long watermark = highest_descriptor;
-    while ((long)fd > watermark) {
-        const long exchanged = InterlockedCompareExchange(&highest_descriptor,
-                                                          (long)fd, watermark);
-        if (exchanged == watermark) break;
-        watermark = exchanged;
-    }
-    return fd;
-}
-
 /* Resolves a descriptor to the handle behind it.
- * A CRT descriptor comes first, because that is what openat(), pipe() and
- * _open_osfhandle() hand out.  The fallback matters on Windows only:
- * QFile::handle() returns the NT file handle rather than a descriptor, and the
- * shared sources pass it to fstat() (AudiobookProbe).  When the descriptor
- * table has no such entry the integer is reinterpreted as a handle.  User-mode
- * NT handles fit in 32 bits, so the round trip through int is lossless even
- * when a handle with the high bit set arrives here as a negative number.  A
- * genuinely bogus descriptor resolves to a handle Windows does not know, so
- * the callers that check GetFileType fail with EBADF rather than guess.  Numbers
- * beyond the watermark never reach the CRT table at all, see the guard above. */
+ *
+ * Every descriptor this repository passes to fstat(), flock() or fcntl() is a CRT
+ * descriptor.  The ones this file hands out come from _open_osfhandle(), _pipe()
+ * and _dup(); the ones it does not hand out come from the CRT too, and that group
+ * is what used to break.  QFile::handle() is documented as a native handle and
+ * this file believed the documentation, but Qt opens a QFile on Windows through
+ * _wopen(), so the number it returns is a CRT descriptor - measured on Qt 6.11,
+ * where the first file a process opens reports 3.  The watermark that used to
+ * stand in front of the descriptor table only ever counted descriptors this file
+ * had handed out, so QFile's number sat above it, was read as a handle,
+ * GetFileType refused it, and every audiobook import died on Windows at
+ * "Audio source is not a regular file".
+ *
+ * The table is therefore consulted first, with no plausibility test, and the
+ * number is read as a raw NT handle only when the CRT says it is not a descriptor
+ * at all.  Asking is safe because fd_handle() puts the invalid-parameter guard
+ * defined at the end of this file in place before it asks: the descriptor table
+ * reports an out-of-range number through that machinery, and returning from it
+ * yields the -1 this branch wants.  What remains ambiguous is a raw handle whose
+ * value also happens to be a live descriptor; nothing in this tree creates one,
+ * and the fallback still resolves the handles that are not. */
+static void ensure_invalid_parameter_guard(void);
+
 static HANDLE fd_handle(int fd)
 {
-    const intptr_t from_table = ((long)fd >= 0 && (long)fd <= highest_descriptor)
-        ? _get_osfhandle(fd) : (intptr_t)-1;
+    if (fd < 0) return INVALID_HANDLE_VALUE;
+    ensure_invalid_parameter_guard();
+    const intptr_t from_table = _get_osfhandle(fd);
     if (from_table != -1) return (HANDLE)from_table;
-    if (fd == 0 || fd == -1) return INVALID_HANDLE_VALUE;
+    if (fd == 0) return INVALID_HANDLE_VALUE;
     return (HANDLE)(uintptr_t)(unsigned int)fd;
 }
 
@@ -384,7 +373,7 @@ static int open_directory_wide(const wchar_t *wide)
     if (!handle_is_directory(handle)) { CloseHandle(handle); errno = ENOTDIR; return -1; }
     const int fd = _open_osfhandle((intptr_t)handle, _O_RDONLY | _O_BINARY);
     if (fd == -1) { CloseHandle(handle); set_last_error(); return -1; }
-    return zuuned_track_descriptor(fd);
+    return fd;
 }
 
 int zuuned_open_directory(const char *path)
@@ -436,7 +425,7 @@ static int open_normalized_wide(const wchar_t *wide, int flags)
 
     const int fd = _open_osfhandle((intptr_t)handle, _O_BINARY | _O_NOINHERIT);
     if (fd == -1) { CloseHandle(handle); set_last_error(); return -1; }
-    return zuuned_track_descriptor(fd);
+    return fd;
 }
 
 /* Hard link, used to publish a staged file atomically.  Windows refuses across
@@ -762,7 +751,6 @@ int pipe2(int fds[2], int flags)
         return -1;
     }
     for (int index = 0; index < 2; ++index) {
-        zuuned_track_descriptor(descriptors[index]);
         const HANDLE handle = fd_handle(descriptors[index]);
         if (handle != INVALID_HANDLE_VALUE)
             SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
@@ -900,7 +888,7 @@ int fcntl(int fd, int request, ...)
     case F_DUPFD: {
         const int copy = _dup(fd);
         if (copy == -1) { set_last_error(); return -1; }
-        return zuuned_track_descriptor(copy);
+        return copy;
     }
     case F_DUPFD_CLOEXEC: {
         const int copy = _dup(fd);
@@ -908,7 +896,7 @@ int fcntl(int fd, int request, ...)
         const HANDLE copy_handle = fd_handle(copy);
         if (copy_handle != INVALID_HANDLE_VALUE)
             SetHandleInformation(copy_handle, HANDLE_FLAG_INHERIT, 0);
-        return zuuned_track_descriptor(copy);
+        return copy;
     }
     case F_GETFD: {
         DWORD flags = 0;
@@ -1400,7 +1388,7 @@ int zuuned_open_self_fd(int fd)
     if (handle == INVALID_HANDLE_VALUE) { errno = EBADF; return -1; }
     const int copy = _dup(fd);
     if (copy == -1) { set_last_error(); return -1; }
-    return zuuned_track_descriptor(copy);
+    return copy;
 }
 
 /* ---- temporary files ----
@@ -1601,6 +1589,38 @@ static void __cdecl zuuned_invalid_parameter(const wchar_t *expression,
      * per-thread-data lock, so even touching errno here deadlocks against the
      * call that raised it - observed as fstat() on a raw handle wedging the
      * process before this returned.  Callers in this file set their own errno. */
+}
+
+/* The guard cannot wait for a main() that never comes.  The tools in this tree
+ * reach fstat() through the shared sources without initialising anything - only
+ * src/main.cpp calls zuuned_win_runtime_init() - so an out-of-range descriptor in
+ * spokenmediatool or librarytool would meet the CRT's own handler, which answers
+ * with a dialog on the calling thread under a debug CRT and terminates the
+ * process under a release one.
+ *
+ * A .CRT$XIB initialiser was tried first, and the linker said why it does not
+ * work: this object's .CRT subsection carries different section characteristics
+ * from the CRT's own, LNK4254 folded it into .rdata, and start-up never ran it.
+ * The win-compat gate proved that by finding the handler still null in main().
+ *
+ * So it goes in lazily, from the one function that ever asks the descriptor table
+ * about a number it did not hand out, which exists in exactly the binaries that
+ * can be affected and runs after the CRT is certainly up.  Nothing else is
+ * installed here: the stdio mode below still wants an explicit init call. */
+static INIT_ONCE zuuned_guard_once = INIT_ONCE_STATIC_INIT;
+
+static BOOL CALLBACK zuuned_install_guard_once(PINIT_ONCE once, PVOID parameter, PVOID *context)
+{
+    (void)once;
+    (void)parameter;
+    (void)context;
+    _set_invalid_parameter_handler(zuuned_invalid_parameter);
+    return TRUE;
+}
+
+static void ensure_invalid_parameter_guard(void)
+{
+    InitOnceExecuteOnce(&zuuned_guard_once, zuuned_install_guard_once, NULL, NULL);
 }
 
 void zuuned_win_runtime_init(void)

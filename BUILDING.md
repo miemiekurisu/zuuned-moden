@@ -130,8 +130,12 @@ pwsh -NoProfile -File tests/win-compat/run.ps1
 
 It rebuilds the compat layer and runs the software probes: temporary
 directories, `mkstemps`, UTF-8 and long paths, large files, directory
-descriptors, pipes, `mmap`-backed publishing and wide `stdio`. Expected result:
-`166 checks, 0 failures, 0 skips`.
+descriptors, pipes, `mmap`-backed publishing and wide `stdio`. It also pins how
+a descriptor is resolved: `fstat()` works on a handle the shim never created and
+on a descriptor the shim never created - the second is what `QFile::handle()`
+hands the audiobook probe on Windows - and the CRT invalid-parameter guard is in
+force without any `main()` asking for it. Expected result:
+`171 checks, 0 failures, 0 skips`.
 
 The bash suites in `ci/check.sh` need pkg-config and a POSIX shell, so on
 Windows the library core is covered by the native tools instead:
