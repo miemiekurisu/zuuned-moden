@@ -204,6 +204,8 @@ DeviceService::DeviceService(QObject *parent, bool watchDevice) : QObject(parent
     });
     connect(m_worker, &DeviceWorker::purgeDone, this, &DeviceService::onPurgeDone);
     connect(m_worker, &DeviceWorker::finalizeDone, this, &DeviceService::onFinalizeDone);
+    m_reprobeTimer.setSingleShot(true);
+    connect(&m_reprobeTimer, &QTimer::timeout, this, &DeviceService::reprobeNow);
 
     const auto retrySpokenRead = [this] {
         if (!m_spokenReadDeferred || !m_connected || m_spokenMediaLoading || m_busy || m_purging
@@ -236,6 +238,11 @@ DeviceService::~DeviceService() {
 
 void DeviceService::onZuneArrived() {
     m_devicePresent = true;
+    // A real arrival owns the reconnect.  A ladder left running by a finished
+    // sync must not race it for the same device.
+    m_reprobeTimer.stop();
+    m_reprobeAttempt = 0;
+    m_reprobePending = false;
     // libusb can open it, which is the end of any access problem this platform
     // was reporting.
     if (!m_usbBlockDetail.isEmpty() || m_blockedPresence) {
@@ -267,6 +274,9 @@ void DeviceService::onZuneArrived() {
 void DeviceService::onZuneLeft() {
     m_devicePresent = false;
     m_awaitingDisconnect = false;  // physical unplug completes the cycle
+    m_reprobeTimer.stop();
+    m_reprobeAttempt = 0;
+    m_reprobePending = false;
     if (m_connected) {
         // Device is gone — sever frees state; CloseSession fails fast
         // (NO_DEVICE), which is expected and logged, not an error.
@@ -431,13 +441,24 @@ QColor DeviceService::pickMoodColor(const QVariantList &genres) {
 }
 
 void DeviceService::onBreachDone(const DeviceWorker::BreachData &r) {
+    const bool wasReprobe = m_reprobePending;
+    m_reprobePending = false;
     m_busy = false;
     m_connectionStage.clear();
     m_connectionProgress = r.ok ? 1.0 : 0.0;
     if (!r.ok) {
         m_status = r.error;
         m_connectionError = r.error;
+        // A re-indexing player answers late rather than never, so the ladder
+        // tries again.  Only its own attempt does: a manual connect that
+        // failed stays failed, because repeating it would be a retry loop on
+        // a device the user can see is not answering.
+        if (wasReprobe) {
+            m_reprobeTimer.stop();
+            scheduleReprobeAfterReindex();
+        }
     } else {
+        m_reprobeAttempt = 0;
         m_connectionError.clear();
         m_connected = true;
         m_name = r.name;
@@ -514,6 +535,12 @@ void DeviceService::onSeverDone() {
         m_awaitingDisconnect = false;  // auto-detect may reconnect now (mac)
         m_status = QStringLiteral("Disconnected — the Zune is re-indexing");
         emit stateChanged();
+        // On Linux the re-index re-enumerates the player and zuneArrived()
+        // does the rest.  A Zune on Windows keeps its WinUSB interface the
+        // whole time, so nothing ever arrives and this panel would sit here
+        // for good until the user noticed the connect button.
+        if (m_devicePresent && !m_connected && !m_busy)
+            scheduleReprobeAfterReindex();
     }
     // Otherwise state was already cleared on request; nothing further.
 }
@@ -525,6 +552,45 @@ void DeviceService::setAwaitingDisconnect(bool v) {
     if (v)
         m_status = QStringLiteral("Sync complete — eject to apply changes");
     emit stateChanged();
+}
+
+// A player that re-indexes without leaving the bus produces no arrival, so the
+// finalize chain asks again itself.  The gaps grow because each attempt IS the
+// readiness probe — an OpenSession a Zune may take a while to answer - and
+// because a breach already auto-resets a wedged session once, hammering it every
+// second would trade one wedge for another.  When the ladder runs out the panel
+// keeps the truth and `connect` stays where the user left it.
+void DeviceService::scheduleReprobeAfterReindex() {
+    static const int kDelaysMs[] = {6000, 12000, 20000, 30000, 45000, 60000};
+    const int budget = int(sizeof(kDelaysMs) / sizeof(kDelaysMs[0]));
+    if (m_reprobeAttempt >= budget) {
+        fprintf(stderr, "[device] re-index reconnect ladder exhausted - connect manually\n");
+        return;
+    }
+    const int delay = kDelaysMs[m_reprobeAttempt];
+    m_status = QStringLiteral("Disconnected — the Zune is re-indexing, reconnecting in %1s")
+                   .arg(delay / 1000);
+    emit stateChanged();
+    fprintf(stderr, "[device] re-index reconnect: attempt %d of %d in %dms\n",
+            m_reprobeAttempt + 1, budget, delay);
+    m_reprobeTimer.start(delay);
+}
+
+void DeviceService::reprobeNow() {
+    if (!m_devicePresent || m_connected || m_blockedPresence) {
+        m_reprobeAttempt = 0;
+        return;
+    }
+    if (m_busy || m_ejecting || m_awaitingDisconnect || m_syncActive
+        || m_purging || m_pulling) {
+        // Something else owns the device now, and however that flow ends it
+        // arms its own reconnect.  Two ladders on one player is a bug.
+        m_reprobeAttempt = 0;
+        return;
+    }
+    ++m_reprobeAttempt;
+    m_reprobePending = true;
+    breach();
 }
 
 void DeviceService::eject() {
@@ -544,6 +610,10 @@ void DeviceService::eject() {
 void DeviceService::finalizeAndRelease() {
     if (!m_connected || m_ejecting)
         return;
+    // Fresh sync, fresh reconnect budget.
+    m_reprobeTimer.stop();
+    m_reprobeAttempt = 0;
+    m_reprobePending = false;
     m_ejecting = true;  // reuse the finalize → sever chain
     m_connected = false;
     clearDeviceState();

@@ -6,6 +6,7 @@
 #include <QSet>
 #include <QString>
 #include <QThread>
+#include <QTimer>
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
 
@@ -320,6 +321,14 @@ public:
 
     bool awaitingDisconnect() const { return m_awaitingDisconnect; }
     void setAwaitingDisconnect(bool v);
+    // A Zune that re-indexes without leaving the bus offers no hotplug
+    // arrival, and on Windows that is every Zune: WinUSB keeps the interface
+    // for the whole re-index.  The finalize chain therefore arms its own
+    // reconnect - a bounded ladder, because the only honest readiness probe
+    // is an OpenSession and a mid-re-index player answers late rather than
+    // never.
+    void scheduleReprobeAfterReindex();
+    void reprobeNow();
     // SyncEngine connects DIRECTLY to worker signals and invokes its
     // sync slots via QMetaObject::invokeMethod(Qt::QueuedConnection) —
     // the worker lives on the device thread; NEVER call its slots
@@ -460,6 +469,10 @@ private:
     QColor m_moodColor; // invalid/transparent when disconnected
     bool m_awaitingDisconnect = false;
     bool m_ejecting = false;
+    // Post-re-index reconnect ladder (see scheduleReprobeAfterReindex).
+    QTimer m_reprobeTimer;
+    int m_reprobeAttempt = 0;
+    bool m_reprobePending = false;
     // Track item → album object holding its art (see DeviceWorker).
     QHash<quint32, quint32> m_trackToAlbumArt;
     QHash<quint32, QString> m_trackToAlbumArtist;

@@ -63,7 +63,7 @@ header-only edit silently links a stale object: force a full rebuild, with
 `--clean-first`, after any header-only change until that changes.
 The Windows usability gate is finished and passing:
 `pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1` reports
-`launches=17 checks=90 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
+`launches=17 checks=94 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
 built app once per page (music, videos, photos, podcasts, audiobooks, and the device
 page with no device attached), the five settings tabs, the header pinned at 0 and at
 1, a queue played through the compact island after a real `winshot --move` resize, the
@@ -149,7 +149,7 @@ LAME leg judged by probing the mp3 for the length of the tone. `decode` then dec
 the decoder rather than off its device context: forced software answers one decoder, no
 accelerator and `yuv420p`, and the default answered `cuda` on this machine, so NVDEC does
 engage on Windows. Full gate now
-`launches=17 checks=90 failures=0 skips=0 killed=0`. Two things deliberately left
+`launches=17 checks=94 failures=0 skips=0 killed=0`. Two things deliberately left
 alone after being checked, so do not "fix" them again: `compat/win/` already decodes a
 narrow path as UTF-8 then ANSI, and CRT `access()` is ANSI-only, which is what the
 `QFile::encodeName()` callers in `LibraryScanner`, `ArtworkPipeline`, the artwork
@@ -238,12 +238,21 @@ that Windows will not store. A pull keeps the device name and judges the payload
 reads `Watch folders reachable 2 of 2` and both roots display natively. **Nobody has
 listened to anything**: device-side playback, deletion, the spoken and photo/video
 categories and every model but this Pavo stay open, and none of it is inherited from
-Linux. A finished sync also leaves the panel on `Disconnected - the Zune is
-re-indexing` until `connect` is clicked - `libusb_hotplug` reports no capability here, so
-`src/UsbWatcher.cpp` polls for a device-list change and a player that re-indexes without
-leaving the bus produces no arrival. Gates at this checkpoint: `171 checks, 0 failures,
-0 skips` from `tests/win-compat` and `launches=17 checks=90 failures=0 skips=0 killed=0`
-from `tests/win-usability`.
+Linux. Two things closed after that sitting. A finished sync no longer waits on a hand
+click: WinUSB keeps the interface for a whole re-index, `libusb_hotplug` is not even
+capable here, and the 500 ms device-list poll in `src/UsbWatcher.cpp` gets no arrival,
+so the finalize chain now arms its own bounded reconnect ladder of 6/12/20/30/45/60 s
+whose attempts are each a real `zune_breach()` because an OpenSession is the only
+honest readiness probe. A real arrival or unplug cancels it, a failed manual connect is
+not retried, sync/purge/pull/eject reset or drop the budget, and an exhausted ladder
+logs `connect manually` rather than inventing a state; observed live, attempt 1 landed
+the device back at 190 tracks with nobody touching `connect`. Native path display is
+also gated now rather than eyeballed: `--qa-probe` reports
+`wfRows/wfNative/wfRaw/wfStored/wfLabel` and the usability music case pins that every
+watch-folder label is spelled natively, that storage keeps one canonical forward-slash
+identity, and that the rendered row agrees with `PathText::display()`. Gates at this
+checkpoint: `171 checks, 0 failures, 0 skips` from `tests/win-compat` and
+`launches=17 checks=94 failures=0 skips=0 killed=0` from `tests/win-usability`.
 
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow
@@ -1102,6 +1111,6 @@ UTF-8 anyway; and the harness tested its own verdict behind a device-presence
 guard that a completed sync had already cleared, so it printed no verdict of its
 own - it now latches on `onSyncSummary`. `devicetool`, `playertool` and
 `spokenmediatool` put the console in UTF-8 too. Gates unchanged: `tests/win-compat`
-171 checks, `tests/win-usability` launches=17 checks=90 failures=0 skips=0
+171 checks, `tests/win-usability` launches=17 checks=94 failures=0 skips=0
 killed=0. Still not claimed: anything listened to on the player, deletion,
 podcast, audiobook, photo or video transfer, and any model but this Pavo Zune HD.

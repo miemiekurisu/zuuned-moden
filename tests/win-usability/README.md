@@ -101,7 +101,7 @@ silent unless asked, on either platform.
 
 `run.ps1` is that gate and it is complete.  An unfiltered run makes seventeen
 instrumented launches plus the tool, encoder, decode and profile probes and ends
-`launches=17 checks=90 failures=0 skips=0 killed=0` and `OVERALL=ok`:
+`launches=17 checks=94 failures=0 skips=0 killed=0` and `OVERALL=ok`:
 
     pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 
@@ -120,7 +120,11 @@ the seeded library (`-Only fixture,pages`).
   on open.  Also seeds the library the page cases copy into their profiles.
 - `pages` - one launch each for music, videos, photos, podcasts and audiobooks with
   the seeded library, plus the device page with no device attached.  Every one ends
-  with a capture, a paint verdict and the app's own `[qa]` report.
+  with a capture, a paint verdict and the app's own `[qa]` report.  The music case
+  also pins the path spelling it reports: at least one watch folder reached the app,
+  every label it shows is spelled natively with no forward slash left in it, every
+  stored path keeps one canonical forward-slash identity, and the row agrees with
+  `PathText::display()` for the path behind it.
 - `settings` - the five settings tabs, each proving it is on the settings page.
 - `collapse` - the header pinned at 0 and at 1, with the value the window reports.
 - `compact` - one real file in the queue, then `winshot --move` through tall, narrow

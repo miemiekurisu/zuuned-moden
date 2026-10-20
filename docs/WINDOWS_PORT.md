@@ -234,17 +234,58 @@ keeping because none of them was expected:
 Settings said the rest without being asked: the Library tab lists both roots the
 way Windows spells them (`C:\Users\Kurisu Chan\Music\Zuuned Imports` and
 `E:\Temp\testmusic`), and the Health tab reads `Watch folders reachable` `2 of 2`
-and `Zune connected` `ready`.  Item 10 below says how far that display goes and
-which part of it still has no gate.
+and `Zune connected` `ready`.  That display has assertions behind it now rather
+than a screenshot - see the path-spelling bullet under what the software gates
+prove.
 
-One thing a finished sync still costs here: the panel reads `Disconnected - the
-Zune is re-indexing` and does not come back on its own.  `libusb_hotplug` reports
-no capability on this machine, so `src/UsbWatcher.cpp` polls the device list every
-500 ms for a change, and a player that re-indexes without leaving the bus gives it
-no arrival to act on.  `connect` brings it back and the browser fills in again.
-Recorded rather than fixed, and deliberately not worked around by force:
-`awaitingDisconnect` refuses to breach back in while the player re-indexes, on
-both platforms.
+What a finished sync used to cost here is closed.  The panel no longer sits on
+`Disconnected - the Zune is re-indexing` once the last write is finalised - the first
+rung replaces it with `reconnecting in 6s` - and
+`libusb_hotplug` still reports no capability on this machine, so
+`src/UsbWatcher.cpp` still polls the device list every 500 ms for a change that a
+player re-indexing without leaving the bus never produces.  What changed is that
+the application no longer waits for an arrival that cannot happen on this
+platform: the finalize chain arms its own reconnect.
+`DeviceService::scheduleReprobeAfterReindex()` runs a bounded ladder of 6, 12,
+20, 30, 45 and 60 seconds, and each attempt IS a real `zune_breach()`, because an
+OpenSession is the only honest readiness probe and a player mid-re-index answers
+late rather than never.  The gaps grow because a breach already auto-resets a
+wedged session once, so hammering the same player every second would trade one
+wedge for another.  A real arrival or an unplug owns the reconnect and cancels the
+ladder outright; a manual `connect` that fails stays failed rather than turning
+into a retry loop on a device the user can see is not answering; sync, purge,
+pull and eject reset or drop the budget when they take the device.  When the
+ladder runs out it logs `re-index reconnect ladder exhausted - connect manually`
+and leaves the panel on its last real error instead of inventing a state.  Seen on
+the Pavo the same day with nobody touching `connect`:
+
+```
+[sync] forge done: 1 ok, 0 failed
+[libzune-finalize] 0x9108 result: 0 (0=ok)
+[libusb] closed
+[device] re-index reconnect: attempt 1 of 6 in 6000ms
+[mtpz] handshake complete
+[libzune] MTPZ authentication successful
+[zunedb] scanned: 190 tracks, 0 videos, 0 photos, 16 albums, 12 artists, 0 playlists, 0 photo albums
+[device] storage: 5.1/15.5 GB (used/total), attributed: music 4.88 + video 0.00 + photo 0.00 GB
+```
+
+That run went through `--qa-device`, which drives the ordinary
+`SyncEngine.addTracks` / `startSync` admission and the ordinary
+`DeviceService.saveTrackToLibrary`, so the same sitting carried both directions
+again on this build: one 193,833-byte mp3 sent with `forge done: 1 ok, 0 failed`
+and the device's own listing up from 189 tracks to 190, then that object read
+back as `SineQA550.mp3` at 195,015 bytes with `readbackDurationMs=8000` - the
+duration this app declared on the way out - into `Music\Zuuned Imports`, where
+the library counted itself from 6 tracks to 7.  `awaitingDisconnect` still
+refuses to breach back in *while* the player re-indexes, on both platforms; the
+ladder is what runs after it.
+
+Neither QA run cleaned up after itself, and this sitting does not claim it could:
+device-side deletion is an open gate on Windows, so `ZuunedQA / SineQA550` is still on
+the Pavo and the copy pulled back from it is still in `Music\Zuuned Imports`.  A
+future run inherits both; removing them is part of closing the deletion gate, not
+housekeeping to do by hand in the meantime.
 
 ## Toolchain that works here
 
@@ -313,7 +354,7 @@ environment to reproduce them.
   object's `.CRT` subsection into `.rdata` (LNK4254) and start-up never ran it,
   which the gate caught by finding the handler still null.
 - The usability gate makes seventeen instrumented launches plus the tool,
-  encoder and profile probes and ends `launches=17 checks=90 failures=0
+  encoder and profile probes and ends `launches=17 checks=94 failures=0
   skips=0 killed=0` and `OVERALL=ok`.
 - What those launches actually establish: every page paints real content rather
   than an empty window (`winshot` captures the live swapchain and the app
@@ -326,6 +367,18 @@ environment to reproduce them.
   returns an mp3 as long as the tone it came from; and a profile folder named in
   Chinese gains both databases with the spoken store's own schema readable back
   out of it.
+- Native path spelling, asserted by the running application rather than read off a
+  screenshot.  The `music` page case reads fields the app reports about itself
+  through `--qa-probe` and pins five of them: `wfRows >= 1` that the seeded library
+  reached it as a watch folder, `wfRaw = 0` and `wfNative = wfRows` that every
+  watch-folder label is spelled the way this platform spells it and that no forward
+  slash survived into one, `wfStored = wfRows` that storage still holds one
+  canonical forward-slash identity per folder, and `wfLabel = 1`, which asks
+  `PathText::display()` (`src/PathText.h:49`) what it would make of the stored path
+  and refuses unless the row is showing exactly that string.  The live profile
+  answers `wfRows=2 wfNative=2 wfRaw=0 wfStored=2 wfLabel=1`.  What this retires is
+  the weakest claim this document ever carried: `/E:/Music` reached a release
+  because a person read the label instead of a gate reading it.
 - Real audio output, silenced.  `playertool play <tone> 3 --audible --mute` with
   `ZUUNED_MPV_AO=wasapi` ends `audio_out=wasapi` with the position advancing, and the
   same run with the variable empty ends `audio_out=null`, so the Windows audio backend
@@ -378,22 +431,13 @@ environment to reproduce them.
 9. Also recorded, not asserted: a GUI launch reaches musicbrainz.org for artwork
    discovery exactly as it does on Linux, and a 503 there is noise; a brand new
    profile legitimately shows onboarding rather than the requested page.
-10. Native path display is in and was read off the screen rather than gated.  A
-    library folder added as `E:\Temp\testmusic` now reads back
-    `E:\Temp\testmusic` and not `E:/Temp/testmusic`, in Settings, in
-    onboarding and in the spoken-import pages: every one of those labels goes
-    through `PathText::display()` (`src/PathText.h:49`) or prints the string it
-    produced: the `displayPath` a Settings row builds
-    (`src/LibraryService.cpp:1090`) and the watch-folder row that renders it
-    (`qml/SettingsPage.qml:761`), `qml/SettingsPage.qml:600`,
-    `qml/OnboardingView.qml:1822` and both lists in
-    `qml/SpokenFolderImport.qml:61`, with `src/LibraryService.cpp:2268` for
-    the offline-folder detail line.  Storage is deliberately untouched: SQLite, the
-    scanner and the QML row filters keep Qt's forward-slash spelling, which is
-    what makes the repair in `docs/WINDOWS_COMPAT_AUDIT.md` and the
-    `watch_folder_repair` gate possible at all.  What remains is the assertion,
-    not the fix - both gates read a stored path at tool level and nothing reads
-    the string a label decided to show.
+   Native path display, which was the last entry in this list, is gated now - see
+   the `wf*` bullet above.  Where it reaches without a gate is narrower than it
+   was: the labels at `qml/OnboardingView.qml:1822`,
+   `qml/SpokenFolderImport.qml:61` and `src/LibraryService.cpp:2268` share
+   `PathText::display()` with the Settings row the gate does pin, and the repair
+   recorded in `docs/WINDOWS_COMPAT_AUDIT.md` is a stored-path concern that the
+   `watch_folder_repair` phase already covers.
 
 ## Order to close it in
 
@@ -410,6 +454,4 @@ environment to reproduce them.
 4. Add the remaining software gates: audible (unmuted) playback and a
    `spokenmediatool` phase.  Measure NVDEC against software on a real 1080p item before
    quoting a speed-up for Windows.
-5. Give the native path display an assertion of its own - item 10 above is a
-   fix read off the screen, which is the weakest evidence in this document.
-6. Only then talk about Windows packaging or a Windows release channel.
+5. Only then talk about Windows packaging or a Windows release channel.

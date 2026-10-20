@@ -180,7 +180,7 @@ real profile stayed untouched.
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 ```
 
-Expected: `launches=17 checks=90 failures=0 skips=0 killed=0` and `OVERALL=ok`. It
+Expected: `launches=17 checks=94 failures=0 skips=0 killed=0` and `OVERALL=ok`. It
 needs the same MSVC environment as the build and compiles its own capture tool into
 `build\win-usability\`. `-Only fixture,pages` and similar run a subset - the phase
 list is comma-separated, and because the scratch tree is rebuilt on every run a page

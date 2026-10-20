@@ -639,6 +639,26 @@ if (Select-Phase 'pages') {
                 Check 'the seeded library reaches the running application' `
                     ((Get-QaField $pageCase.QaSplash 'tracks') -eq '4') `
                     ('tracks=' + (Get-QaField $pageCase.QaSplash 'tracks'))
+                # Path spelling, asserted rather than eyeballed.  The library holds one
+                # canonical forward-slash identity per watch folder and the UI renders
+                # the native spelling PathText produced from it; a screenshot check is
+                # how /E:/Music once survived a release.
+                $wfRows = Get-QaField $pageCase.QaSplash 'wfRows'
+                $wfNative = Get-QaField $pageCase.QaSplash 'wfNative'
+                $wfRaw = Get-QaField $pageCase.QaSplash 'wfRaw'
+                $wfStored = Get-QaField $pageCase.QaSplash 'wfStored'
+                $wfLabel = Get-QaField $pageCase.QaSplash 'wfLabel'
+                $wfAny = $false
+                if ($wfRows -match '^[0-9]+$') { $wfAny = [int]$wfRows -ge 1 }
+                Check 'the seeded library reached the application as a watch folder' `
+                    $wfAny ('wfRows=' + $wfRows)
+                Check 'every watch-folder label the app reports is spelled natively' `
+                    ($wfRaw -eq '0' -and $wfNative -eq $wfRows) `
+                    ('wfNative=' + $wfNative + ' wfRaw=' + $wfRaw + ' wfRows=' + $wfRows)
+                Check 'watch folders are still stored with forward slashes' `
+                    ($wfStored -eq $wfRows) ('wfStored=' + $wfStored + ' wfRows=' + $wfRows)
+                Check 'the QML display helper and the row it feeds agree' `
+                    ($wfLabel -eq '1') ('wfLabel=' + $wfLabel)
             }
         }
         # A device page with nothing attached is the case a user hits every time the

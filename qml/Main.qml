@@ -132,6 +132,31 @@ ApplicationWindow {
             album: "QA", discNumber: 0, year: 0, libraryId: -1
         }], 0)
     }
+    // QA harness: the path-separator proof.  A Windows watch folder must reach
+    // the screen spelled natively while the library still holds one canonical
+    // forward-slash identity, and the label a row renders must be the string the
+    // C++ helper produced for it.  Asserted from the running application rather
+    // than eyeballed in a screenshot, which is how this regressed once.
+    readonly property var qaPathProof: {
+        if (!qaProbe)
+            return null
+        const wf = LibraryService.watchFolders
+        let rows = 0, native = 0, raw = 0, stored = 0, agrees = 0
+        for (let i = 0; i < wf.length; i++) {
+            rows++
+            const label = String(wf[i].displayPath)
+            const held = String(wf[i].path)
+            if (label.indexOf("\\") >= 0 && label.indexOf("/") < 0)
+                native++
+            if (label.indexOf("/") >= 0)
+                raw++
+            if (held.indexOf("/") >= 0)
+                stored++
+        }
+        if (rows > 0)
+            agrees = PathText.display(String(wf[0].path)) === String(wf[0].displayPath) ? 1 : 0
+        return { rows: rows, native: native, raw: raw, stored: stored, agrees: agrees }
+    }
     function reportQaState(when) {
         if (!qaProbe)
             return
@@ -149,7 +174,12 @@ ApplicationWindow {
             + " queue=" + PlayerService.queue.length
             + " playing=" + PlayerService.playing
             + " pos=" + Math.round(PlayerService.positionMs)
-            + " dur=" + Math.round(PlayerService.durationMs))
+            + " dur=" + Math.round(PlayerService.durationMs)
+            + " wfRows=" + qaPathProof.rows
+            + " wfNative=" + qaPathProof.native
+            + " wfRaw=" + qaPathProof.raw
+            + " wfStored=" + qaPathProof.stored
+            + " wfLabel=" + qaPathProof.agrees)
     }
     // The window keeps reporting while a gate drives it, so a resize or a queue
     // change is visible in the log instead of needing a screenshot to infer.
@@ -176,9 +206,10 @@ ApplicationWindow {
     //
     // The two passes are deliberately separate runs: a completed sync ends with
     // finalize + CleanDataStore, after which the device re-indexes and the app
-    // releases it (awaitingDisconnect refuses to breach back in).  Pulling in the
-    // next session therefore also proves the upload survived the device's own
-    // re-index rather than merely being accepted.
+    // releases it.  The release ladder then climbs back onto the bus by itself,
+    // and the next session only starts once that has landed, so a pull also
+    // proves the upload survived the device's own re-index rather than merely
+    // being accepted.
     readonly property var qaDeviceSpec: {
         const args = Qt.application.arguments
         const i = args.indexOf("--qa-device")
