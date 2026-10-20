@@ -200,7 +200,9 @@ Item {
                             // W15: promise the flow — folders, then make-it-
                             // yours, then the tour (mixtapes are the showpiece).
                             Layout.topMargin: Theme.spaceSm
-                            text: "your zune, at home on linux.\nfolders first, then make it yours, then a quick tour."
+                            text: "your zune, at home on "
+                                  + (Qt.platform.os === "windows" ? "windows." : "linux.")
+                                  + "\nfolders first, then make it yours, then a quick tour."
                             font.pixelSize: 14
                             font.weight: Font.Light
                             lineHeight: 1.35

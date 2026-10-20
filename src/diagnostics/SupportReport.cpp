@@ -1,3 +1,12 @@
+/* Keep first on Windows: the compat shim declares the POSIX surface this
+ * file uses (64-bit struct stat, dirent, poll, ...).  Whichever <sys/stat.h>
+ * the compiler parses first decides the struct layout, and the Qt headers
+ * include one.  See compat/win/posix_shim.h.  Other platforms build without
+ * it.  */
+#if defined(_WIN32)
+#include "wincompat.h"
+#endif
+
 #include "SupportReport.h"
 
 #include <QDateTime>
@@ -9,6 +18,9 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSysInfo>
+#if defined(Q_OS_WIN)
+#include <libusb.h>
+#endif
 #include <unistd.h>
 
 namespace Zuuned::Diagnostics {
@@ -54,6 +66,34 @@ QJsonObject systemInformation() {
     }
     info.insert(QStringLiteral("graphics_devices"), graphics);
 
+#if defined(Q_OS_WIN)
+    // No sysfs on Windows.  libusb enumeration is the closest honest
+    // equivalent, and descriptors alone are enough: opening a device here
+    // would contend with a transfer the app may already own, so this reports
+    // identity and location only - never whether the device is claimable.
+    QJsonArray usb;
+    libusb_context *context = nullptr;
+    if (libusb_init(&context) == 0) {
+        libusb_device **found = nullptr;
+        const int count = static_cast<int>(libusb_get_device_list(context, &found));
+        for (int i = 0; i < count; ++i) {
+            libusb_device_descriptor descriptor {};
+            if (libusb_get_device_descriptor(found[i], &descriptor) != 0) continue;
+            if (descriptor.idVendor != 0x045e) continue;
+            if (descriptor.idProduct != 0x0710 && descriptor.idProduct != 0x063e) continue;
+            QJsonObject item {{QStringLiteral("vendor_id"), QStringLiteral("045e")},
+                              {QStringLiteral("product_id"),
+                               QString::number(descriptor.idProduct, 16).rightJustified(4, QLatin1Char('0'))}};
+            const int bus = libusb_get_bus_number(found[i]);
+            const int address = libusb_get_device_address(found[i]);
+            if (bus > 0) item.insert(QStringLiteral("bus_number"), bus);
+            if (address > 0) item.insert(QStringLiteral("device_address"), address);
+            usb.append(item);
+        }
+        if (found) libusb_free_device_list(found, 1);
+        libusb_exit(context);
+    }
+#else
     QJsonArray usb;
     const QDir devices(QStringLiteral("/sys/bus/usb/devices"));
     for (const QString &entry : devices.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
@@ -75,6 +115,7 @@ QJsonObject systemInformation() {
         usb.append(item);
     }
     info.insert(QStringLiteral("zune_usb_devices"), usb);
+#endif
     return info;
 }
 

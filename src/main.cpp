@@ -1,3 +1,11 @@
+/* Keep first on Windows: wincompat.h drags in the POSIX shim, and whichever
+ * <sys/stat.h> the compiler parses first decides the struct layout - the Qt
+ * headers below include one.  See compat/win/posix_shim.h.
+ */
+#if defined(_WIN32)
+#include "wincompat.h"
+#endif
+
 #include <QDir>
 #include <QGuiApplication>
 #include <QLockFile>
@@ -19,7 +27,11 @@
 #include "spoken/SpokenMediaService.h"
 #include "spoken/PodcastQueuePlanner.h"
 #include "library/ArtworkHttp.h"
+#if !defined(Q_OS_WIN)
+// MPRIS is a D-Bus protocol and the Windows Qt build here has neither the bus
+// nor Qt6::DBus, so the media-key adaptor stays off this platform.
 #include "player/MprisService.h"
+#endif
 #include "player/PlayerService.h"
 #include "player/VideoPlayerService.h"
 #include "DeviceService.h"
@@ -29,6 +41,11 @@
 #include "sync/SyncEngine.h"
 
 int main(int argc, char *argv[]) {
+#ifdef Q_OS_WIN
+    // Binary stdio mode and unbuffered stderr have to be in place before the
+    // first byte reaches a descriptor.  See compat/win/wincompat.h.
+    zuuned_win_runtime_init();
+#endif
     // Safe release identification: no GUI, scanner, USB or settings startup.
     if (argc == 2 && std::strcmp(argv[1], "--version") == 0) {
         std::printf("Zuuned %s\n", ZuunedBuild::version);
@@ -50,8 +67,10 @@ int main(int argc, char *argv[]) {
     // Native installs may supply their own Qt integration; otherwise prefer
     // the desktop portal. AppRun pins the matching bundled portal plugin so
     // a host Qt theme plugin cannot fail against the AppImage's Qt version.
+#if !defined(Q_OS_WIN)
     if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORMTHEME"))
         qputenv("QT_QPA_PLATFORMTHEME", "xdgdesktopportal");
+#endif
 
     // MpvVideoItem (QQuickFramebufferObject + mpv_render_context) is
     // OpenGL-only — pin the RHI backend before any window exists.
@@ -268,7 +287,10 @@ int main(int argc, char *argv[]) {
                 state.insert(QStringLiteral("zune_connected"), device->connected());
                 state.insert(QStringLiteral("zune_model"), device->modelName());
                 state.insert(QStringLiteral("zune_family"), device->deviceFamily());
-                state.insert(QStringLiteral("zuuned_rules_installed"), device->udevRuleOk());
+                state.insert(QStringLiteral("zuuned_rules_applicable"), device->udevRulesApply());
+                // Windows has no udev rules, so absence there is not a fault.
+                if (device->udevRulesApply())
+                    state.insert(QStringLiteral("zuuned_rules_installed"), device->udevRuleOk());
             }
             if (library) {
                 state.insert(QStringLiteral("library_tracks"), library->trackCount());
@@ -284,6 +306,7 @@ int main(int argc, char *argv[]) {
     if (library && qEnvironmentVariableIsSet("ZUUNED_RESCAN_ON_LAUNCH"))
         library->rescan();
 
+#if !defined(Q_OS_WIN)
     // C1: MPRIS2 — media keys, sound applets, now-playing widgets.
     if (player && library)
         new MprisService(player,
@@ -291,6 +314,7 @@ int main(int argc, char *argv[]) {
                 return library->artPaths()
                     .value(LibraryService::artKey(artist, album)).toString();
             }, player);
+#endif
     if (player && library)
         player->setSavePositionHook([library](qint64 id, int ms) {
             library->savePosition(id, ms);

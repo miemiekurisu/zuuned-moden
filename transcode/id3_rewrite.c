@@ -15,6 +15,13 @@
 #include <stdint.h>
 #include <unistd.h>
 
+/* Scratch files live in /tmp on POSIX.  The Windows compatibility layer answers
+ * with a writable directory that already ends in a separator, and the macro
+ * expands to a function call, so the name is built through "%s". */
+#ifndef ZUUNED_TMPDIR
+#define ZUUNED_TMPDIR "/tmp/"
+#endif
+
 /* ---- Constants ---- */
 
 #define ID3V2_HEADER_SIZE  10
@@ -600,13 +607,22 @@ static char *retag_core(const char *mp3_path, const char *album_artist,
     if (out_path_override) {
         snprintf(output_path, sizeof(output_path), "%s", out_path_override);
     } else {
-        const char *base = strrchr(mp3_path, '/');
-        base = base ? base + 1 : mp3_path;
+        const char *sep = strrchr(mp3_path, '/');
+        /* Windows reaches here with native separators, and Qt also hands
+         * this layer forward slashes, so the basename has to stop at whichever
+         * separator comes later - otherwise the drive letter colon lands inside
+         * the temp file name.  A POSIX name may legitimately contain a
+         * backslash, so that extra scan stays out of the POSIX build. */
+#ifdef _WIN32
+        const char *backslash = strrchr(mp3_path, '\\');
+        if (backslash && (!sep || backslash > sep)) sep = backslash;
+#endif
+        const char *base = sep ? sep + 1 : mp3_path;
         const char *dot = strrchr(base, '.');
         size_t base_len = dot ? (size_t)(dot - base) : strlen(base);
         snprintf(output_path, sizeof(output_path),
-                 "/tmp/zuuned_retag_%.*s_%d.mp3",
-                 (int)base_len, base, (int)getpid());
+                 "%szuuned_retag_%.*s_%d.mp3",
+                 ZUUNED_TMPDIR, (int)base_len, base, (int)getpid());
     }
 
     /* Write output file */

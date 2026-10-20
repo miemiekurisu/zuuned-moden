@@ -10,6 +10,9 @@
 // LIBUSB_HOTPLUG_ENUMERATE means an already-plugged device fires
 // zuneArrived() immediately at startup, so launch-while-connected and
 // plug-in-after-launch follow the same path.
+// Where the libusb build has no OS hotplug notifications -- Windows, whose
+// backend enumerates on demand -- the same two signals come from polling the
+// device list for presence instead, after a confirmed absence twice over.
 //
 // Signals are emitted from this thread; connect with the default queued
 // connection and handle on the UI thread.

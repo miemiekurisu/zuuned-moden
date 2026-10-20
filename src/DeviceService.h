@@ -35,6 +35,9 @@ class DeviceService : public QObject {
     // when a Zune is present but can't be opened.
     Q_PROPERTY(bool udevRuleOk READ udevRuleOk NOTIFY udevRuleChanged)
     Q_PROPERTY(QString udevInstallCommand READ udevInstallCommand CONSTANT)
+    // udev is a Linux concept. Every rule UI keys off this so Windows never
+    // offers an install that could not possibly work there.
+    Q_PROPERTY(bool udevRulesApply READ udevRulesApply CONSTANT)
     Q_PROPERTY(QString status READ status NOTIFY stateChanged)
     Q_PROPERTY(QString name READ name NOTIFY stateChanged)
     Q_PROPERTY(QString deviceSerial READ deviceSerial NOTIFY stateChanged)
@@ -116,6 +119,7 @@ public:
     bool devicePresent() const { return m_devicePresent; }
     bool udevRuleOk() const;
     QString udevInstallCommand() const;
+    bool udevRulesApply() const;
     // W5/#28: install the udev rule with one click via pkexec — the
     // desktop's native password dialog, no terminal. Writes the rule,
     // reloads udev, and re-triggers so an already-plugged device picks

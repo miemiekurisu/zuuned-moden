@@ -646,7 +646,8 @@ Item {
                                 const rows = LibraryService.healthChecks()
                                 if (DeviceService.devicePresent
                                     && !DeviceService.connected
-                                    && !DeviceService.udevRuleOk)
+                                    && !DeviceService.udevRuleOk
+                                    && DeviceService.udevRulesApply)
                                     rows.push({
                                         label: "USB permission rule missing",
                                         detail: "Open Settings → Zune → USB access to install or repair the permission rules."
@@ -972,8 +973,34 @@ Item {
 
                     Sblk {
                         title: "USB access"
-                        desc: "let zuuned own the Zune without sudo each time."
+                        desc: DeviceService.udevRulesApply
+                            ? "let zuuned own the Zune without sudo each time."
+                            : "Windows claims the Zune through a WinUSB driver - no rules, no sudo."
+                        // Windows has no udev: name WinUSB instead of offering a rule install.
+                        ColumnLayout {
+                            visible: !DeviceService.udevRulesApply
+                            Layout.fillWidth: true
+                            Layout.topMargin: Theme.spaceXs
+                            spacing: 2
+                            Text {
+                                text: DeviceService.devicePresent ? "Zune visible to libusb"
+                                                                  : "No Zune visible to libusb"
+                                font.pixelSize: 14; font.weight: Font.Light
+                                color: DeviceService.devicePresent ? Theme.textPrimary : Theme.warning
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: "zuuned talks to the Zune through libusb, which on Windows "
+                                      + "needs a WinUSB driver bound to the device. If a plugged-in "
+                                      + "Zune never shows up here, install WinUSB for it with the "
+                                      + "Zadig utility, then replug. zuuned never installs a driver."
+                                font.pixelSize: 11; font.weight: Font.Light
+                                color: Theme.textDim
+                                wrapMode: Text.WordWrap
+                            }
+                        }
                         RowLayout {
+                            visible: DeviceService.udevRulesApply
                             Layout.fillWidth: true
                             Layout.topMargin: Theme.spaceXs
                             spacing: Theme.spaceMd
@@ -992,7 +1019,7 @@ Item {
                                 }
                             }
                             GlassButton {
-                                visible: !DeviceService.udevRuleOk
+                                visible: DeviceService.udevRulesApply && !DeviceService.udevRuleOk
                                 Layout.alignment: Qt.AlignVCenter
                                 primary: true
                                 text: "install rule"
@@ -1009,7 +1036,7 @@ Item {
                         }
                         // Manual fallback if the pkexec prompt is refused
                         TextEdit {
-                            visible: !DeviceService.udevRuleOk
+                            visible: DeviceService.udevRulesApply && !DeviceService.udevRuleOk
                             Layout.fillWidth: true
                             readOnly: true
                             selectByMouse: true
@@ -1407,6 +1434,7 @@ Item {
                                         : (gb >= 2 ? Theme.green : Theme.warning)
                         }
                         StatRow {
+                            visible: DeviceService.udevRulesApply
                             label: "USB rule installed"
                             value: DeviceService.udevRuleOk ? "installed" : "missing or outdated"
                             dot: DeviceService.udevRuleOk ? Theme.green : Theme.warning
@@ -1507,7 +1535,8 @@ Item {
                             Layout.fillWidth: true
                             wrapMode: Text.WordWrap
                             text: "Zuuned " + (Qt.application.version || "development build")
-                                  + " · linux · your data stays local."
+                                  + " · " + (Qt.platform.os === "windows" ? "windows" : "linux")
+                                  + " · your data stays local."
                             font.pixelSize: 13; font.weight: Font.Light
                             color: Theme.textDim
                         }

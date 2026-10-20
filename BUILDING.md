@@ -52,6 +52,94 @@ The native outputs are:
 This build uses the current machine's libraries. It is suitable for development
 and hardware checks on that machine, but it is not the distributable AppImage.
 
+## Build on Windows
+
+The Windows port compiles and runs natively with MSVC, and its software gate
+passes, but it has **not been tested against a real Zune device on Windows
+yet**. Every libusb path, the WinUSB driver binding and all transfers are still
+unverified on this platform. Treat the outputs as development builds.
+
+Qt 6.8 or newer is required. The reference machine uses the Qt 6.11.0
+`msvc2022_64` kit together with the CMake and Ninja that ship in `Qt\Tools`.
+
+### Toolchain and dependencies
+
+- Visual Studio 2022 with the "Desktop development with C++" workload plus a
+  Windows SDK.
+- Qt including Qt Quick Controls, Qt Quick Dialogs and Qt 5Compat
+  GraphicalEffects.
+- vcpkg, for the four ports the build consumes:
+
+```powershell
+vcpkg install libusb sqlite3 libmp3lame libgcrypt:x64-windows
+```
+
+- One extra dependency root for what vcpkg does not carry. `ZUUNED_WIN_DEPS`
+  points at it and this layout is expected:
+
+```
+zuuned-deps/
+      ffmpeg-master-latest-win64-gpl-shared/   win64 gpl *shared* FFmpeg build
+      mpv-dev/include/mpv/client.h             mpv development headers
+      pcre2/include, pcre2/lib                 PCRE2, static, with POSIX wrapper
+      probe/libmpv.lib                         MSVC import library for libmpv
+```
+
+libmpv ships as a DLL plus a MinGW import library that MSVC cannot read, so the
+MSVC import library is generated once from the DLL export table
+(`dumpbin /exports libmpv-2.dll`, rewritten as a `LIBRARY`/`EXPORTS` definition
+file) and then:
+
+```powershell
+lib /def:libmpv.def /out:libmpv.lib /machine:x64
+```
+
+### Configure and build
+
+Load the MSVC x64 environment into the shell first (call `vcvars64.bat` from
+`VC\Auxiliary\Build`, or dot-source a helper that imports the variables it
+sets), then:
+
+```powershell
+cmake -B build -G Ninja `
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo `
+  -DCMAKE_TOOLCHAIN_FILE=D:/dev/vcpkg/scripts/buildsystems/vcpkg.cmake `
+  -DCMAKE_PREFIX_PATH=D:/dev/Qt/6.11.0/msvc2022_64 `
+  -DZUUNED_VCPKG_PREFIX=D:/dev/vcpkg/installed/x64-windows `
+  -DZUUNED_WIN_DEPS=D:/dev/zuuned-deps
+cmake --build build
+build\zuuned.exe
+```
+
+`CMAKE_TOOLCHAIN_FILE` also wires up vcpkg's `applocal.ps1`, which copies the
+vcpkg DLLs next to every executable. Run `windeployqt` in `build` for the Qt
+runtime and copy the FFmpeg `bin` DLLs plus `libmpv-2.dll` beside the
+executable.
+
+`CMakeLists.txt` keeps one source tree for both platforms: the D-Bus/Mpris
+service and the POSIX-only install rules are skipped on Windows, and
+`compat/win/` is built once as `zuuned_wincompat` and force-included into every
+shared translation unit through `posix_shim.h`, so libzune and the transcode
+layer keep the POSIX surface they expect without `#ifdef` sprawl.
+
+### Windows gate
+
+```powershell
+pwsh -NoProfile -File tests/win-compat/run.ps1
+```
+
+It rebuilds the compat layer and runs the software probes: temporary
+directories, `mkstemps`, UTF-8 and long paths, large files, directory
+descriptors, pipes, `mmap`-backed publishing and wide `stdio`. Expected result:
+`166 checks, 0 failures, 0 skips`.
+
+### Device access
+
+The Linux udev rules do nothing here. libusb on Windows needs the Zune
+interface bound to WinUSB before it can open the device (install the driver
+with Zadig); that binding step and everything behind it are untested on
+Windows.
+
 ## Build the tester AppImage
 
 The exporter supports both the private submodule checkout and the public

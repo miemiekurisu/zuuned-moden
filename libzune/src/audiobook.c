@@ -222,7 +222,9 @@ int zune_smuggle_audiobook_part(ZuneDevice *d, const char *path,
   uint32_t folder = 0, existing = 0;
   if (zune_find_audiobook_part(d, p, &folder, &existing))
     return -1;
-  int fd = open(path, O_RDONLY);
+  /* openat(AT_FDCWD, ...) so the wide Windows opener sees this prepared part;
+   * plain open() stays ANSI-only there. */
+  int fd = openat(AT_FDCWD, path, O_RDONLY);
   struct stat st;
   if (fd < 0 || fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0 ||
       (uint64_t)st.st_size > UINT32_MAX) {

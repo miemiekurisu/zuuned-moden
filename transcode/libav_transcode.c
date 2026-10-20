@@ -61,18 +61,40 @@ void zuuned_transcode_clear_abort(void) { g_transcode_abort = 0; }
 static volatile int g_hw_decode = 1;
 void zuuned_transcode_set_hw_decode(int mode) { g_hw_decode = mode; }
 
+/* POSIX keeps its scratch files under /tmp.  The Windows compatibility layer
+ * answers with a writable directory that already ends in a separator, and the
+ * macro expands to a function call, so temp names are built with a %s field
+ * rather than literal concatenation. */
+#ifndef ZUUNED_TMPDIR
+#define ZUUNED_TMPDIR "/tmp/"
+#endif
+
 /* ---- Helper: build temp output path ---- */
+
+static const char *basename_tail(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+#ifdef _WIN32
+    /* Windows hands us native paths, and Qt also hands this layer
+     * forward-slash spellings of the same path, so the basename has to stop
+     * at whichever separator appears later - otherwise the drive letter colon
+     * ends up inside the temp name.  A POSIX name may legitimately contain a
+     * backslash, so that extra scan stays out of the POSIX build. */
+    const char *backslash = strrchr(path, '\\');
+    if (backslash && (!slash || backslash > slash)) slash = backslash;
+#endif
+    return slash ? slash + 1 : path;
+}
 
 static char *make_temp_path(const char *input_path, const char *suffix, const char *ext)
 {
-    const char *base = strrchr(input_path, '/');
-    base = base ? base + 1 : input_path;
+    const char *base = basename_tail(input_path);
     const char *dot = strrchr(base, '.');
     size_t base_len = dot ? (size_t)(dot - base) : strlen(base);
 
-    char path[512];
-    snprintf(path, sizeof(path), "/tmp/zuuned_%s_%.*s_%d.%s",
-             suffix, (int)base_len, base, (int)getpid(), ext);
+    char path[1024];
+    snprintf(path, sizeof(path), "%szuuned_%s_%.*s_%d.%s",
+             ZUUNED_TMPDIR, suffix, (int)base_len, base, (int)getpid(), ext);
     return strdup(path);
 }
 
@@ -571,7 +593,10 @@ char *zuuned_transcode_audio_range(const char *input_path, int64_t start_ms, int
     AudioRange range = {0};
     char *path = NULL;
     int success = 0;
-    input.fd = open(input_path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+    /* openat(AT_FDCWD, ...) instead of open(): the UCRT keeps open() as an
+     * _ACRTIMP binding, so this call site would stay ANSI-only and cap the path
+     * at 260 characters.  input_path is user media. */
+    input.fd = openat(AT_FDCWD, input_path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
     struct stat before;
     if (input.fd < 0 || fstat(input.fd, &before) || !S_ISREG(before.st_mode) || before.st_size <= 0)
         goto done;
@@ -642,7 +667,8 @@ char *zuuned_transcode_audio_range(const char *input_path, int64_t start_ms, int
      * split acquires a short silence and decoded chapter durations drift. */
     lame_set_bWriteVbrTag(range.lame, 1);
     if (lame_init_params(range.lame) < 0) goto done;
-    char pattern[] = "/tmp/zuuned_chapter_XXXXXX.mp3";
+    char pattern[1024];
+    snprintf(pattern, sizeof(pattern), "%szuuned_chapter_XXXXXX.mp3", ZUUNED_TMPDIR);
     int fd = mkstemps(pattern, 4);
     if (fd < 0) goto done;
     path = strdup(pattern);
@@ -1559,10 +1585,18 @@ int zuuned_probe_metadata(const char *filepath, struct ZuneMetadata *out)
      * This function exists for callers that don't want to include zune.h.
      * Weak: lets this library link standalone (transcodetool) — resolves
      * to NULL unless libzune is linked in, in which case it delegates. */
+#if defined(_MSC_VER)
+    /* MSVC offers no weak symbols.  Here the reference is strong, which means
+     * every consumer of this object has libzune on its link line (CMake gives
+     * transcodetool the same library the app already links). */
+    extern int zune_probe(const char *filepath, struct ZuneMetadata *out);
+    return zune_probe(filepath, out);
+#else
     extern int zune_probe(const char *filepath, struct ZuneMetadata *out)
         __attribute__((weak));
     if (!zune_probe) return -1;
     return zune_probe(filepath, out);
+#endif
 }
 
 /* ==================================================================== */

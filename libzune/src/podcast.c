@@ -332,7 +332,10 @@ static int podcast_date_valid(const char *s)
  * the read-only source instead of allocating a second episode-sized buffer. */
 static int podcast_send_file(ZuneDevice *dev, const char *path, uint32_t length)
 {
-    int fd = open(path, O_RDONLY);
+    /* openat(AT_FDCWD, ...) is the portable spelling for a user-supplied media
+     * path: the UCRT binds open() to __imp_open, which decodes ANSI and stops
+     * at the 260-character limit, while glibc open() is openat() anyway. */
+    int fd = openat(AT_FDCWD, path, O_RDONLY);
     struct stat actual;
     if (fd < 0) return -1;
     if (fstat(fd, &actual) || !S_ISREG(actual.st_mode) || actual.st_size != length) {

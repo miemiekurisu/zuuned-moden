@@ -838,12 +838,31 @@ bool DeviceService::udevRuleOk() const {
     return UdevSetup::installed(UdevSetup::rules());
 }
 
+bool DeviceService::udevRulesApply() const {
+#if defined(Q_OS_WIN)
+    // Windows claims the Zune with a WinUSB driver; there is no udev here.
+    return false;
+#else
+    return true;
+#endif
+}
+
 QString DeviceService::udevInstallCommand() const {
+    if (!udevRulesApply())
+        return QString();
     const QString script = UdevSetup::installScript(UdevSetup::rules());
     return script.isEmpty() ? QString() : QStringLiteral("sudo sh -c ") + UdevSetup::shellQuote(script);
 }
 
 void DeviceService::installUdevRule() {
+    if (!udevRulesApply()) {
+        // No udev and no pkexec on Windows: name what actually fixes it.
+        emit udevRuleInstalled(false,
+            QStringLiteral("Windows needs a WinUSB driver for the Zune rather "
+                           "than a udev rule - install WinUSB with Zadig, then replug"));
+        return;
+    }
+
     const QString script = UdevSetup::installScript(UdevSetup::rules());
     if (script.isEmpty()) {
         emit udevRuleInstalled(false, QStringLiteral("USB rule is missing from this build"));

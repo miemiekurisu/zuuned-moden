@@ -1,3 +1,12 @@
+/* Keep first on Windows: the compat shim declares the POSIX surface this
+ * file uses (the ::link() behind atomic publish, 64-bit struct stat, ...).
+ * Whichever <sys/stat.h> the compiler parses first decides the struct
+ * layout, and the Qt headers include one.  See compat/win/posix_shim.h.
+ */
+#if defined(_WIN32)
+#include "wincompat.h"
+#endif
+
 #include "OnlineAlbumArtService.h"
 #include "AlbumArtService.h"
 #include "MusicIdentityClient.h"

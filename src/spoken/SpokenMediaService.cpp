@@ -1153,7 +1153,7 @@ void SpokenMediaService::previewBookFolder(const QUrl &folder, bool collection) 
                 r.error = "No supported audiobook files found in this folder";
                 return;
             }
-            QCollator natural(QLocale(QLocale::English));
+            QCollator natural{QLocale{QLocale::English}};
             natural.setNumericMode(true);
             natural.setCaseSensitivity(Qt::CaseInsensitive);
             QVariantList books;

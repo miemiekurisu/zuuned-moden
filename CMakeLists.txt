@@ -4,26 +4,204 @@ project(zuuned VERSION 0.2.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS
-    Quick Gui Concurrent Network OpenGL DBus QuickControls2 QuickDialogs2 Core5Compat)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(LIBUSB REQUIRED libusb-1.0)
-pkg_check_modules(SQLITE3 REQUIRED sqlite3)
+# MPRIS (src/player/MprisService.cpp) is the Linux D-Bus media-key bridge, so
+# DBus is only a component where it exists: the Windows Qt build has no Qt6::DBus.
+if(WIN32)
+    set(ZUUNED_QT_COMPONENTS Quick Gui Concurrent Network OpenGL QuickControls2
+        QuickDialogs2 Core5Compat)
+else()
+    set(ZUUNED_QT_COMPONENTS Quick Gui Concurrent Network OpenGL DBus
+        QuickControls2 QuickDialogs2 Core5Compat)
+endif()
+
+find_package(Qt6 6.8 REQUIRED COMPONENTS ${ZUUNED_QT_COMPONENTS})
+
+if(WIN32)
+    # ---- Windows dependency plumbing -------------------------------------------
+    # pkg-config does not describe this tree, so every dependency is probed here
+    # up front (libzune needs FFmpeg and LAME before the transcode section runs).
+    # vcpkg carries libusb, SQLite, LAME and libgcrypt; ZUUNED_WIN_DEPS carries
+    # what vcpkg does not: the FFmpeg shared build, the mpv dev zip, a PCRE2
+    # build and the libmpv import library.  BUILDING.md documents the layout.
+    set(ZUUNED_VCPKG_PREFIX "" CACHE PATH "Installed vcpkg tree used by the Windows build")
+    set(ZUUNED_WIN_DEPS "" CACHE PATH "Windows dependency tree: FFmpeg shared build, mpv-dev, PCRE2, probe")
+    set(ZUUNED_FFMPEG_DIR "" CACHE PATH "FFmpeg shared build: headers plus MSVC import libraries")
+
+    if(NOT ZUUNED_VCPKG_PREFIX)
+        message(FATAL_ERROR
+            "The Windows build needs ZUUNED_VCPKG_PREFIX.  Run "
+            "'vcpkg install libusb sqlite3 libmp3lame libgcrypt:x64-windows' and "
+            "configure with -DZUUNED_VCPKG_PREFIX=<vcpkg>/installed/x64-windows.")
+    endif()
+    if(NOT IS_DIRECTORY "${ZUUNED_VCPKG_PREFIX}/lib")
+        message(FATAL_ERROR
+            "ZUUNED_VCPKG_PREFIX='${ZUUNED_VCPKG_PREFIX}' has no lib directory.  "
+            "It must be an *installed* vcpkg tree carrying libusb, sqlite3, "
+            "libmp3lame and libgcrypt, e.g. run "
+            "'vcpkg install libusb sqlite3 libmp3lame libgcrypt:x64-windows' "
+            "and point the variable at <vcpkg>/installed/x64-windows.")
+    endif()
+    if(NOT ZUUNED_WIN_DEPS)
+        message(FATAL_ERROR
+            "The Windows build needs ZUUNED_WIN_DEPS: one directory holding the "
+            "FFmpeg win64 shared build, mpv-dev/, pcre2/ and probe/libmpv.lib.  "
+            "See BUILDING.md.")
+    endif()
+    if(NOT ZUUNED_FFMPEG_DIR)
+        set(ZUUNED_FFMPEG_DIR "${ZUUNED_WIN_DEPS}/ffmpeg-master-latest-win64-gpl-shared"
+            CACHE PATH "FFmpeg shared build: headers plus MSVC import libraries" FORCE)
+    endif()
+    if(NOT IS_DIRECTORY "${ZUUNED_FFMPEG_DIR}/include")
+        message(FATAL_ERROR
+            "ZUUNED_FFMPEG_DIR='${ZUUNED_FFMPEG_DIR}' has no include directory.  "
+            "Unpack an FFmpeg win64 gpl *shared* build inside ZUUNED_WIN_DEPS.")
+    endif()
+
+    find_library(LIBUSB_LIBRARIES NAMES libusb-1.0 usb-1.0
+        HINTS "${ZUUNED_VCPKG_PREFIX}/lib" REQUIRED NO_DEFAULT_PATH)
+    find_library(SQLITE3_LIBRARIES NAMES sqlite3
+        HINTS "${ZUUNED_VCPKG_PREFIX}/lib" REQUIRED NO_DEFAULT_PATH)
+    find_library(LAME_LIBRARIES NAMES libmp3lame mp3lame
+        HINTS "${ZUUNED_VCPKG_PREFIX}/lib" REQUIRED NO_DEFAULT_PATH)
+    find_library(GCRYPT_LIBRARIES NAMES gcrypt
+        HINTS "${ZUUNED_VCPKG_PREFIX}/lib" REQUIRED NO_DEFAULT_PATH)
+    find_library(GPG_ERROR_LIBRARIES NAMES gpg-error
+        HINTS "${ZUUNED_VCPKG_PREFIX}/lib" REQUIRED NO_DEFAULT_PATH)
+    find_path(LAME_INCLUDE_DIR lame/lame.h
+        HINTS "${ZUUNED_VCPKG_PREFIX}/include" REQUIRED NO_DEFAULT_PATH)
+    find_path(GCRYPT_INCLUDE_DIR gcrypt.h
+        HINTS "${ZUUNED_VCPKG_PREFIX}/include" REQUIRED NO_DEFAULT_PATH)
+    find_path(PCRE2_INCLUDE_DIR pcre2.h
+        HINTS "${ZUUNED_WIN_DEPS}/pcre2/include" REQUIRED NO_DEFAULT_PATH)
+    find_library(PCRE2_POSIX_LIBRARY NAMES pcre2-posix-static pcre2-posix
+        HINTS "${ZUUNED_WIN_DEPS}/pcre2/lib" REQUIRED NO_DEFAULT_PATH)
+    find_library(PCRE2_8_LIBRARY NAMES pcre2-8-static pcre2-8
+        HINTS "${ZUUNED_WIN_DEPS}/pcre2/lib" REQUIRED NO_DEFAULT_PATH)
+    # libmpv ships as a DLL; probe/libmpv.lib is the MSVC import library built
+    # from its definition file (BUILDING.md), which is what lets us link it.
+    find_path(MPV_INCLUDE_DIR mpv/client.h
+        HINTS "${ZUUNED_WIN_DEPS}/mpv-dev/include" REQUIRED NO_DEFAULT_PATH)
+    find_library(MPV_LIBRARIES NAMES mpv libmpv
+        HINTS "${ZUUNED_WIN_DEPS}/probe" REQUIRED NO_DEFAULT_PATH)
+
+    foreach(component avformat avcodec avutil swresample swscale)
+        find_library(FFMPEG_${component}_LIBRARY NAMES ${component}
+            HINTS "${ZUUNED_FFMPEG_DIR}/lib" REQUIRED NO_DEFAULT_PATH)
+        list(APPEND ZUUNED_FFMPEG_LIBRARIES "${FFMPEG_${component}_LIBRARY}")
+    endforeach()
+
+    # pkg-config publishes singular cache entries plus plural consumer
+    # variables; mirror that split so the rest of this file stays neutral.
+    set(FFMPEG_LIBRARIES ${ZUUNED_FFMPEG_LIBRARIES})
+    set(FFMPEG_INCLUDE_DIRS "${ZUUNED_FFMPEG_DIR}/include")
+    set(LAME_INCLUDE_DIRS ${LAME_INCLUDE_DIR})
+    set(GCRYPT_INCLUDE_DIRS ${GCRYPT_INCLUDE_DIR})
+    set(MPV_INCLUDE_DIRS ${MPV_INCLUDE_DIR})
+    set(SQLITE3_INCLUDE_DIRS "${ZUUNED_VCPKG_PREFIX}/include")
+    if(IS_DIRECTORY "${ZUUNED_VCPKG_PREFIX}/include/libusb-1.0")
+        set(LIBUSB_INCLUDE_DIRS "${ZUUNED_VCPKG_PREFIX}/include/libusb-1.0")
+    else()
+        set(LIBUSB_INCLUDE_DIRS "${ZUUNED_VCPKG_PREFIX}/include")
+    endif()
+
+    # compat/win is the POSIX surface libzune and the transcode C layer expect.
+    # /FI forces the umbrella header into every translation unit so no shared
+    # source grows #ifdefs; /utf-8 keeps the UTF-8 literals legible to MSVC.
+    # Both are needed for C and C++: moc output is compiled as C++ here.
+    set(ZUUNED_COMPAT_DIR ${CMAKE_SOURCE_DIR}/compat/win)
+    set(ZUUNED_SHIM_FLAGS /FIposix_shim.h)
+    set(ZUUNED_WINCOMPAT zuuned_wincompat)
+    set(ZUUNED_SYSTEM_LIBS ${GCRYPT_LIBRARIES} ${GPG_ERROR_LIBRARIES} ws2_32)
+    set(ZUUNED_LIBM "")
+else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBUSB REQUIRED libusb-1.0)
+    pkg_check_modules(SQLITE3 REQUIRED sqlite3)
+    set(ZUUNED_COMPAT_DIR "")
+    set(ZUUNED_SHIM_FLAGS "")
+    set(ZUUNED_WINCOMPAT "")
+    set(ZUUNED_SYSTEM_LIBS gcrypt)
+    set(ZUUNED_LIBM m)
+    set(LAME_LIBRARIES mp3lame)
+    set(LAME_INCLUDE_DIRS "")
+    set(GCRYPT_INCLUDE_DIRS "")
+    set(PCRE2_INCLUDE_DIR "")
+endif()
 qt_standard_project_setup(REQUIRES 6.8)
 qt_policy(SET QTP0004 NEW)
 include(packaging/CheckQmlImports.cmake)
 
-# ---- libzune ----
-# Built by its own Makefile (auto-selects the libusb backend on Linux).
-# CMake just drives `make` and links the resulting static archive.
-set(LIBZUNE_DIR ${CMAKE_SOURCE_DIR}/libzune)
-set(LIBZUNE_A ${LIBZUNE_DIR}/libzune.a)
+if(WIN32)
+    # compat/win is compiled once and its include/link interface reaches every
+    # C target that needs the POSIX surface, libzune and the transcode layer
+    # included.  PCRE2 backs libzune's pattern helpers and spoken-media matching.
+    add_library(zuuned_wincompat STATIC compat/win/wincompat.c)
+    target_include_directories(zuuned_wincompat PUBLIC
+        ${ZUUNED_COMPAT_DIR} ${PCRE2_INCLUDE_DIR})
+    target_link_libraries(zuuned_wincompat PUBLIC
+        ${PCRE2_POSIX_LIBRARY} ${PCRE2_8_LIBRARY})
+    target_compile_options(zuuned_wincompat PRIVATE
+        "$<$<COMPILE_LANGUAGE:C>:/utf-8>" ${ZUUNED_SHIM_FLAGS})
+endif()
 
-add_custom_target(libzune_build
-    COMMAND make -C ${LIBZUNE_DIR}
-    BYPRODUCTS ${LIBZUNE_A}
-    COMMENT "Building libzune (libusb backend)"
-)
+# ---- libzune ----
+set(LIBZUNE_DIR ${CMAKE_SOURCE_DIR}/libzune)
+
+if(WIN32)
+    # libzune's own Makefile is Linux-only: pkg-config probes, -l flags and .so
+    # detection.  CMake compiles the same sources here instead.  driverkit_usb.c
+    # is the macOS backend and is deliberately absent.  USE_LIBAV keeps the
+    # in-process FFmpeg thumbnail path that Linux gets via the Makefile.
+    set(LIBZUNE_A libzune_build)
+
+    add_library(libzune_build STATIC
+        libzune/src/device.c
+        libzune/src/track.c
+        libzune/src/video.c
+        libzune/src/photo.c
+        libzune/src/album.c
+        libzune/src/playlist.c
+        libzune/src/podcast.c
+        libzune/src/audiobook.c
+        libzune/src/spoken_inventory.c
+        libzune/src/thumbnail.c
+        libzune/src/zmdb.c
+        libzune/src/zmdb_io.c
+        libzune/src/podcast_state.c
+        libzune/src/transcode.c
+        libzune/src/util.c
+        libzune/src/usb_recovery.c
+        libzune/src/finalize.c
+        libzune/src/search.c
+        libzune/src/ptp.c
+        libzune/src/mtp.c
+        libzune/src/mtpz.c
+        libzune/src/usb_libusb.c
+    )
+    target_compile_definitions(libzune_build PRIVATE USE_LIBAV)
+    target_include_directories(libzune_build PUBLIC ${LIBZUNE_DIR}/include)
+    target_include_directories(libzune_build PRIVATE
+        ${LIBZUNE_DIR}/src
+        ${ZUUNED_COMPAT_DIR}
+        ${LIBUSB_INCLUDE_DIRS}
+        ${FFMPEG_INCLUDE_DIRS}
+        ${LAME_INCLUDE_DIRS}
+        ${PCRE2_INCLUDE_DIR})
+    target_link_libraries(libzune_build PUBLIC
+        ${ZUUNED_WINCOMPAT} ${LIBUSB_LIBRARIES} ${ZUUNED_SYSTEM_LIBS})
+    target_compile_options(libzune_build PRIVATE
+        "$<$<COMPILE_LANGUAGE:C>:/utf-8>" ${ZUUNED_SHIM_FLAGS})
+else()
+    # Built by its own Makefile (auto-selects the libusb backend on Linux).
+    # CMake just drives `make` and links the resulting static archive.
+    set(LIBZUNE_A ${LIBZUNE_DIR}/libzune.a)
+
+    add_custom_target(libzune_build
+        COMMAND make -C ${LIBZUNE_DIR}
+        BYPRODUCTS ${LIBZUNE_A}
+        COMMENT "Building libzune (libusb backend)"
+    )
+endif()
 
 # ---- App ----
 qt_add_executable(zuuned
@@ -272,15 +450,18 @@ add_custom_target(zuuned_build_info
 add_dependencies(zuuned zuuned_build_info)
 target_include_directories(zuuned PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
-target_include_directories(zuuned PRIVATE src src/artwork src/diagnostics src/library src/sync ${LIBZUNE_DIR}/include ${LIBUSB_INCLUDE_DIRS})
+# The app's own C++ carries its platform ifdefs, so compat/win is on the include
+# path but the forced-include shim deliberately is not.
+target_include_directories(zuuned PRIVATE src src/artwork src/diagnostics src/library src/sync ${LIBZUNE_DIR}/include ${LIBUSB_INCLUDE_DIRS} ${ZUUNED_COMPAT_DIR})
 target_link_libraries(zuuned PRIVATE
     Qt6::Quick Qt6::Gui Qt6::Concurrent Qt6::Network
     ${LIBZUNE_A}
-    gcrypt
+    ${ZUUNED_SYSTEM_LIBS}
     ${LIBUSB_LIBRARIES}
     ${SQLITE3_LIBRARIES}
     zuuned_transcode
     zuuned_spoken
+    ${ZUUNED_WINCOMPAT}
 )
 
 # ═══════════════════════════════════════════════════════════════════
@@ -289,18 +470,36 @@ target_link_libraries(zuuned PRIVATE
 # the transcodetool CLI gate. NOT yet linked into the zuuned app
 # (that lands with Phase 3's library scanner).
 # ═══════════════════════════════════════════════════════════════════
-pkg_check_modules(FFMPEG REQUIRED
-    libavformat libavcodec libavutil libswresample libswscale)
+if(NOT WIN32)
+    pkg_check_modules(FFMPEG REQUIRED
+        libavformat libavcodec libavutil libswresample libswscale)
+endif()
 
 add_library(zuuned_transcode STATIC
     transcode/libav_transcode.c
     transcode/id3_rewrite.c
 )
-target_include_directories(zuuned_transcode PUBLIC transcode ${FFMPEG_INCLUDE_DIRS})
-target_link_libraries(zuuned_transcode PUBLIC ${FFMPEG_LIBRARIES} mp3lame m)
+target_include_directories(zuuned_transcode PUBLIC transcode ${FFMPEG_INCLUDE_DIRS}
+    ${ZUUNED_COMPAT_DIR} ${LAME_INCLUDE_DIRS} ${PCRE2_INCLUDE_DIR})
+target_link_libraries(zuuned_transcode PUBLIC
+    ${FFMPEG_LIBRARIES} ${LAME_LIBRARIES} ${ZUUNED_LIBM} ${ZUUNED_WINCOMPAT})
+if(WIN32)
+    # Shared with the Linux/mac build, so it leans on the same POSIX surface
+    # libzune does; see compat/win.
+    target_compile_options(zuuned_transcode PRIVATE
+        "$<$<COMPILE_LANGUAGE:C>:/utf-8>" ${ZUUNED_SHIM_FLAGS})
+endif()
 
 add_executable(transcodetool transcode/transcodetool.c)
-target_link_libraries(transcodetool PRIVATE zuuned_transcode)
+if(WIN32)
+    # The CLI gate also names libzune objects.  The import libraries it needs
+    # are spelled out here so the Windows link line stays explicit.
+    target_link_libraries(transcodetool PRIVATE zuuned_transcode libzune_build
+        ${LAME_LIBRARIES} ${ZUUNED_WINCOMPAT})
+    target_compile_options(transcodetool PRIVATE "$<$<COMPILE_LANGUAGE:C>:/utf-8>")
+else()
+    target_link_libraries(transcodetool PRIVATE zuuned_transcode)
+endif()
 
 # Private spoken-media foundation. Reusable worker-only parsers; the inspection
 # harness is a developer target, never an AppImage payload or runtime dependency.
@@ -309,7 +508,8 @@ add_library(zuuned_spoken STATIC
     src/spoken/AudiobookProbe.cpp
 )
 target_include_directories(zuuned_spoken PUBLIC src/spoken PRIVATE ${FFMPEG_INCLUDE_DIRS})
-target_link_libraries(zuuned_spoken PUBLIC Qt6::Core PRIVATE ${FFMPEG_LIBRARIES})
+target_link_libraries(zuuned_spoken PUBLIC Qt6::Core
+    PRIVATE ${FFMPEG_LIBRARIES} ${ZUUNED_WINCOMPAT})
 add_executable(spokenmediatool src/spoken/spokenmediatool.cpp)
 target_link_libraries(spokenmediatool PRIVATE zuuned_spoken)
 
@@ -328,14 +528,16 @@ qt_add_executable(librarytool
 )
 add_dependencies(librarytool libzune_build)
 target_include_directories(librarytool PRIVATE
-    src/library ${LIBZUNE_DIR}/include ${SQLITE3_INCLUDE_DIRS})
+    src/library ${LIBZUNE_DIR}/include ${SQLITE3_INCLUDE_DIRS}
+    ${FFMPEG_INCLUDE_DIRS})
 target_link_libraries(librarytool PRIVATE
     Qt6::Core Qt6::Concurrent Qt6::Network
     ${SQLITE3_LIBRARIES}
     ${LIBZUNE_A}
-    gcrypt
+    ${ZUUNED_SYSTEM_LIBS}
     ${LIBUSB_LIBRARIES}
     ${FFMPEG_LIBRARIES}
+    ${ZUUNED_WINCOMPAT}
 )
 
 # ═══════════════════════════════════════════════════════════════════
@@ -343,13 +545,13 @@ target_link_libraries(librarytool PRIVATE
 # audio context + event thread) and PlayerService (QML singleton,
 # PlayerService.swift port). playertool is the headless CLI gate.
 # ═══════════════════════════════════════════════════════════════════
-pkg_check_modules(MPV REQUIRED mpv)
+if(NOT WIN32)
+    pkg_check_modules(MPV REQUIRED mpv)
+endif()
 
 target_sources(zuuned PRIVATE
     src/player/MpvController.cpp
     src/player/MpvController.h
-    src/player/MprisService.cpp
-    src/player/MprisService.h
     src/player/PlayerService.cpp
     src/player/PlayerService.h
     # Phase 7: video player (render API + binge queue service)
@@ -358,8 +560,20 @@ target_sources(zuuned PRIVATE
     src/player/VideoPlayerService.cpp
     src/player/VideoPlayerService.h
 )
+if(NOT WIN32)
+    # MPRIS is the Linux D-Bus media-key integration.  There is no Windows
+    # equivalent yet, and Qt6::DBus is not part of the Windows Qt build either.
+    target_sources(zuuned PRIVATE
+        src/player/MprisService.cpp
+        src/player/MprisService.h
+    )
+endif()
 target_include_directories(zuuned PRIVATE src/player ${MPV_INCLUDE_DIRS})
-target_link_libraries(zuuned PRIVATE ${MPV_LIBRARIES} Qt6::OpenGL Qt6::DBus)
+if(WIN32)
+    target_link_libraries(zuuned PRIVATE ${MPV_LIBRARIES} Qt6::OpenGL)
+else()
+    target_link_libraries(zuuned PRIVATE ${MPV_LIBRARIES} Qt6::OpenGL Qt6::DBus)
+endif()
 
 qt_add_executable(playertool
     src/player/playertool.cpp
@@ -374,22 +588,29 @@ target_link_libraries(playertool PRIVATE
 
 # ── Install (E3 ship mechanics) ──
 include(GNUInstallDirs)
-install(TARGETS zuuned RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES LICENSE COPYING.md
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/zuuned)
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/zuuned-build.json"
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/zuuned)
-install(FILES packaging/zuuned.desktop
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-install(FILES packaging/icons/zuuned.svg
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
-foreach(size 16 24 32 48 64 128 256 512)
-    install(FILES packaging/icons/hicolor/${size}x${size}/apps/zuuned.png
-            DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps)
-endforeach()
-# udev rules are architecture independent: GNUInstallDirs' libdir may be a
-# Debian multiarch directory or lib64, neither of which udev searches.
-install(FILES packaging/68-zuuned.rules
-        DESTINATION lib/udev/rules.d)
-install(FILES packaging/68-zuuned.rules
-        DESTINATION lib/udev/rules.d RENAME 72-zuuned.rules)
+
+# Linux ship mechanics only.  Windows ships as a self-contained directory put
+# together with the steps in BUILDING.md (ninja, then windeployqt beside the exe
+# plus the DLLs the vcpkg toolchain already copies next to it), so there is no
+# Windows install layout yet and `cmake --install` deliberately does nothing.
+if(NOT WIN32)
+    install(TARGETS zuuned RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES LICENSE COPYING.md
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/zuuned)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/zuuned-build.json"
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/zuuned)
+    install(FILES packaging/zuuned.desktop
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES packaging/icons/zuuned.svg
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+    foreach(size 16 24 32 48 64 128 256 512)
+        install(FILES packaging/icons/hicolor/${size}x${size}/apps/zuuned.png
+                DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps)
+    endforeach()
+    # udev rules are architecture independent: GNUInstallDirs' libdir may be a
+    # Debian multiarch directory or lib64, neither of which udev searches.
+    install(FILES packaging/68-zuuned.rules
+            DESTINATION lib/udev/rules.d)
+    install(FILES packaging/68-zuuned.rules
+            DESTINATION lib/udev/rules.d RENAME 72-zuuned.rules)
+endif()

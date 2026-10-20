@@ -1,3 +1,12 @@
+/* Keep first on Windows: the compat shim declares the POSIX surface this
+ * file uses (64-bit struct stat, dirent, poll, ...).  Whichever <sys/stat.h>
+ * the compiler parses first decides the struct layout, and the Qt headers
+ * include one.  See compat/win/posix_shim.h.  Other platforms build without
+ * it.  */
+#if defined(_WIN32)
+#include "wincompat.h"
+#endif
+
 #include "SessionLog.h"
 
 #include <QDateTime>
@@ -184,6 +193,11 @@ struct SessionLog::Impl {
         char buffer[8192];
         // A continuously noisy child must not starve a snapshot/stop request.
         for (int i = 0; i < 128; ++i) {
+#if defined(Q_OS_WIN)
+            // F_SETFL(O_NONBLOCK) is a no-op here and a bare read parks on an
+            // empty pipe, so ask the descriptor before each attempt.
+            if (!zuuned_fd_readable(captureRead)) break;
+#endif
             const auto count = ::read(captureRead, buffer, sizeof buffer);
             if (count > 0) consume(buffer, count);
             else if (count < 0 && errno == EINTR) --i;
@@ -207,7 +221,14 @@ struct SessionLog::Impl {
             { std::lock_guard guard(mutex); target = requested; }
             if (inputs[1].revents & POLLIN) {
                 char commands[64];
+#if defined(Q_OS_WIN)
+                // No non-blocking read on a Windows pipe, so drain only while
+                // the descriptor actually has bytes; a bare read would park.
+                while (zuuned_fd_readable(controlRead)
+                       && ::read(controlRead, commands, sizeof commands) > 0) {}
+#else
                 while (::read(controlRead, commands, sizeof commands) > 0) {}
+#endif
             }
             // Read after capturing the requested cut, including requests that
             // arrived just after poll returned. Never acknowledge future cuts.
@@ -280,7 +301,11 @@ bool SessionLog::start(const QString &directory, Limits limits)
         return failed();
     }
     const auto path = d->folder.toUtf8();
-    d->directoryFd = ::open(path.constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    /* openat(AT_FDCWD, ...) reaches the wide-path opener on Windows, where the
+     * CRT open() is ANSI-only; for an absolute path glibc open() does the same.
+     */
+    d->directoryFd = ::openat(AT_FDCWD, path.constData(),
+                              O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
     struct stat info {};
     if (d->directoryFd < 0 || ::fstat(d->directoryFd, &info) != 0
         || info.st_uid != ::geteuid() || ::fchmod(d->directoryFd, 0700) != 0) {
@@ -309,8 +334,15 @@ bool SessionLog::start(const QString &directory, Limits limits)
     std::fflush(stderr);
     d->originalStderr = ::fcntl(STDERR_FILENO, F_DUPFD_CLOEXEC, 3);
     // Reopening avoids changing O_NONBLOCK on the caller's shared descriptor.
-    if (limits.mirrorConsole)
+    if (limits.mirrorConsole) {
+#if defined(Q_OS_WIN)
+        // There is no /proc/self/fd here: the helper duplicates the inherited
+        // stderr descriptor, so mirroring never changes the caller flags.
+        d->consoleFd = zuuned_open_self_fd(STDERR_FILENO);
+#else
         d->consoleFd = ::open("/proc/self/fd/2", O_WRONLY | O_NONBLOCK | O_CLOEXEC | O_APPEND);
+#endif
+    }
     if (d->originalStderr < 0 || ::dup2(capture[1], STDERR_FILENO) < 0) {
         d->failure = systemError(QStringLiteral("Could not redirect diagnostic output"));
         closeFd(capture[1]);

@@ -1,3 +1,12 @@
+/* Keep first on Windows: the compat shim declares the POSIX surface this
+ * file uses (64-bit struct stat, dirent, poll, ...).  Whichever <sys/stat.h>
+ * the compiler parses first decides the struct layout, and the Qt headers
+ * include one.  See compat/win/posix_shim.h.  Other platforms build without
+ * it.  */
+#if defined(_WIN32)
+#include "wincompat.h"
+#endif
+
 #include "ArtworkPipeline.h"
 
 #include <QBuffer>

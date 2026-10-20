@@ -11,6 +11,13 @@
 #include <string.h>
 #include <sys/stat.h>
 
+/* Method 2 parks the full download in the temporary directory.  POSIX uses /tmp
+ * directly; the Windows compatibility layer hands back a writable directory with
+ * a trailing separator and the macro is a function call, so it goes in via "%s". */
+#ifndef ZUUNED_TMPDIR
+#define ZUUNED_TMPDIR "/tmp/"
+#endif
+
 /* ---- Album art (set) ---- */
 
 int zune_brand(ZuneDevice *dev, uint32_t item_id,
@@ -92,8 +99,10 @@ int zune_grab_photo_thumb(ZuneDevice *dev, uint32_t item_id,
     free(data);
 
     /* Method 2: Download full file + resize to 200x200 */
-    char tmp[64];
-    snprintf(tmp, sizeof(tmp), "/tmp/zunelinux-photo-%u", item_id);
+    /* ZUUNED_TMPDIR alone can run past the CRT limit, and Method 2 also has to
+     * leave room for the resize command built on top of it. */
+    char tmp[512];
+    snprintf(tmp, sizeof(tmp), "%szunelinux-photo-%u", ZUUNED_TMPDIR, item_id);
     ret = mtp_get_object_to_file(&dev->ptp, item_id, tmp);
     if (ret == 0) {
         char cmd[1024];

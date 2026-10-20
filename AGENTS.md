@@ -5,6 +5,18 @@ user-facing local build, restart only Zuuned with the fresh executable, preservi
 the current profile and workspace. Do not interrupt an active device sync; defer
 the restart until it finishes. Never close the terminal, Codex or desktop session.
 
+**Windows port, 2026-10-20:** one source tree now also builds and runs natively on
+Windows with MSVC (Qt 6.11 `msvc2022_64`, vcpkg plus a `ZUUNED_WIN_DEPS` tree; see
+the Windows section of `BUILDING.md`). `compat/win/` builds once as
+`zuuned_wincompat` and is force-included through `posix_shim.h` so libzune and the
+transcode C layer keep their POSIX surface without per-file `#ifdef`s; D-Bus/Mpris
+and the POSIX-only install rules are skipped on Windows; `regex.h` maps onto PCRE2.
+Gate: `tests/win-compat/run.ps1`, 166 software checks. **No Zune device has been
+tested on Windows yet** — WinUSB binding, enumeration, transfers and readback are
+validated on Linux only, so no hardware claim may be carried across platforms.
+Unrelated open item: the EnvironmentBackground spray halo shows a white-ring
+artifact under the Windows blur path; that file is still identical to HEAD.
+
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow
 windows. Resizing an existing queue opens the island unless a builder is active;

@@ -123,13 +123,19 @@ static int mtpz_load_embedded_keys(void)
 /* Try loading keys from ~/.mtpz-data file */
 static int mtpz_load_keys_from_file(void)
 {
+    /* POSIX puts the home directory in HOME; Windows puts it in USERPROFILE and
+     * never sets HOME.  The embedded key table is the primary source, this file
+     * is only the override, but it has to be findable on every platform. */
     char *home = getenv("HOME");
+    if (!home) home = getenv("USERPROFILE");
 
     if (!home) return -1;
 
-    int plen = strlen(home) + strlen("/.mtpz-data") + 1;
-    char path[plen];
-    sprintf(path, "%s/.mtpz-data", home);
+    /* MSVC has no variable-length arrays; a fixed buffer that refuses a too-long
+     * home is honest, where a truncated path would just fail to open. */
+    char path[1024];
+    if (snprintf(path, sizeof(path), "%s/.mtpz-data", home) >= (int)sizeof(path))
+        return -1;
 
     FILE *fdata = fopen(path, "r");
     if (!fdata) return -1;

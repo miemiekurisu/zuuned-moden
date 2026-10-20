@@ -1425,6 +1425,7 @@ Item {
                 visible: DeviceService.devicePresent
                          && !DeviceService.connected
                          && !DeviceService.udevRuleOk
+                         && DeviceService.udevRulesApply
                 Layout.fillWidth: true
                 Layout.topMargin: Theme.spaceMd
                 implicitHeight: udevCol.implicitHeight + Theme.spaceLg * 2

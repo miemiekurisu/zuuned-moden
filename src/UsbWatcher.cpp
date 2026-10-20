@@ -13,6 +13,57 @@ bool isZunePid(uint16_t pid) {
     // presence.
     return pid == 0x0710 || pid == 0x063e || (pid >= 0x0711 && pid <= 0x0714);
 }
+
+// A libusb build without OS hotplug notifications still has to notice a Zune
+// that appears or disappears.  Windows is the case that matters: since 1.0.24
+// its backend enumerates on demand -- windows_common.c installs
+// get_device_list with a NULL hotplug_poll -- which keeps
+// LIBUSB_CAP_HAS_HOTPLUG permanently 0 there and leaves
+// libusb_hotplug_register_callback() able to answer only NOT_SUPPORTED.
+// Diffing a leisurely enumeration is the portable stand-in.  The signals carry
+// presence rather than identity, so nothing has to be tracked between passes
+// except the last confirmed answer.
+//
+// An enumeration that fails is an unknown, never an absence: onZuneLeft()
+// severs a live worker, so a single flaky pass must not tear down a transfer.
+// Even a confirmed absence waits for a second opinion half a second later.
+void pollPresence(libusb_context *ctx, const std::atomic<bool> &stop,
+                  UsbWatcher *self) {
+    constexpr int kIntervalMs = 500;
+    constexpr int kAbsencesBeforeLeft = 2;
+
+    fprintf(stderr, "[usbwatcher] polling for Zune every %d ms (vid=0x%04x)\n",
+            kIntervalMs, kZuneVid);
+
+    bool present = false;
+    int absences = 0;
+    while (!stop) {
+        libusb_device **devices = nullptr;
+        const ssize_t found = libusb_get_device_list(ctx, &devices);
+        if (found >= 0) {
+            bool sighted = false;
+            for (ssize_t i = 0; i < found && !sighted; ++i) {
+                libusb_device_descriptor desc{};
+                if (libusb_get_device_descriptor(devices[i], &desc) != 0)
+                    continue;
+                sighted = desc.idVendor == kZuneVid && isZunePid(desc.idProduct);
+            }
+            libusb_free_device_list(devices, 1);
+            absences = sighted ? 0 : absences + 1;
+            if (sighted && !present) {
+                present = true;
+                fprintf(stderr, "[usbwatcher] Zune arrived (poll)\n");
+                emit self->zuneArrived();
+            } else if (absences >= kAbsencesBeforeLeft && present) {
+                present = false;
+                fprintf(stderr, "[usbwatcher] Zune left (poll)\n");
+                emit self->zuneLeft();
+            }
+        }
+        for (int waited = 0; waited < kIntervalMs && !stop; waited += 50)
+            QThread::msleep(50);
+    }
+}
 } // namespace
 
 struct UsbWatcherThunk {
@@ -59,7 +110,9 @@ void UsbWatcher::run() {
     }
 
     if (!libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG)) {
-        fprintf(stderr, "[usbwatcher] hotplug not supported on this platform\n");
+        // No OS hotplug notifications in this libusb build, so watch for the
+        // Zune by enumerating instead.  See pollPresence().
+        pollPresence(ctx, m_stop, this);
         libusb_exit(ctx);
         return;
     }
