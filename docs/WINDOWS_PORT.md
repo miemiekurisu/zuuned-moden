@@ -340,7 +340,7 @@ Numbers below come from the development machine at this checkpoint.  Re-run
 `tests\win-usability\run.ps1` and `tests\win-compat\run.ps1` from an MSVC
 environment to reproduce them.
 
-- The shim gate reports `171 checks, 0 failures, 0 skips`: temporary names,
+- The shim gate reports `184 checks, 0 failures, 0 skips`: temporary names,
   long paths past 260 characters, 64-bit sizes, directory descriptors,
   `opendir` semantics and UTF-8 narrow names under the same force-include the
   application builds with. Since 2026-10-20 it also pins how `fstat()` reads a
@@ -353,6 +353,12 @@ environment to reproduce them.
   `fd_handle()`: a `.CRT$XIB` initialiser was tried first, the linker folded this
   object's `.CRT` subsection into `.rdata` (LNK4254) and start-up never ran it,
   which the gate caught by finding the handler still null.
+  Since 2026-10-21 it carries a `file_identity` group, and that one is load-bearing
+  in a way the others are not: `st_dev`/`st_ino` come back as the volume serial and
+  the NTFS file index, two files never share one, and it survives the rename
+  `QSaveFile` publishes with - which is what the artwork cache's "this image is its
+  own source" refusal is built on.  Left at zero by a naive shim it would have
+  rejected every cached artwork render on Windows, with a message about the cache.
 - The usability gate makes seventeen instrumented launches plus the tool,
   encoder and profile probes and ends `launches=17 checks=94 failures=0
   skips=0 killed=0` and `OVERALL=ok`.
@@ -453,6 +459,17 @@ environment to reproduce them.
    `PathText::display()` with the Settings row the gate does pin, and the repair
    recorded in `docs/WINDOWS_COMPAT_AUDIT.md` is a stored-path concern that the
    `watch_folder_repair` phase already covers.
+10. The second compatibility sweep in `docs/WINDOWS_COMPAT_AUDIT.md` - device titles
+    that cannot be a Windows filename, the `cmd.exe` photo-thumbnail command line,
+    m3u entries written in another dialect.  All three compile clean under MSVC and
+    none of them has a gate or a hand test: no album with a colon in its name has
+    been saved to the library, no device photo thumbnail has been produced through
+    the fallback, and no foreign-authored playlist has been imported.  The library
+    naming path in particular is a *change* to what a save-to-library file is called
+    on Linux not at all and on Windows only for names that could not be created
+    before, so it is safe in the ordinary case and unverified in the one case it
+    exists for.  A full rebuild and an app restart are also still pending, so none of
+    it is in the binary that is running.
 
 ## Order to close it in
 

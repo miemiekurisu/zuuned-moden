@@ -254,6 +254,23 @@ identity, and that the rendered row agrees with `PathText::display()`. Gates at 
 checkpoint: `171 checks, 0 failures, 0 skips` from `tests/win-compat` and
 `launches=17 checks=94 failures=0 skips=0 killed=0` from `tests/win-usability`.
 
+**Windows compatibility sweep, 2026-10-21:** a second whole-tree pass over the names
+the app writes and the commands it runs, after the library-root defect was closed.
+`LibraryPaths::safeComponent()` is now the only place device text becomes a file or
+folder name - a Zune album named `P:44 / Vol. 2` made `mkpath()` fail and read back as
+`Fail to save`, the same string the root defect produced -
+`LibraryPaths::caseKey()` compares a stored `filepath` against a path that arrived
+from outside, `zune_grab_photo_thumb()` builds a `cmd.exe` command line instead of
+single quotes and `2>/dev/null`, and `importPlaylistM3U()` resolves an entry as a file
+instead of comparing it as text. `tests/win-compat` is 184 checks and gains a
+`file_identity` group pinning `st_dev`/`st_ino`, which is what the artwork cache's
+cache-is-its-own-source refusal is built on. The three fixes are compile-verified
+only: no hand test yet, and `zuuned.exe` has not been relinked since.
+`docs/WINDOWS_COMPAT_AUDIT.md` records each one and what the sweep deliberately left
+alone - four uncalled libzune shell sites, and no `<longPathAware>` in the executable
+manifest, which keeps the Qt-side paths under 260 characters. Device evidence is
+unchanged and still one hand-tested Pavo Zune HD.
+
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow
 windows. Resizing an existing queue opens the island unless a builder is active;

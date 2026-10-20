@@ -743,6 +743,46 @@ static void test_wide_stdio(void)
     CHECK(stat(longfile, &st) == -1, "the long stdio file survived remove()");
 }
 
+/* ---- 12. st_dev/st_ino carry a real file identity ---- */
+/* ArtworkPipeline::stamp() decides "this cache image is its own source" by
+ * comparing st_dev and st_ino, and re-reads the source stamp before it commits
+ * a render.  Both questions are only meaningful if the shim reports the volume
+ * serial and the NTFS file index rather than leaving the pair at zero: with a
+ * constant identity any two existing files would look like the same file and
+ * every cached artwork render would be refused. */
+static void test_file_identity(void)
+{
+    char first[1200], second[1200], moved[1200];
+    path_in(first, sizeof(first), "identity-a.png");
+    path_in(second, sizeof(second), "identity-b.png");
+    path_in(moved, sizeof(moved), "identity-renamed.png");
+    CHECK(write_narrow(first, "aaaa", 4) == 0, "identity fixture A not written");
+    CHECK(write_narrow(second, "bb", 2) == 0, "identity fixture B not written");
+
+    struct stat a, again, b;
+    CHECK(stat(first, &a) == 0, "identity A did not stat: errno %d", errno);
+    CHECK(stat(first, &again) == 0, "identity A did not stat a second time: errno %d", errno);
+    CHECK(stat(second, &b) == 0, "identity B did not stat: errno %d", errno);
+    CHECK(a.st_size == 4 && b.st_size == 2, "identity fixtures report %lld and %lld",
+          a.st_size, b.st_size);
+    CHECK(a.st_dev == again.st_dev && a.st_ino == again.st_ino,
+          "one file reported two identities");
+    CHECK(a.st_ino != 0 && b.st_ino != 0, "st_ino is a placeholder: %llu and %llu",
+          (unsigned long long)a.st_ino, (unsigned long long)b.st_ino);
+    CHECK(a.st_ino != b.st_ino || a.st_dev != b.st_dev, "two files share one identity");
+
+    /* QSaveFile publishes a render by renaming a temporary over the target, and
+     * the stamp comparison straddles that rename, so identity has to survive it. */
+    CHECK(rename(first, moved) == 0, "identity rename failed: errno %d", errno);
+    struct stat after;
+    CHECK(stat(moved, &after) == 0, "renamed identity did not stat: errno %d", errno);
+    CHECK(after.st_ino == a.st_ino && after.st_dev == a.st_dev,
+          "identity changed across rename");
+    CHECK(stat(first, &after) == -1 && errno == ENOENT, "the rename left the old name behind");
+    unlink(second);
+    unlink(moved);
+}
+
 int main(void)
 {
     zuuned_win_runtime_init();
@@ -790,6 +830,8 @@ int main(void)
     test_miscellany();
     printf("--- wide_stdio\n");
     test_wide_stdio();
+    printf("--- file_identity\n");
+    test_file_identity();
 
     sweep(root_ext);
     printf("%d checks, %d failures, %d skips\n", checks, failures, skips);

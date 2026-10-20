@@ -4,6 +4,7 @@
 #include "DevicePlaylistState.h"
 #include "UsbWatcher.h"
 #include "UdevSetup.h"
+#include "library/LibraryPaths.h"
 #include "library/VideoIdentity.h"
 #include "sync/RecoveryIdentity.h"
 
@@ -792,9 +793,9 @@ void DeviceService::saveVideoToLibrary(quint32 itemId, const QString &filename,
         return;
     QString dir = importsDir();
     if (!subdir.isEmpty()) {
-        QString safe = subdir;
-        safe.replace(QLatin1Char('/'), QLatin1Char('_'));
-        dir += QLatin1Char('/') + safe;
+        dir += QLatin1Char('/')
+            + LibraryPaths::safeComponent(subdir,
+                                         QStringLiteral("video_%1").arg(itemId));
     }
     QDir().mkpath(dir);
     QVariantMap video{{"itemId", itemId}, {"name", filename}};
@@ -824,13 +825,14 @@ void DeviceService::savePhotoToLibrary(quint32 itemId, const QString &filename,
         return;
     QString dir = photoImportsDir();
     if (!subdir.isEmpty()) {
-        QString safe = subdir;
-        safe.replace(QLatin1Char('/'), QLatin1Char('_'));
-        dir += QLatin1Char('/') + safe;
+        dir += QLatin1Char('/')
+            + LibraryPaths::safeComponent(subdir,
+                                         QStringLiteral("album_%1").arg(itemId));
     }
     QDir().mkpath(dir);
+    const QString photoFallback = QStringLiteral("photo_%1.jpg").arg(itemId);
     const QString fname = filename.isEmpty()
-        ? QStringLiteral("photo_%1.jpg").arg(itemId) : filename;
+        ? photoFallback : LibraryPaths::safeComponent(filename, photoFallback);
     emit workerExtractPhoto(itemId, dir + QLatin1Char('/') + fname);
 }
 
@@ -843,14 +845,13 @@ void DeviceService::saveTrackToLibrary(quint32 itemId, const QString &filename,
     for (const QString &part : {artist, album}) {
         if (part.isEmpty())
             continue;
-        QString safe = part;
-        safe.replace(QLatin1Char('/'), QLatin1Char('_'));
-        dir += QLatin1Char('/') + safe;
+        dir += QLatin1Char('/')
+            + LibraryPaths::safeComponent(part, QStringLiteral("item_%1").arg(itemId));
     }
     QDir().mkpath(dir);
+    const QString trackFallback = QStringLiteral("track_%1.mp3").arg(itemId);
     QString fname = filename.isEmpty()
-        ? QStringLiteral("track_%1.mp3").arg(itemId) : filename;
-    fname.replace(QLatin1Char('/'), QLatin1Char('_'));
+        ? trackFallback : LibraryPaths::safeComponent(filename, trackFallback);
     // Device names carry no extension — the Zune stores MP3/WMA; MP3 is
     // what we smuggle, so default to it when the name is bare.
     if (!fname.contains(QLatin1Char('.')))

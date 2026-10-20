@@ -20,7 +20,7 @@ Keep the uppercase form and treat any `D9007` in this gate output as a broken
 gate rather than a passing run.
 
 A good run prints one `--- section` marker per group and ends with
-`171 checks, 0 failures, 0 skips` followed by `win-compat gate passed`. The
+`184 checks, 0 failures, 0 skips` followed by `win-compat gate passed`. The
 groups are:
 
 - `tmpdir` - `ZUUNED_TMPDIR` resolves to a directory the shim can write into and
@@ -57,6 +57,11 @@ groups are:
 - `wide_stdio` - plain CRT `fopen`/`fread`/`fwrite`/`remove`/`rename` on
   non-ASCII names and past the 260-character limit, which the CRT only honours
   after the runtime-wide binary stdio mode and UTF-8 locale the shim installs.
+- `file_identity` - `stat()` reports the volume serial and file index as
+  `st_dev`/`st_ino`: the pair is non-zero, two distinct files never share it, it
+  is stable across two `stat()` calls and across `rename()`. The artwork cache
+  refuses a render whose output is its own source on exactly that comparison, so
+  a placeholder identity would reject every cached image.
 
 Sections that the volume or environment cannot support report a skip, which is
 why the probe distinguishes failures from skips; the accepted run above reports

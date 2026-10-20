@@ -135,7 +135,10 @@ a descriptor is resolved: `fstat()` works on a handle the shim never created and
 on a descriptor the shim never created - the second is what `QFile::handle()`
 hands the audiobook probe on Windows - and the CRT invalid-parameter guard is in
 force without any `main()` asking for it. Expected result:
-`171 checks, 0 failures, 0 skips`.
+`184 checks, 0 failures, 0 skips`. Since 2026-10-21 it also pins `stat()`
+identity: `st_dev`/`st_ino` are the volume serial and file index, distinct files
+never share one, and it survives a rename - the artwork cache's
+"this image is its own source" check is built on that.
 
 The bash suites in `ci/check.sh` need pkg-config and a POSIX shell, so on
 Windows the library core is covered by the native tools instead:

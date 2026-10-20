@@ -7,6 +7,7 @@
 #include "library/ArtistImageService.h"
 #include "library/ArtworkHttp.h"
 #include "library/LibraryDb.h"
+#include "library/LibraryPaths.h"
 #include "library/LibraryScanner.h"
 #include "library/LocalTrackModel.h"
 #include "library/MusicIdentityClient.h"
@@ -2218,19 +2219,44 @@ QString LibraryService::exportPlaylistsM3U() {
 }
 
 QVariantMap LibraryService::importPlaylistM3U(const QString &fileUrl) {
-    QString path = fileUrl;
-    if (path.startsWith(QLatin1String("file://")))
-        path = QUrl(fileUrl).toLocalFile();
+    const QString path = LibraryPaths::canonicalRoot(fileUrl);
     QFile f(path);
     QVariantMap res{{QStringLiteral("added"), 0},
                     {QStringLiteral("missing"), 0}};
     if (!f.open(QIODevice::ReadOnly))
         return res;
 
+    // One line of an m3u, resolved to the spelling the library stores.
+    //
+    // The comparison this replaces was verbatim, which only ever held for a
+    // playlist this app wrote itself on Linux.  Every other playlist speaks in
+    // a different voice: Windows Media Player writes  E:\Music\A.mp3 , iTunes
+    // writes file:// URLs, and anything hand-made or exported elsewhere lists
+    // files relative to the playlist.  Compared as text all three are
+    // "missing", and the user is handed back an empty playlist out of a library
+    // that plainly contains every track on it.
+    //
+    // Relative entries are wrong on every platform, not just Windows, so the
+    // resolution is unconditional: decode a URL, take Qt's forward-slash form
+    // (a no-op on Linux, where a backslash is an ordinary character), resolve
+    // against the playlist's own folder, and clean the result — which is the
+    // form LibraryScanner writes into filepath.
+    const QString base = QFileInfo(path).absolutePath();
+    const auto locate = [&base](const QString &entry) {
+        QString local = entry;
+        const QUrl asUrl(local);
+        if (asUrl.isLocalFile())
+            local = asUrl.toLocalFile();
+        local = QDir::fromNativeSeparators(local);
+        if (!local.isEmpty() && !QDir::isAbsolutePath(local))
+            local = base + QLatin1Char('/') + local;
+        return QDir::cleanPath(local);
+    };
+
     // filepath → library id
     QHash<QString, qint64> byPath;
     for (const LibTrack &t : m_db->allTracks())
-        byPath.insert(t.filepath, t.id);
+        byPath.insert(LibraryPaths::caseKey(t.filepath), t.id);
 
     QVariantList ids;
     int missing = 0;
@@ -2238,7 +2264,7 @@ QVariantMap LibraryService::importPlaylistM3U(const QString &fileUrl) {
         const QString line = QString::fromUtf8(f.readLine()).trimmed();
         if (line.isEmpty() || line.startsWith(QLatin1Char('#')))
             continue;
-        const auto it = byPath.constFind(line);
+        const auto it = byPath.constFind(LibraryPaths::caseKey(locate(line)));
         if (it != byPath.constEnd())
             ids.append(double(it.value()));
         else
