@@ -166,14 +166,15 @@ settings tabs, both pinned chrome states, the compact Now Playing island reached
 resizing a live window, the four command-line probes, the transcode layer making real
 ASF, MP4 and MP3 files instead of only probing them, two launches into a profile folder
 named in Chinese, a read-only account of what the machine can see about a Zune, a seek
-on the null audio driver, single-instance refusal, and before-and-after proof that the
+on the null audio driver, a muted audible run that has to bind WASAPI,
+single-instance refusal, and before-and-after proof that the
 real profile stayed untouched.
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 ```
 
-Expected: `launches=17 checks=75 failures=0 skips=0 killed=0` and `OVERALL=ok`. It
+Expected: `launches=17 checks=77 failures=0 skips=0 killed=0` and `OVERALL=ok`. It
 needs the same MSVC environment as the build and compiles its own capture tool into
 `build\win-usability\`. `-Only fixture,pages` and similar run a subset - the phase
 list is comma-separated, and because the scratch tree is rebuilt on every run a page

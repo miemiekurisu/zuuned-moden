@@ -53,11 +53,12 @@ header-only edit silently links a stale object: force a full rebuild, with
 `--clean-first`, after any header-only change until that changes.
 The Windows usability gate is finished and passing:
 `pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1` reports
-`launches=17 checks=75 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
+`launches=17 checks=77 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
 built app once per page (music, videos, photos, podcasts, audiobooks, and the device
 page with no device attached), the five settings tabs, the header pinned at 0 and at
 1, a queue played through the compact island after a real `winshot --move` resize, the
-four command-line probes, a silent `playertool` seek, single-instance refusal, and a
+four command-line probes, a silent `playertool` seek, a muted
+audible `playertool` run that has to bind WASAPI, single-instance refusal, and a
 before-and-after comparison of the real profile. `-Only` takes a comma list and pairs
 a phase with `fixture` because the scratch tree is rebuilt each run. It is software
 only: it opens no USB device handle and calls no libzune function, so **no Zune has
@@ -132,7 +133,7 @@ folder named from code points and reads the spoken store's schema back through
 produce rather than probe - FFmpeg-built H.264 source through profile 0 (ASF magic
 `30 26 b2 75`, source size, duration intact) and profile 2 (`ftyp`, 480x272), plus the
 LAME leg judged by probing the mp3 for the length of the tone. Full gate now
-`launches=17 checks=75 failures=0 skips=0 killed=0`. Two things deliberately left
+`launches=17 checks=77 failures=0 skips=0 killed=0`. Two things deliberately left
 alone after being checked, so do not "fix" them again: `compat/win/` already decodes a
 narrow path as UTF-8 then ANSI, and CRT `access()` is ANSI-only, which is what the
 `QFile::encodeName()` callers in `LibraryScanner`, `ArtworkPipeline`, the artwork
@@ -148,9 +149,12 @@ opened a device handle.
 status page for the port - toolchain, what the two software gates prove and what
 they explicitly do not. Keep it current whenever a Windows gate changes, and never
 state a Windows hardware capability: the open gates are driver binding, transfers
-and readback, real WASAPI output, hardware decode, a `spokenmediatool` gate and
-packaging. The port stays native MSVC - no WSL, MinGW or Cygwin - which is why the
-Linux line is unchanged by construction at this checkpoint rather than re-verified.
+and readback, audible audio, hardware decode, a `spokenmediatool` gate and
+packaging. The only Windows audio fact this checkpoint states is that a muted
+audible `playertool` run binds WASAPI, as mpv reports through its
+`current-ao` property; nothing has been listened to. The port stays native MSVC -
+no WSL, MinGW or Cygwin - which is why the Linux line is unchanged by construction
+at this checkpoint rather than re-verified.
 
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow

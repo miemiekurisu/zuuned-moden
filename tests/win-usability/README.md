@@ -82,7 +82,7 @@ silent unless asked, on either platform.
 
 `run.ps1` is that gate and it is complete.  An unfiltered run makes seventeen
 instrumented launches plus the tool, encoder and profile probes and ends
-`launches=17 checks=75 failures=0 skips=0 killed=0` and `OVERALL=ok`:
+`launches=17 checks=77 failures=0 skips=0 killed=0` and `OVERALL=ok`:
 
     pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 
@@ -118,6 +118,13 @@ the seeded library (`-Only fixture,pages`).
   real libraries hold WMA streams inside `.mp3` files.  The products land in `%TEMP%`,
   exactly where the application writes, and the phase deletes them again.
 - `seek` - `playertool seek` and `play`, on the null audio driver.
+- `audio` - one audible `playertool play` with `ZUUNED_MPV_AO=wasapi` and `--mute`,
+  then one run with the variable empty.  mpv names the output it really bound through
+  `current-ao` - there is no `audio-out` property and reading it answers nothing at
+  all - so the first run has to print `audio_out=wasapi` and the second
+  `audio_out=null`.  That is what separates "mpv clocked a null driver" from "the
+  Windows audio backend actually opened", and muting keeps the phase polite enough to
+  run on the desktop of someone who is working.
 - `single` - a second instance pointed at the same profile and the same lock suffix
   refuses in its own words and never builds a scene, while the holder keeps its window
   and still closes politely.
@@ -131,10 +138,12 @@ the seeded library (`-Only fixture,pages`).
   SQLite the local ANSI code page instead of UTF-8, which on a GBK machine opens a
   different file and lost every podcast and audiobook silently.
 
-Four things it cannot certify, and does not claim to:
+Five things it cannot certify, and does not claim to:
 
 - **No Zune has ever been connected to a Windows build.**  Nothing here opens USB,
   and the device page is checked only in its healthy no-device state.
+- The WASAPI run is muted.  It proves the Windows audio output opens and clocks
+  playback; nobody listened to it, so it certifies no waveform.
 - Dismissing the Now Playing island by clicking its X needs a mouse.  The gate proves
   the island opens on resize and that the ribbon retires and returns with the window.
 - Nothing needs the network, but a GUI launch does reach musicbrainz.org for artwork

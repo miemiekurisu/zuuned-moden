@@ -69,6 +69,10 @@ public:
     double playbackRate() const;
     int sleepMinutes() const { return m_sleepMinutes; }
 
+    // Audio output driver mpv bound for this session ("" before one exists).
+    // Deliberately not a QML property: CLI gates and diagnostics ask directly.
+    QString audioDriver() const;
+
     // Position-persistence hook: (libraryId, positionMs). Set by the
     // integration layer; items with libraryId < 0 are never saved.
     void setSavePositionHook(std::function<void(qint64, int)> hook) {

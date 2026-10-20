@@ -222,6 +222,17 @@ bool MpvController::isMuted() const {
 
 void MpvController::setMuted(bool m) { setFlag("mute", m); }
 
+QString MpvController::audioOut() const {
+    if (!m_mpv)
+        return QString();
+    char *cstr = mpv_get_property_string(m_mpv, "current-ao");
+    if (!cstr)
+        return QString();
+    const QString name = QString::fromUtf8(cstr);
+    mpv_free(cstr);
+    return name;
+}
+
 int MpvController::chapterCount() const {
     if (!m_mpv)
         return 0;

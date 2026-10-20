@@ -88,7 +88,7 @@ environment to reproduce them.
   `opendir` semantics and UTF-8 narrow names under the same force-include the
   application builds with.
 - The usability gate makes seventeen instrumented launches plus the tool,
-  encoder and profile probes and ends `launches=17 checks=75 failures=0
+  encoder and profile probes and ends `launches=17 checks=77 failures=0
   skips=0 killed=0` and `OVERALL=ok`.
 - What those launches actually establish: every page paints real content rather
   than an empty window (`winshot` captures the live swapchain and the app
@@ -101,14 +101,20 @@ environment to reproduce them.
   returns an mp3 as long as the tone it came from; and a profile folder named in
   Chinese gains both databases with the spoken store's own schema readable back
   out of it.
+- Real audio output, silenced.  `playertool play <tone> 3 --audible --mute` with
+  `ZUUNED_MPV_AO=wasapi` ends `audio_out=wasapi` with the position advancing, and the
+  same run with the variable empty ends `audio_out=null`, so the Windows audio backend
+  is proven to open and to clock playback.  Nothing was listened to.
 
 ## What is not proven here
 
 1. Device work of any kind, as stated at the top.  Driver binding first, then
    enumeration, hotplug, transfers, readback and deletion, each a real gate
    rather than a ported assumption.
-2. Audio output.  Every gated launch sets `ZUUNED_MPV_AO=null` so a test run is
-   silent; the WASAPI path has never been asserted.
+2. Audio anyone can hear.  The gate opens WASAPI for real and asserts mpv reports it
+   through `current-ao`, but always muted, so samples never reach the speaker.
+   Audible playback, exclusive mode, a hot-plugged or Bluetooth endpoint, and anything
+   a human listened to remain unverified.
 3. Hardware decode.  The NVDEC path in the transcode layer is unverified on
    Windows; everything run here used software decode.
 4. `spokenmediatool` builds but has no Windows gate of its own.
@@ -134,6 +140,6 @@ environment to reproduce them.
 2. Repeat the Linux hardware gates in the same order on Windows: library read,
    one album send, one deletion, readback, then the podcast and audiobook
    categories and firmware resume - each with its own evidence, none inherited.
-3. Add the missing software gates: a real WASAPI playback run, hardware decode vs
-   the software fallback, and a `spokenmediatool` phase.
+3. Add the remaining software gates: hardware decode against the software fallback,
+   audible (unmuted) playback, and a `spokenmediatool` phase.
 4. Only then talk about Windows packaging or a Windows release channel.

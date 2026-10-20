@@ -974,6 +974,32 @@ if (Select-Phase 'seek') {
 }
 
 Write-Host ''
+Write-Host '== audio backend'
+if (Select-Phase 'audio') {
+    # The null driver proves the player clocks playback; it proves nothing about
+    # the platform backend.  mpv reports the output it really bound through the
+    # "current-ao" property - there is no "audio-out" property - so an audible
+    # run prints the driver it opened.  --mute keeps the samples silent, which is
+    # what lets this run on the user's own desktop while WASAPI still opens.
+    if (-not (Test-Path -LiteralPath $tone)) {
+        Skip 'the audible playertool checks' 'no fixture tone on disk'
+    }
+    else {
+        $audible = Invoke-Proc -File $playerTool -Arguments @('play', $tone, '3', '--audible', '--mute') `
+            -Env @{ ZUUNED_MPV_AO = 'wasapi' } -Timeout 180
+        Check 'playertool opens the Windows WASAPI output when asked' `
+            (($audible.Code -eq 0) -and ($audible.Out -match 'audio_out=wasapi') -and
+             ($audible.Out -match 'monotonic=yes')) $audible.Out.Trim()
+        # Every other phase relies on the default being the null driver: a gate
+        # that made sound on the user's desktop would be a worse gate.
+        $defaulted = Invoke-Proc -File $playerTool -Arguments @('play', $tone, '2') `
+            -Env @{ ZUUNED_MPV_AO = '' } -Timeout 180
+        Check 'playertool still defaults to the silent null driver' `
+            ($defaulted.Out -match 'audio_out=null') $defaulted.Out.Trim()
+    }
+}
+
+Write-Host ''
 Write-Host '== single instance'
 if (Select-Phase 'single') {
     # The lock lives inside the profile, at <profile>/run/zuuned<SUFFIX>.lock, so the
@@ -1162,7 +1188,9 @@ if ($script:failures) {
     Write-Host 'OVERALL=fail'
     exit 1
 }
-Write-Host ('scope: ' + $script:caseSeq + ' instrumented launches, no device and no audio output')
+# Truthful scope: the audio phase does open the real Windows output, but
+# only muted, so nothing in this gate is certified by anyone listening to it.
+Write-Host ('scope: ' + $script:caseSeq + ' instrumented launches, no device, one real audio output opened muted and never heard')
 Write-Host 'NOT YET HARDWARE-TESTED: no Zune has ever been connected to a Windows build'
 Write-Host 'OVERALL=ok'
 exit 0

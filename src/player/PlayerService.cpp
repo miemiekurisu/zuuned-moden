@@ -199,6 +199,10 @@ void PlayerService::toggleMute() {
     emit volumeChanged();
 }
 
+QString PlayerService::audioDriver() const {
+    return m_mpv ? m_mpv->audioOut() : QString();
+}
+
 void PlayerService::toggleShuffle() {
     if (isSpoken()) return;
     m_shuffled = !m_shuffled;

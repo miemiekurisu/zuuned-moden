@@ -67,6 +67,12 @@ public:
     double speed() const;
     bool isMuted() const;
     void setMuted(bool m);
+    // The audio output driver mpv actually bound ("wasapi", "pipewire",
+    // "null"...), empty until an AO exists.  mpv only reports this through
+    // "current-ao"; the plausible-sounding "audio-out" property does not
+    // exist.  Diagnostics and the CLI gates use it to prove a real backend
+    // engaged rather than the null driver.
+    QString audioOut() const;
 
     // ── Video (Phase 7) ──
     int chapterCount() const;

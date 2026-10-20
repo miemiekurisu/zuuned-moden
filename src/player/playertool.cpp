@@ -5,8 +5,15 @@
  *   playertool queue <f1> <f2>         verify EOF auto-advance fires once
  *   playertool seek <file> <targetSec> verify absolute seek lands ±0.5s
  *
+ *   playertool play <file> <seconds> --audible --mute
+ *                                    real audio output, silenced samples
+ *
  * Uses ao=null by default (ZUUNED_MPV_AO) so the gate NEVER hijacks the
- * user's audio session; pass --audible as the last arg for real output.
+ * user's audio session; pass --audible as the last arg for real output, and
+ * --mute to keep that output silent while mpv still opens the device and
+ * drives playback from it.  The play summary prints audio_out=<driver>, the
+ * output mpv really bound, which is how a gate tells the platform backend
+ * from the null driver instead of trusting an exit code.
  */
 
 #include "PlayerService.h"
@@ -24,9 +31,13 @@ static QVariantMap item(const QString &path) {
 int main(int argc, char *argv[]) {
     // Default: silent audio output (decodes + advances time, no device)
     bool audible = false;
-    for (int i = 1; i < argc; i++)
+    bool mute = false;
+    for (int i = 1; i < argc; i++) {
         if (QByteArray(argv[i]) == "--audible")
             audible = true;
+        else if (QByteArray(argv[i]) == "--mute")
+            mute = true;
+    }
     if (!audible && qgetenv("ZUUNED_MPV_AO").isEmpty())
         qputenv("ZUUNED_MPV_AO", "null");
 
@@ -40,6 +51,12 @@ int main(int argc, char *argv[]) {
 
     PlayerService player;
     int exitCode = 1;
+
+    // Silence without the null driver: mpv opens the real audio output and
+    // still clocks playback from it, so --mute exercises the backend while
+    // keeping a gate quiet enough to run on a user's desktop.
+    if (mute)
+        player.toggleMute();
 
     if (cmd == QStringLiteral("play")) {
         const QString file = args[2];
@@ -59,9 +76,10 @@ int main(int argc, char *argv[]) {
         player.setQueue({item(file)}, 0);
 
         QTimer::singleShot(int(seconds * 1000), [&] {
-            printf("duration=%.2f monotonic=%s final_pos=%.2f\n",
+            printf("duration=%.2f monotonic=%s final_pos=%.2f audio_out=%s\n",
                    player.durationMs() / 1000.0,
-                   monotonic ? "yes" : "NO", lastPos);
+                   monotonic ? "yes" : "NO", lastPos,
+                   qPrintable(player.audioDriver()));
             exitCode = (monotonic && lastPos > 0) ? 0 : 1;
             app.quit();
         });
