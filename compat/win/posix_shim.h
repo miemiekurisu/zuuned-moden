@@ -179,12 +179,18 @@ int fstat(int fd, struct stat *out);
 #define S_ISLNK(m)  (((m) & S_IFMT) == S_IFLNK)
 #endif
 
-/* ---- access() modes and standard descriptors ---- */
+/* ---- access() modes and standard descriptors ----
+ * X_OK is zero here on purpose.  UCRT _access() accepts only mode 0, 2, 4 or 6
+ * and reports bit 1 as an invalid parameter, which runs the invalid parameter
+ * handler and __fastfail()s the process rather than setting errno.  Windows has
+ * no execute bit that access() can consult anyway, and read access to a
+ * directory already implies traversing it, so a POSIX "read or execute" query
+ * means "read" here.  Do not OR X_OK into an access() mode on Windows. */
 #ifndef F_OK
 #define F_OK 0
 #define R_OK 4
 #define W_OK 2
-#define X_OK 1
+#define X_OK 0
 #endif
 #ifndef STDIN_FILENO
 #define STDIN_FILENO  0

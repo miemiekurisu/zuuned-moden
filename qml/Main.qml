@@ -104,6 +104,64 @@ ApplicationWindow {
         // pin owns the chrome — no greeting under it)
         if (spaceScarce && collapseOverride < 0)
             greetingTimer.start()
+        reportQaState("startup")
+        startQaQueue()
+    }
+    // QA harness (`--qa-probe`): one authoritative line about what this window
+    // actually decided to show.  The usability gates need it because a painted
+    // frame proves neither that --page took effect nor that what is on screen is
+    // the page rather than the splash or the onboarding sheet.  Quiet unless the
+    // flag is passed, so ordinary runs log nothing extra on any platform.
+    readonly property bool qaProbe:
+        Qt.application.arguments.indexOf("--qa-probe") >= 0
+    // QA harness (`--qa-play <file>`): put one real file in the player queue so a
+    // gate can reach the ribbon and, after a resize, the compact island.  Audio
+    // goes wherever ZUUNED_MPV_AO points, so an instrumented run makes no sound.
+    property string qaPlayFile: {
+        const args = Qt.application.arguments
+        const i = args.indexOf("--qa-play")
+        return i >= 0 && i + 1 < args.length ? args[i + 1] : ""
+    }
+    function startQaQueue() {
+        if (qaPlayFile.length === 0)
+            return
+        PlayerService.setQueue([{
+            filepath: qaPlayFile, title: "QA tone", artist: "QA",
+            album: "QA", discNumber: 0, year: 0, libraryId: -1
+        }], 0)
+    }
+    function reportQaState(when) {
+        if (!qaProbe)
+            return
+        console.log("[qa] " + when
+            + " page=" + currentPage
+            + " onboarding=" + showOnboarding
+            + " nowPlaying=" + showNowPlaying
+            + " collapse=" + collapse.toFixed(2)
+            + " collapsed=" + chromeCollapsed
+            + " ribbonRetired=" + ribbonRetired
+            + " panel=" + showDevicePanel
+            + " size=" + Math.round(width) + "x" + Math.round(height)
+            + " tracks=" + LibraryService.trackCount
+            + " photos=" + LibraryService.photoCount
+            + " queue=" + PlayerService.queue.length
+            + " playing=" + PlayerService.playing
+            + " pos=" + Math.round(PlayerService.positionMs)
+            + " dur=" + Math.round(PlayerService.durationMs))
+    }
+    // The window keeps reporting while a gate drives it, so a resize or a queue
+    // change is visible in the log instead of needing a screenshot to infer.
+    Timer {
+        id: qaSettleTimer
+        interval: 1500
+        repeat: true
+        property int ticks: 0
+        onTriggered: {
+            ticks++
+            window.reportQaState("tick" + ticks)
+            if (ticks >= 40)
+                stop()
+        }
     }
     Connections {
         target: PlayerService
@@ -1091,7 +1149,9 @@ ApplicationWindow {
         sourceComponent: SplashView {
             onFinished: {
                 window.showOnboarding = LibraryService.empty
+                window.reportQaState("splash")
                 splashFadeOut.start()
+                qaSettleTimer.start()
             }
         }
         NumberAnimation {

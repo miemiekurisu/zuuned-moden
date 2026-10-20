@@ -35,14 +35,47 @@ usage, `3` captured but blank - fewer than four distinct colours, or one colour
 over 99.5% of the frame.  A healthy music page measures about 9,500 distinct
 colours with the single most common colour near 61% of the frame.
 
+## Companions
+
+`inspect_scan_db.py` reads a `librarytool scan` database and prints ASCII
+`key=value` lines - `tracks`, `fingerprints`, `probe_failures`, `watch_folders`,
+`min_duration`, escaped `paths`/`titles`, then `OVERALL=ok|fail`. Expectations go
+in as code points (`--expect-codepoints 0x6F22,0x8A5E`) and as path-length
+expectations (`--min-longest-path 200`, or `--expect-long-segments` when the
+fixture uses a repeated segment marker), so neither the gate's arguments nor its
+console output has to survive a non-ASCII round trip. It is what proves a scan
+stored a Chinese folder name and hashed the audio behind it, rather than merely
+counting rows.
+
+`make_scan_fixture.py` builds the library fixture those checks turn on: a plain
+tone, a WMA stream inside a file named `.mp3`, an album folder named in Chinese
+characters, and twelve nested folders that push the leaf path to 277 characters. It
+writes the CJK name from code points so this file stays ASCII too, and it needs the
+FFmpeg from `ZUUNED_WIN_DEPS` to make the audio. `BUILDING.md` has the three-command
+scan gate built from it, currently `created=4` then `4 tracks added` then
+`OVERALL=ok`.
+
+`qml/Main.qml` answers to `--qa-probe`: while the flag is present the window logs
+one line per state change and then every 1.5 s, naming the page, the onboarding
+sheet, the Now-Playing island, the collapse state, the device panel, the window
+size, the track and photo counts, and the queue with its position. `--qa-play
+<file>` puts one real file in the queue so a gate can reach the ribbon and, after
+`winshot --move`, the compact island. A capture proves that a window drew
+something; only these lines prove that `--page` took effect and that the frame
+belongs to the page rather than to the splash or the onboarding sheet. Both stay
+silent unless asked, on either platform.
+
 ## Status
 
-The capture tool works.  The launch gate that drives it is not written yet.  It
-is meant to cover one case per `--page`, the five settings tabs, both collapse
-states, a CJK and long-path `librarytool scan` fixture, `transcodetool probe`,
-a silent `playertool` seek, single-instance refusal, session-log creation and
-settings persistence, all asserting a painted frame plus a stderr free of
-`qml:`/`TypeError`/`ReferenceError`.
+`winshot` and the two companions above work.  `run.ps1` is the launch gate being
+written around them and is **not finished**: it implements the capture-tool phase,
+then prints the cases it still owes and exits non-zero, so a partial run cannot be
+read as a green light.  What it still owes is one case per `--page`, the five
+settings tabs, both collapse states, the CJK and long-path `librarytool scan`
+fixture, `transcodetool probe`, a silent `playertool` seek, single-instance
+refusal, session-log creation and settings persistence, and a before-and-after
+comparison of the real profile - each asserting a painted frame plus a stderr free
+of `qml:`/`TypeError`/`ReferenceError`.
 
 Profile isolation, the piece that made any of that impossible to run honestly, is
 now in place.  Every profile-owned path in the application goes through

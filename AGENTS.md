@@ -36,9 +36,29 @@ so the Linux line and its gates keep their behaviour. The implementation is
 header-only `inline` on purpose because `src/library/LibraryDb.cpp` is also
 compiled stand-alone by Linux gate scripts, which a separate translation unit
 would break.
-Windows usability testing is under way in `tests/win-usability/`, where `winshot`
-captures what a live window actually paints; the capture eye and the profile
-lever exist, the launch gate that drives them does not yet.
+Three more Windows faults are found and fixed. CRT `_access()` accepts only mode
+0, 2, 4 or 6 and reports bit 1 as an invalid parameter, which runs the invalid
+parameter handler and `__fastfail()`s the process instead of setting `errno`, so
+`X_OK` is 0 in `compat/win/posix_shim.h` and
+`LibraryScanner::accessibleDirectory()` lets the shim's UTF-16 `opendir()` prove
+read-and-traverse access rather than asking `access()` about a user folder; as it
+was, adding any music folder on Windows killed the app on the spot.
+`src/library/AudioCopyFingerprint.h` gives FFmpeg `path.toUtf8()` instead of
+`QFile::encodeName(path)`, because FFmpeg names are UTF-8 on Windows (as in
+libzune's in-process probe) while the local 8-bit codec here is GBK, which is the
+difference between a song with a Chinese name having copy evidence or not. And on
+this locale-936 machine `cl.exe /showIncludes` emits its note in UTF-8 while
+Ninja matches only the English text, so `ninja -t deps` reports `#deps 0` and a
+header-only edit silently links a stale object: force a full rebuild, with
+`--clean-first`, after any header-only change until that changes.
+Windows usability testing is under way in `tests/win-usability/`: `winshot`
+captures what a live window actually paints, `--qa-probe` makes `qml/Main.qml`
+report the page, onboarding and island state it actually chose, and
+`inspect_scan_db.py` reports track, fingerprint, probe-failure and code-point
+counts from a scan database. `run.ps1` is the gate being written around them and
+is deliberately incomplete: it implements the capture-tool phase, prints the
+outstanding cases and exits non-zero, so a partial run cannot be mistaken for a
+passed Windows gate.
 Unrelated open item: the EnvironmentBackground spray halo shows a white-ring
 artifact under the Windows blur path; that file is still identical to HEAD.
 

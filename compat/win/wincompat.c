@@ -745,9 +745,10 @@ int dirfd(DIR *dir)
  * _ACRTIMP (dllimport), so a replacement definition is a C2491 and callers
  * would keep resolving to __imp_open anyway.  Shared sources that pass a user
  * media path open through openat(AT_FDCWD, ...) instead, which reaches
- * open_normalized_wide() on every platform; the few remaining access() calls
- * only ever look at paths this shim created itself, so the ANSI-only CRT one
- * is good enough for them. */
+ * open_normalized_wide() on every platform.  The CRT access() that callers do
+ * get is ANSI-only, so no shared source may hand it a user-supplied path:
+ * LibraryScanner::accessibleDirectory() lets opendir() prove read access
+ * instead, and SupportReport's readability probe is Linux-only code. */
 
 /* ---- pipes and readiness -------------------------------------------------
  * Windows byte pipes have no non-blocking mode, so the shim documents reads as

@@ -85,8 +85,19 @@ bool accessibleDirectory(const QString &path, struct stat *identity = nullptr) {
     DIR *directory = ::opendir(encoded.constData());
     if (!directory) return false;
     struct stat current {};
+#if defined(_WIN32)
+    /* opendir() above already resolved this path as UTF-16 through the shim,
+     * extended-length prefixes and all, and on Windows that is exactly the
+     * read-and-traverse permission this function is asking about.  Asking CRT
+     * access() as well would undo it: it is ANSI-only, so a folder with a
+     * non-ASCII name reads as unreadable and gets skipped, and mode bit 1
+     * (X_OK) is an invalid parameter there, which fast-fails the process
+     * instead of returning EACCES. */
+    const bool ok = ::fstat(::dirfd(directory), &current) == 0;
+#else
     const bool ok = ::access(encoded.constData(), R_OK | X_OK) == 0
         && ::fstat(::dirfd(directory), &current) == 0;
+#endif
     ::closedir(directory);
     if (ok && identity) *identity = current;
     return ok;

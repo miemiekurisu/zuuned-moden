@@ -1,6 +1,5 @@
 #pragma once
 #include <QCryptographicHash>
-#include <QFile>
 #include <QString>
 #include <atomic>
 extern "C" {
@@ -18,7 +17,11 @@ inline QString read(const QString &path, const std::atomic_bool &cancel) {
     format->interrupt_callback = {[](void *opaque) -> int {
         return static_cast<const std::atomic_bool *>(opaque)->load() ? 1 : 0;
     }, const_cast<std::atomic_bool *>(&cancel)};
-    const QByteArray filename = QFile::encodeName(path);
+    /* FFmpeg wants UTF-8 on Windows, as libzune's in-process probe already
+     * passes it.  QFile::encodeName() is the local 8-bit codec here, which on a
+     * GBK machine turns a CJK song name into bytes FFmpeg cannot resolve, and
+     * the song would then be indexed without any copy evidence. */
+    const QByteArray filename = path.toUtf8();
     if (avformat_open_input(&format, filename.constData(), nullptr, nullptr) < 0) {
         avformat_free_context(format);
         return {};

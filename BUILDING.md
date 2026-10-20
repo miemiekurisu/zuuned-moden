@@ -139,6 +139,68 @@ Windows the library core is covered by the native tools instead:
 rebuilds a pre-Customize database and runs the real v0/v2 to v9 migration chain,
 including the pre-migration backup). Both pass; neither touches a device.
 
+Scanning is covered the same way, with a fixture built from the cases Windows
+historically gets wrong: a plain MP3, a WMA file named `.mp3`, a folder named in
+Chinese characters, and a track nested deep enough that its absolute path is 277
+characters.
+
+```powershell
+python tests\win-usability\make_scan_fixture.py build\wtest\fx\music `
+  --ffmpeg D:\dev\zuuned-deps\ffmpeg-master-latest-win64-gpl-shared\bin\ffmpeg.exe
+build\librarytool.exe scan build\wtest\fx\music build\wtest\fx-library.db
+python tests\win-usability\inspect_scan_db.py build\wtest\fx-library.db `
+  --expect-tracks 4 --expect-codepoints 0x6F22,0x8A5E --min-longest-path 200
+```
+
+Expected: the fixture prints `created=4` with a longest path of about 277
+characters, the scan exits 0 reporting `4 tracks added`, and the inspector reports
+`fingerprints=4 probe_failures=0 codepoint_path_rows=1 OVERALL=ok`. The stored path
+is a little shorter than the one on disk because the folder was given relative.
+Each of those numbers has been wrong at some point during the port.
+
+### Path encodings on a non-English Windows
+
+`compat/win/` decodes the narrow path it is handed with the **system ANSI code
+page**, matching `QFile::encodeName()`, so the shim and Qt agree with each other.
+A library with its own encoding policy has to be fed explicitly rather than
+inherit that: FFmpeg documents UTF-8 file names on Windows, which is why
+`src/library/AudioCopyFingerprint.h` passes `path.toUtf8()` and not
+`QFile::encodeName(path)`. On a GBK machine the difference is visible - a CJK song
+name becomes bytes FFmpeg cannot resolve, and the track is then indexed with no
+copy fingerprint and no error to show for it.
+
+That same ACP convention is why no shared source may hand a user path to CRT
+`access()`: it is ANSI-only, so a folder with a non-ASCII name reads as
+unreadable, and mode bit 1 is not even a valid argument - `_access()` runs the
+invalid parameter handler, which `__fastfail()`s the process rather than setting
+`errno`. `X_OK` is therefore `0` in `compat/win/posix_shim.h`, and
+`LibraryScanner::accessibleDirectory()` lets the shim's UTF-16 `opendir()` prove
+read access. Names outside the local code page are still lossy on their way
+through the shim, exactly as they are through `QFile::encodeName()`; moving the
+shim and the remaining `QFile::encodeName()` callers to explicit UTF-8 is open
+work.
+
+### Incremental builds and the compiler's include note
+
+Where the Windows UI language is not English, `cl.exe /showIncludes` writes its
+"Note: including file:" line in that language, and Ninja's `deps = msvc` parser
+recognises only the English wording. The dependency line is dropped. The Ninja
+dependency query then answers `#deps 0` for a translation unit that did include
+headers, an edit
+to any header rebuilds nothing, and the link quietly reuses the old object.
+`VSLANG=1033` does not change the note, and Ninja 1.12's `MSVCPREFIX` alternative
+cannot match it either while the ANSI environment block and a UTF-8 note disagree.
+Until the build moves to `cmcldeps`, or the machine enables "Use Unicode UTF-8 for
+worldwide language support", or English compiler resources are installed, force a
+full rebuild after a header-only change:
+
+```powershell
+cmake --build build --clean-first
+```
+
+A stale object looks exactly like a fix that did not work. When a change appears
+to have no effect, prove the object is new before believing the diagnosis.
+
 ### Settings and profile location
 
 A Windows Zuuned profile lives in files, not the registry: settings are the ini
