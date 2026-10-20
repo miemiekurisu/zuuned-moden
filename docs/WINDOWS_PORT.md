@@ -26,10 +26,13 @@ formality:
   `devicetool` answers `blocked`.  `src/DevicePresenceWin.cpp` exists so the
   device page says that in the user's terms instead of claiming nothing was
   plugged in.
-- There is no proven driver-binding recipe for a clean Windows machine yet, and
-  `zunetool` - the tool every Linux hardware gate was run with - is built by
-  libzune's POSIX Makefile and is not part of the Windows build, which
-  compiles libzune directly as the `libzune_build` target.
+- The driver route is now decided but still unproven: upstream Zadig installing
+  WinUSB, as `packaging/windows/DRIVER_INSTALL.md` documents - including the device
+  interface GUID rule that makes the in-box class picker on its own useless to
+  libusb.  No machine has run that recipe yet, so nothing here may be described as
+  a working Windows device path.  And `zunetool` - the tool every Linux hardware
+  gate was run with - is built by libzune's POSIX Makefile and is not part of the
+  Windows build, which compiles libzune directly as the `libzune_build` target.
 
 So a Windows build may be described as building, launching, painting, scanning,
 encoding and persisting.  It may not be described as syncing.
@@ -128,7 +131,9 @@ environment to reproduce them.
 
 1. Device work of any kind, as stated at the top.  Driver binding first, then
    enumeration, hotplug, transfers, readback and deletion, each a real gate
-   rather than a ported assumption.
+   rather than a ported assumption.  WinUSB cannot reset a device either, so
+   `zune_breach()`'s recovery from an OpenSession wedge does not exist here and an
+   unplug/replug is the workaround - see the driver guide.
 2. Audio anyone can hear.  The gate opens WASAPI for real and asserts mpv reports it
    through `current-ao`, but always muted, so samples never reach the speaker.
    Audible playback, exclusive mode, a hot-plugged or Bluetooth endpoint, and anything
@@ -158,8 +163,10 @@ environment to reproduce them.
 
 ## Order to close it in
 
-1. Decide and prove the driver route for a clean Windows machine, then get
-   `devicetool` to `agree` with a Zune actually attached.
+1. Prove the driver route on a real machine: Zadig installing WinUSB per
+   `packaging/windows/DRIVER_INSTALL.md`, then `packaging/windows/check-driver.ps1`
+   showing a function driver plus a registered interface GUID, then `devicetool`
+   answering `agree` with a Zune actually attached.
 2. Repeat the Linux hardware gates in the same order on Windows: library read,
    one album send, one deletion, readback, then the podcast and audiobook
    categories and firmware resume - each with its own evidence, none inherited.
