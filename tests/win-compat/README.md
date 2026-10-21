@@ -20,7 +20,7 @@ Keep the uppercase form and treat any `D9007` in this gate output as a broken
 gate rather than a passing run.
 
 A good run prints one `--- section` marker per group and ends with
-`184 checks, 0 failures, 0 skips` followed by `win-compat gate passed`. The
+`201 checks, 0 failures, 0 skips` followed by `win-compat gate passed`. The
 groups are:
 
 - `tmpdir` - `ZUUNED_TMPDIR` resolves to a directory the shim can write into and
@@ -62,6 +62,16 @@ groups are:
   is stable across two `stat()` calls and across `rename()`. The artwork cache
   refuses a render whose output is its own source on exactly that comparison, so
   a placeholder identity would reject every cached image.
+- `shell_bytes` - `zuuned_narrow_path_for_shell()`, the bytes `cmd.exe` reads
+  back as the same file. ASCII comes back untouched, bytes that are not valid
+  UTF-8 are taken for code-page bytes and passed through, and for a list of
+  candidate characters the probe asks Windows itself whether this machine's ANSI
+  code page spells the name: spellable ones must come back as exactly the bytes
+  Windows spells them with, unspellable ones as `NULL` rather than the `?`
+  substitute, because a substituted byte names a different file. Which candidates
+  fall on which side is a property of the installed code page - GBK carries the
+  private-use `U+E000` that cp1252 cannot - so nothing here assumes one.
+  `zune_arm_photo()` shells out through this on Windows.
 
 Sections that the volume or environment cannot support report a skip, which is
 why the probe distinguishes failures from skips; the accepted run above reports

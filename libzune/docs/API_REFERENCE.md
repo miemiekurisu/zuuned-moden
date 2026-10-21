@@ -139,7 +139,9 @@ See [VIDEO_TITLES.md](VIDEO_TITLES.md).
 
 **Preparation:** audio/video arm helpers and `zune_retag` invoke a hard-coded
 `/opt/homebrew/bin/ffmpeg`; they are not portable Linux transcoders as written.
-`zune_arm_photo` uses `sips` on macOS and `ffmpeg` from PATH on Linux.
+`zune_arm_photo` uses `sips` on macOS and `ffmpeg` from PATH on Linux and Windows,
+where the command line is quoted for `cmd.exe` and a path the ANSI code page
+cannot spell does not survive the shell.
 `zune_smuggle_photo` invokes that preparation automatically. Thumbnail utilities
 also require external tools. Temporary names are not suitable for concurrent
 same-input preparation; callers should serialize these legacy helpers.
@@ -792,7 +794,7 @@ Release allocated photo-album names and array.
 char *zune_arm_photo(const char *input_path);
 ```
 
-Prepare a max-480px JPEG via sips (macOS) or ffmpeg on PATH (Linux). Return owned temporary path or NULL. Unlink the file and free the path; serialize calls to avoid temporary-name collisions.
+Prepare a max-480px JPEG via sips (macOS) or ffmpeg on PATH (Linux and Windows, where the line is quoted for `cmd.exe`). Return owned temporary path or NULL - and on Windows a name the active code page cannot spell is a NULL, because the shell cannot be handed those bytes. Unlink the file and free the path; serialize calls to avoid temporary-name collisions.
 
 [Declaration](../include/zune.h#L384); [implementation index](TOC.md#public-api).
 

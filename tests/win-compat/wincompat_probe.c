@@ -11,7 +11,9 @@
  *  - pipe readiness answers EOF instead of blocking (SessionLog drains pipes),
  *  - mmap/pread read a staged file, and zuuned_link publishes it atomically,
  *  - fopen/remove/unlink/rename go through the wide API, so a UTF-8 media name
- *    opens under that exact name and a path past 260 characters still works.
+ *    opens under that exact name and a path past 260 characters still works,
+ *  - a path handed to system() is re-spelled in the bytes cmd.exe decodes, and a
+ *    name the active code page cannot spell is refused instead of guessed.
  *
  * Build and run with tests/win-compat/run.ps1.  Scaffolding (creating the
  * fixture tree) uses the Win32 API directly on purpose: the shim must be the
@@ -750,6 +752,7 @@ static void test_wide_stdio(void)
  * serial and the NTFS file index rather than leaving the pair at zero: with a
  * constant identity any two existing files would look like the same file and
  * every cached artwork render would be refused. */
+
 static void test_file_identity(void)
 {
     char first[1200], second[1200], moved[1200];
@@ -781,6 +784,79 @@ static void test_file_identity(void)
     CHECK(stat(first, &after) == -1 && errno == ENOENT, "the rename left the old name behind");
     unlink(second);
     unlink(moved);
+}
+
+/* ---- 13. a shell-out gets bytes the shell can read back ---- */
+/* system() runs cmd.exe here, and cmd.exe decodes its command line with the
+ * active ANSI code page while the portable sources hand UTF-8, so a name outside
+ * ASCII reaches ffmpeg as mojibake and the caller falls back without noticing.
+ * zuuned_narrow_path_for_shell() is the one place that re-spells it, and the
+ * expectation below is asked of Windows rather than guessed, because a code page
+ * that cannot spell a name has to produce NULL instead of a substitute byte. */
+/* Encode a wide name the way a UTF-8 caller would hand it over. */
+static void wide_to_utf8(const wchar_t *wide, char *out, int cap)
+{
+    if (WideCharToMultiByte(CP_UTF8, 0, wide, -1, out, cap, NULL, NULL) <= 0) out[0] = 0;
+}
+
+/* zuuned_narrow_path_for_shell(): the bytes cmd.exe reads back as this file. */
+static void test_shell_bytes(void)
+{
+    char *plain = zuuned_narrow_path_for_shell("D:\\Music\\Song.mp3");
+    CHECK(plain && strcmp(plain, "D:\\Music\\Song.mp3") == 0,
+          "an ASCII path did not come back as it went in: %s", plain ? plain : "(null)");
+    free(plain);
+
+    /* Bytes that are not valid UTF-8 arrived in the code page already, and
+     * reading them as UTF-8 would invent different characters.  The fixture is
+     * two literals so \xff stays one byte: MSVC reads "\xffb" as one escape. */
+    char *legacy_path = "D:\\Music\\a\xff" "b.mp3";
+    char *legacy = zuuned_narrow_path_for_shell(legacy_path);
+    CHECK(legacy && strcmp(legacy, legacy_path) == 0,
+          "code-page bytes were not passed through: %s", legacy ? legacy : "(null)");
+    free(legacy);
+
+    /* The rest is agreement with Windows itself.  Whichever of these characters
+     * this machine's code page can spell has to come back as the exact bytes it
+     * spells it with, and whichever it cannot has to come back NULL rather than
+     * the '?' substitute - a substituted byte names a different file, which
+     * reads back as a missing picture.  Which candidate is which depends on the
+     * active code page, and it is not the one guessed: GBK spells the private
+     * use U+E000 that cp1252 cannot, so the expectation is asked of Windows. */
+    static const wchar_t candidates[] = { 0x9753, 0x00E9, 0x0416, 0x3042,
+                                          0xE000, 0x0700, 0x16A0, 0 };
+    int spellable = 0, unspellable = 0;
+    for (const wchar_t *cand = candidates; *cand; ++cand) {
+        wchar_t wide[40];
+        int n = 0;
+        wide[n++] = L'D'; wide[n++] = L':'; wide[n++] = L'\\'; wide[n++] = L'a';
+        wide[n++] = *cand; wide[n++] = L'.'; wide[n++] = L'j'; wide[n++] = L'p';
+        wide[n++] = L'g'; wide[n] = 0;
+        char expected[32];
+        BOOL used_default = FALSE;
+        const int needed = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, wide, -1,
+                                               expected, (int)sizeof(expected),
+                                               NULL, &used_default);
+        char utf8[64];
+        wide_to_utf8(wide, utf8, (int)sizeof(utf8));
+        CHECK(utf8[0] != 0, "the probe could not encode U+%04X as UTF-8", (unsigned)*cand);
+        char *narrow = zuuned_narrow_path_for_shell(utf8);
+        if (needed > 0 && !used_default) {
+            spellable++;
+            CHECK(narrow && strcmp(narrow, expected) == 0,
+                  "U+%04X narrowed to \"%s\" rather than the code page's \"%s\"",
+                  (unsigned)*cand, narrow ? narrow : "(null)", expected);
+        } else {
+            unspellable++;
+            CHECK(narrow == NULL,
+                  "U+%04X has no spelling in this code page yet came back \"%s\"",
+                  (unsigned)*cand, narrow ? narrow : "(null)");
+        }
+        free(narrow);
+    }
+    CHECK(spellable > 0, "no candidate character is spellable in this code page");
+    if (unspellable == 0)
+        SKIP("every candidate character is spellable in this machine's ANSI code page");
 }
 
 int main(void)
@@ -832,6 +908,8 @@ int main(void)
     test_wide_stdio();
     printf("--- file_identity\n");
     test_file_identity();
+    printf("--- shell_bytes\n");
+    test_shell_bytes();
 
     sweep(root_ext);
     printf("%d checks, %d failures, %d skips\n", checks, failures, skips);

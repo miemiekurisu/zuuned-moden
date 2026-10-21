@@ -97,10 +97,10 @@ ownership, return values and threading requirements before calling an operation.
 | `zune_get_dimensions()` | [include/zune.h:372](../include/zune.h#L372) | [src/photo.c:196](../src/photo.c#L196) |
 | `zune_get_photo_albums()` | [include/zune.h:376](../include/zune.h#L376) | [src/photo.c:235](../src/photo.c#L235) |
 | `zune_free_photo_albums()` | [include/zune.h:379](../include/zune.h#L379) | [src/photo.c:284](../src/photo.c#L284) |
-| `zune_arm_photo()` | [include/zune.h:384](../include/zune.h#L384) | [src/photo.c:316](../src/photo.c#L316) |
-| `zune_smuggle_photo()` | [include/zune.h:389](../include/zune.h#L389) | [src/photo.c:362](../src/photo.c#L362) |
-| `zune_purge_photo()` | [include/zune.h:393](../include/zune.h#L393) | [src/photo.c:478](../src/photo.c#L478) |
-| `zune_extract_photo()` | [include/zune.h:396](../include/zune.h#L396) | [src/photo.c:488](../src/photo.c#L488) |
+| `zune_arm_photo()` | [include/zune.h:384](../include/zune.h#L384) | [src/photo.c:409](../src/photo.c#L409) |
+| `zune_smuggle_photo()` | [include/zune.h:389](../include/zune.h#L389) | [src/photo.c:477](../src/photo.c#L477) |
+| `zune_purge_photo()` | [include/zune.h:393](../include/zune.h#L393) | [src/photo.c:596](../src/photo.c#L596) |
+| `zune_extract_photo()` | [include/zune.h:396](../include/zune.h#L396) | [src/photo.c:606](../src/photo.c#L606) |
 | `zune_get_playlists()` | [include/zune.h:409](../include/zune.h#L409) | [src/playlist.c:20](../src/playlist.c#L20) |
 | `zune_free_playlists()` | [include/zune.h:410](../include/zune.h#L410) | [src/playlist.c:112](../src/playlist.c#L112) |
 | `zune_forge_playlist()` | [include/zune.h:413](../include/zune.h#L413) | [src/playlist.c:138](../src/playlist.c#L138) |
@@ -337,11 +337,14 @@ symbol outside that API; `static` means file-local or header-inline.
 | `zune_get_dimensions()` | public | [src/photo.c:196](../src/photo.c#L196) |
 | `zune_get_photo_albums()` | public | [src/photo.c:235](../src/photo.c#L235) |
 | `zune_free_photo_albums()` | public | [src/photo.c:284](../src/photo.c#L284) |
-| `shell_escape()` | static | [src/photo.c:292](../src/photo.c#L292) |
-| `zune_arm_photo()` | public | [src/photo.c:316](../src/photo.c#L316) |
-| `zune_smuggle_photo()` | public | [src/photo.c:362](../src/photo.c#L362) |
-| `zune_purge_photo()` | public | [src/photo.c:478](../src/photo.c#L478) |
-| `zune_extract_photo()` | public | [src/photo.c:488](../src/photo.c#L488) |
+| `shell_escape()` | static | [src/photo.c:296](../src/photo.c#L296) |
+| `shell_quote_dup()` | static | [src/photo.c:323](../src/photo.c#L323) |
+| `shell_path_bytes()` | static | [src/photo.c:361](../src/photo.c#L361) |
+| `photo_basename()` | static | [src/photo.c:389](../src/photo.c#L389) |
+| `zune_arm_photo()` | public | [src/photo.c:409](../src/photo.c#L409) |
+| `zune_smuggle_photo()` | public | [src/photo.c:477](../src/photo.c#L477) |
+| `zune_purge_photo()` | public | [src/photo.c:596](../src/photo.c#L596) |
+| `zune_extract_photo()` | public | [src/photo.c:606](../src/photo.c#L606) |
 
 ### src/playlist.c
 
@@ -635,7 +638,7 @@ See [PUBLIC_CREDENTIALS.md](PUBLIC_CREDENTIALS.md) for the runtime override.
 | [src/mtp_text.h](../src/mtp_text.h) | 84 |
 | [src/mtpz.c](../src/mtpz.c) | 1972 |
 | [src/mtpz.h](../src/mtpz.h) | 39 |
-| [src/photo.c](../src/photo.c) | 497 |
+| [src/photo.c](../src/photo.c) | 615 |
 | [src/playlist.c](../src/playlist.c) | 252 |
 | [src/podcast.c](../src/podcast.c) | 639 |
 | [src/podcast_state.c](../src/podcast_state.c) | 180 |

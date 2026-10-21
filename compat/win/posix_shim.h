@@ -470,6 +470,17 @@ int zuuned_mkstemps(char *templat, int suffix_length);
 int zuuned_mkstemp(char *templat);
 #define mkstemp(templat) zuuned_mkstemp(templat)
 
+/* ---- one path, spelled for the shell system() runs ----
+ * system() runs cmd.exe here, and cmd.exe reads its command line with the
+ * system ANSI code page, while the portable sources hand UTF-8 - the shape a
+ * POSIX filename already has.  This returns the same path in the bytes that
+ * shell decodes back into the same file.  Bytes that are not valid UTF-8 are
+ * taken for code-page bytes already, the same UTF-8-first rule decode_path()
+ * applies when opening a file, so the two never disagree about which file a
+ * name means.  Returns a malloc'd string the caller frees, or NULL when the
+ * name has no spelling in the active code page at all. */
+char *zuuned_narrow_path_for_shell(const char *path);
+
 #ifdef __cplusplus
 }
 #endif

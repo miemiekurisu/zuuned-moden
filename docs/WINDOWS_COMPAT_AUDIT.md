@@ -515,7 +515,7 @@ branch the harness never arrives at.
   identity check depends on, asserted against the shim itself rather than assumed
   from the Win32 documentation.
 - `tests/win-compat` and `tests/win-usability` are source and runtime gates;
-  neither opens a USB handle.  The compat gate is currently 184 checks.
+  neither opens a USB handle.  The compat gate is currently 201 checks.
 - The profile-isolation pair in `tests\win-usability` reads the *real* profile before and
   after the run, so it gates the gate: it is only valid while nothing else is using that
   profile.  One run taken with a `build\zuuned.exe` left open from an earlier check failed on
@@ -565,22 +565,60 @@ branch the harness never arrives at.
   `docs/WINDOWS_PORT.md`.  One launch of that gate failed there and passed a clean
   re-run because a process outside this repository was holding the Windows
   clipboard open.  A GUI gate runs on somebody's desktop, so a single white-frame
-  launch is worth a re-run before it is worth a bisect.
+  launch is worth a re-run before it is worth a bisect.  The eighth pass
+  (`docs/WINDOWS_PORT.md`) reproduced the same class of flake with the cause inside
+  this repository: running the photo harness at the same time as the gate cost two
+  timed checks - `the QA queue reached the player and the tone played` saw 13 `[qa]`
+  reports and none of them said `playing=true`, and one launch printed no splash
+  report at all - while the same executable answered
+  `launches=18 checks=99 failures=0 skips=0` and `OVERALL=ok` the moment nothing else
+  was running.  Run two gates one after the other, not at once.
 - Device facts are in `docs/WINDOWS_PORT.md` and are hand-tested, not gated.
 
 ## Not re-checked by this sweep, and what it would take
 
-Three findings are left as findings on purpose, because the honest fix is bigger than
-the defect and pretending otherwise would put an unverified claim in the tree.
+The first two bullets below were open findings when this page was written and are closed
+now; `docs/WINDOWS_PORT.md` carries the before/after measurement for both.  The rest are
+left as findings on purpose, because the honest fix is bigger than the defect and
+pretending otherwise would put an unverified claim in the tree.
 
-- **Four libzune entry points still build POSIX command lines, and none of them is
-  called.**  `zune_arm_photo()` (`libzune/src/photo.c:316`) writes a
-  `/tmp/zunelinux_photo_*` path and shells out to `sips` or `ffmpeg` with
-  `2>/dev/null`; `zune_snap_thumb()` (`libzune/src/util.c:379`) does the same to
-  `ffmpeg`; the `popen()` sites in `libzune/src/transcode.c` carry a hardcoded
-  `/opt/homebrew/bin/ffmpeg`.  All of them repeat the single-quote and `/dev/null`
-  assumptions the photo-thumbnail branch above just lost, and `transcode.c` adds an
-  absolute macOS path no Windows `PATH` satisfies - `/FIposix_shim.h` does make its
+- **A fourth entry point sat in that bullet, described as uncalled. It is called,
+  and it was broken.**  `zune_arm_photo()` shelled out the same POSIX way the
+  photo-thumbnail branch just lost by, and it sits on the live photo transfer:
+  `src/DeviceWorker.cpp:736` -> `zune_smuggle_photo()` -> `zune_arm_photo()`
+  (`libzune/src/photo.c:409`), whose NULL makes that caller send the untouched
+  original.  `cmd.exe` reads `'C:\My Pics\a.jpg'` as two arguments and
+  `2>/dev/null` as a redirect into a folder nobody has, so on Windows every
+  prepare failed and the transfer still reported success.  It now quotes the way
+  `thumbnail.c` does - `shell_quote_dup()`, `ZUUNED_TMPDIR`, `>nul 2>&1` - and
+  refuses rather than truncating a command line it cannot fit; the before/after
+  measurement is in `docs/WINDOWS_PORT.md`.
+- **A shell-out speaks the ANSI code page, and the app speaks UTF-8.**  Quoting
+  alone did not make either photo shell-out work: `system()` runs `cmd.exe`, which
+  decodes its command line with the active ANSI code page, while `src/DeviceWorker.cpp`
+  hands `filepath.toUtf8()`.  A name outside ASCII therefore reached `ffmpeg` as
+  mojibake - measured, not inferred, on this machine's cp936: the same picture in a
+  Han-spelled folder prepared fine as UTF-8-invisible ASCII and failed the moment
+  the app's own byte convention was used.  8.3 short names are no help, because
+  NTFS does not hand one out for a directory the code page cannot spell (`dir /x`
+  shows none for `照片`).  `zuuned_narrow_path_for_shell()`
+  (`compat/win/wincompat.c:1580`) now re-spells the path into the bytes that
+  decode back to the same file, on the same UTF-8-first rule `decode_path()` uses
+  when opening it, and refuses rather than substituting `?` when the code page
+  genuinely has no spelling for the name - a substitute names a different file,
+  which reads back as a missing picture.  `zune_arm_photo()` narrows its input
+  (`libzune/src/photo.c:361`); `zune_grab_photo_thumb()` narrows the cache path it
+  writes (`libzune/src/thumbnail.c:155`).  Neither narrows a `ZUUNED_TMPDIR` path,
+  because `wide_to_narrow()` already wrote that one in the code page and a two-byte
+  code-page sequence is very often valid UTF-8, so re-spelling it would invent a
+  different directory name.
+- **Three libzune entry points still build POSIX command lines, and none of the
+  three is called.**  `zune_snap_thumb()` (`libzune/src/util.c:379`) shells out to
+  `ffmpeg` with a `/tmp` path and `2>/dev/null`; the `popen()` sites in
+  `libzune/src/transcode.c` carry a hardcoded `/opt/homebrew/bin/ffmpeg`.  Both
+  repeat the single-quote and `/dev/null` assumptions the photo-thumbnail branch
+  above just lost, and `transcode.c` adds an absolute macOS path no Windows `PATH`
+  satisfies - `/FIposix_shim.h` does make its
   `popen` resolve to `_popen`, which is exactly how it would fail: the shell starts,
   the program is not there.  They are public API with **no callers** in `src/`,
   `tools/` or `tests/`.  The app owns its `transcode/` layer and probes media
@@ -608,7 +646,7 @@ the defect and pretending otherwise would put an unverified claim in the tree.
 ## Known gaps, on purpose
 
 - One recursive walk is left in the tree: the audiobook folder import at
-  `src/spoken/SpokenMediaService.cpp:1123`, which passes `QDir::NoSymLinks` and gets no
+  `src/spoken/SpokenMediaService.cpp:1144`, which passes `QDir::NoSymLinks` and gets no
   protection from it because Qt does not call a junction a link.  What a junction loop
   there ends in depends on the tree, and only the first two endings are honest: the
   100 000-entry cap or the 5 000-audio-file cap, both visible refusals, or - if the loop

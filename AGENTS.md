@@ -1311,3 +1311,40 @@ failures / 0 skips. What it does not prove is written down rather than inferred:
 resort has not fired, and no Windows gate plays a podcast or an audiobook, so the store
 that close leaves behind answers `rows=0` and the deadline bounds a branch the harness
 never arrives at. Details in `docs/WINDOWS_PORT.md` and `docs/WINDOWS_COMPAT_AUDIT.md`.
+
+**2026-10-21 Windows photo shell-out, and the code page behind it:** the sweep entry above
+described `zune_arm_photo()` as one of the shell-outs nothing calls. It is called, and from
+the live photo transfer - `src/DeviceWorker.cpp:736` -> `zune_smuggle_photo()` ->
+`zune_arm_photo()` - and its NULL return tells that caller there is nothing to preprocess,
+so Windows failed every prepare and still reported a successful transfer. The old command
+line was reproduced through `cmd.exe` against a fixture folder with a space in its name:
+`ERRORLEVEL=-22`, and no `ffmpeg` output at all, because a single quote is not quoting
+there, `2>/dev/null` is a folder nobody has, and the output path was a hardcoded `/tmp/`
+that `access()` then tested back. `libzune/src/photo.c` quotes the way `thumbnail.c` Method
+2 already did (`shell_quote_dup()`, `ZUUNED_TMPDIR`, `>nul 2>&1`) and refuses rather than
+launching half an argument list. Quoting was not enough: `system()` runs `cmd.exe`, which
+decodes its command line with the ANSI code page, while `src/DeviceWorker.cpp` hands UTF-8.
+Measured on this machine's cp936 - same picture, three spellings - an ASCII path prepared,
+the Han folder in code-page bytes prepared, and the Han folder as UTF-8 answered
+`ARM=failed`. `zuuned_narrow_path_for_shell()` (`compat/win/wincompat.c:1580`) re-spells a
+path on the UTF-8-first rule `decode_path()` already uses when it opens one and returns NULL
+where the code page has no spelling, because the `?` bytes `WideCharToMultiByte` would
+substitute name a different file and read back as a missing picture; `zune_arm_photo()` uses
+it for its input and `zune_grab_photo_thumb()` for the cache path it writes
+(`libzune/src/thumbnail.c:155`), and neither touches a `ZUUNED_TMPDIR` path the shim already
+wrote in the code page. `ffprobe` on the artifact after the fix says `mjpeg 480x315` from a
+640x420 source, and 8.3 short names were ruled out by measurement - `dir /x` hands out none
+for a directory the code page cannot spell. The gate is a new `shell_bytes` group, 17 checks
+that ask Windows itself for the expected bytes so the group holds on any code page; the
+assertion it replaced, that U+E000 is unspellable, is cp1252 folklore - GBK has a spelling
+for the private use area - and that false assumption was the gate's only real failure. One
+clean rebuild, `tests/win-compat` 201 checks / 0 failures / 0 skips, `librarytool paths` 52,
+`names` 17, `customize` 21, and `tests/win-usability`
+`launches=18 checks=99 failures=0 skips=0 killed=0` with `OVERALL=ok`; `BUILDING.md` and the
+audit carry 201, while the dated 184-checkpoint lines stay as the evidence they are. That
+earlier entry's "compile-verified only ... `zuuned.exe` has not been relinked since" is
+superseded: this tree has been rebuilt clean since and the gates run against that binary.
+What is still not proven, said plainly: no USB handle was opened anywhere in this pass.
+`zune_arm_photo()` has never met a player, photo transfer to a device is still unproven on
+Windows, and the audio round trip was not re-run because the Zune HD is still in the wedge
+recorded above. `ffmpeg` is still not bundled, so Method 2 needs it on `PATH`.

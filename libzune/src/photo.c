@@ -288,7 +288,11 @@ void zune_free_photo_albums(ZunePhotoAlbum *albums, int count) {
     free(albums);
 }
 
-/* Shell escaping for safe popen/system calls (duplicated from transcode.c) */
+/* Shell escaping for safe popen/system calls (duplicated from transcode.c).
+ * /bin/sh quotes with single quotes and there is nothing else to say about it.
+ * cmd.exe reads a single quote as an ordinary character, so it needs its own
+ * spelling - see shell_quote_dup below. */
+#ifndef _WIN32
 static char *shell_escape(const char *s)
 {
     size_t len = strlen(s);
@@ -302,6 +306,94 @@ static char *shell_escape(const char *s)
     *out = '\0';
     return buf;
 }
+#endif
+
+/* One path, quoted for the shell system() will hand it to and already wrapped
+ * in those quotes, so a caller can drop the result straight into a command.
+ *
+ * cmd.exe does not quote with single quotes at all: 'C:\My Pics\a.jpg' is two
+ * arguments to ffmpeg rather than one, and its 2>/dev/null is a redirect into a
+ * directory nobody has.  A POSIX-spelled command therefore fails on Windows
+ * every time, and the caller's fallback then hands the untouched original to
+ * the device - the oversized picture this step exists to prevent.
+ *
+ * A path with no room left in the command line is a path the resize cannot be
+ * trusted with, so every caller here refuses rather than truncating.  Same rule
+ * thumbnail.c Method 2 already follows. */
+static char *shell_quote_dup(const char *path)
+{
+    if (!path) return NULL;
+#ifdef _WIN32
+    size_t len = strlen(path);
+    char *buf = malloc(len * 2 + 3);
+    if (!buf) return NULL;
+    size_t o = 0;
+    buf[o++] = '"';
+    for (const char *p = path; *p; p++) {
+        if (*p == '"') buf[o++] = '"';
+        buf[o++] = *p;
+    }
+    buf[o++] = '"';
+    buf[o] = '\0';
+    return buf;
+#else
+    char *escaped = shell_escape(path);
+    if (!escaped) return NULL;
+    size_t len = strlen(escaped);
+    char *buf = malloc(len + 3);
+    if (!buf) { free(escaped); return NULL; }
+    buf[0] = '\'';
+    memcpy(buf + 1, escaped, len);
+    buf[len + 1] = '\'';
+    buf[len + 2] = '\0';
+    free(escaped);
+    return buf;
+#endif
+}
+
+/* The input, in bytes the shell will read back as this same file.  /bin/sh takes
+ * the UTF-8 the callers already hand over, so POSIX needs nothing at all.  On
+ * Windows cmd.exe decodes with the ANSI code page while src/DeviceWorker.cpp
+ * hands UTF-8, and a NULL here is a name that code page cannot spell.  The input
+ * alone gets this treatment: ZUUNED_TMPDIR already arrives in the code page, so
+ * re-spelling it would mangle a temp directory with a non-ASCII name. */
+#ifdef _WIN32
+static char *shell_path_bytes(const char *path)
+{
+    return zuuned_narrow_path_for_shell(path);
+}
+#else
+static char *shell_path_bytes(const char *path)
+{
+    return path ? strdup(path) : NULL;
+}
+#endif
+
+/* Where the resized copy waits for the device.  POSIX has /tmp; the Windows
+ * compatibility layer hands back a writable directory with a trailing
+ * separator, and there the macro is a function call, so it can only arrive
+ * through "%s". */
+#ifndef ZUUNED_TMPDIR
+#define ZUUNED_TMPDIR "/tmp/"
+#endif
+
+/* Silence, spelled for whichever shell runs the encoder. */
+#ifdef _WIN32
+#define SHELL_QUIET ">nul 2>&1"
+#else
+#define SHELL_QUIET "2>/dev/null"
+#endif
+
+/* The log line names the file, and the last separator wears whichever shape
+ * the platform writes its paths in. */
+static const char *photo_basename(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+    const char *backslash = strrchr(path, '\\');
+    if (backslash && (!slash || backslash > slash))
+        slash = backslash;
+    return slash ? slash + 1 : path;
+}
 
 /* ---- Photo Preprocessing ----
  *
@@ -312,41 +404,64 @@ static char *shell_escape(const char *s)
  *
  * macOS: uses sips (always available, no extra dependency)
  * Linux: uses ffmpeg (same dependency as transcode)
+ * Windows: the same ffmpeg, quoted for cmd.exe by shell_quote_dup
  */
 char *zune_arm_photo(const char *input_path)
 {
     if (!input_path) return NULL;
 
     char output[512];
-    snprintf(output, sizeof(output), "/tmp/zunelinux_photo_%d_%lu.jpg",
-             (int)getpid(), (unsigned long)time(NULL));
+    int out_len = snprintf(output, sizeof(output),
+                           "%szunelinux_photo_%d_%lu.jpg",
+                           ZUUNED_TMPDIR, (int)getpid(),
+                           (unsigned long)time(NULL));
+    if (out_len < 0 || (size_t)out_len >= sizeof(output)) {
+        fprintf(stderr, "[libzune] photo prepare: no room for a temp path\n");
+        return NULL;
+    }
 
-    char *esc_in  = shell_escape(input_path);
-    char *esc_out = shell_escape(output);
-    if (!esc_in || !esc_out) {
-        free(esc_in);
-        free(esc_out);
+    char *in_bytes = shell_path_bytes(input_path);
+    if (!in_bytes) {
+        fprintf(stderr, "[libzune] photo prepare: no spelling for this file in the"
+                        " system code page: %s\n", input_path);
+        return NULL;
+    }
+    char *in_arg = shell_quote_dup(in_bytes);
+    free(in_bytes);
+    char *out_arg = shell_quote_dup(output);
+    if (!in_arg || !out_arg) {
+        free(in_arg);
+        free(out_arg);
         return NULL;
     }
 
     char cmd[2048];
+    int cmd_len;
 
 #ifdef __APPLE__
     /* sips: -Z constrains longest edge, preserves aspect ratio */
-    snprintf(cmd, sizeof(cmd),
-        "sips -s format jpeg -s formatOptions 90 -Z 480 '%s' --out '%s' 2>/dev/null",
-        esc_in, esc_out);
+    cmd_len = snprintf(cmd, sizeof(cmd),
+        "sips -s format jpeg -s formatOptions 90 -Z 480 %s --out %s " SHELL_QUIET,
+        in_arg, out_arg);
 #else
     /* ffmpeg: scale to fit 480px, convert to JPEG */
-    snprintf(cmd, sizeof(cmd),
-        "ffmpeg -y -i '%s' -vf \"scale='min(480,iw)':'min(480,ih)'"
+    cmd_len = snprintf(cmd, sizeof(cmd),
+        "ffmpeg -y -i %s -vf \"scale='min(480,iw)':'min(480,ih)'"
         ":force_original_aspect_ratio=decrease\" "
-        "-q:v 5 '%s' 2>/dev/null",
-        esc_in, esc_out);
+        "-q:v 5 %s " SHELL_QUIET,
+        in_arg, out_arg);
 #endif
 
-    free(esc_in);
-    free(esc_out);
+    free(in_arg);
+    free(out_arg);
+
+    /* A truncated line launches the encoder with half an argument list and
+     * reads as a resize failure when it is really a path length. */
+    if (cmd_len < 0 || (size_t)cmd_len >= sizeof(cmd)) {
+        fprintf(stderr, "[libzune] photo prepare command too long: %s\n",
+                input_path);
+        return NULL;
+    }
 
     int status = system(cmd);
     if (status != 0 || access(output, F_OK) != 0) {
@@ -355,7 +470,7 @@ char *zune_arm_photo(const char *input_path)
     }
 
     fprintf(stderr, "[libzune] photo prepared (480px JPEG): %s\n",
-            strrchr(input_path, '/') ? strrchr(input_path, '/') + 1 : input_path);
+            photo_basename(input_path));
     return strdup(output);
 }
 
@@ -366,6 +481,9 @@ int zune_smuggle_photo(ZuneDevice *dev, const char *filepath,
     /* Preprocess: resize + convert to JPEG for Zune compatibility */
     char *prepared = zune_arm_photo(filepath);
     const char *send_path = prepared ? prepared : filepath;
+    if (!prepared)
+        fprintf(stderr, "[libzune] send_photo: no resized copy, sending the "
+                        "original exactly as it is on disk: %s\n", filepath);
 
     struct stat fst;
     if (stat(send_path, &fst) != 0) {

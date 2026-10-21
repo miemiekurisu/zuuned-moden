@@ -716,6 +716,75 @@ player while it was in this state, the upload and download gates were not re-run
 measurement is one wedged Pavo on one machine rather than a claim about WinUSB resets in
 general.  The player needs a power cycle before any device gate can be re-run from here.
 
+## The eighth pass: the photo recipe that never ran (2026-10-21)
+
+The compatibility sweep in `docs/WINDOWS_COMPAT_AUDIT.md` carried a bullet calling
+`zune_arm_photo()` one of the libzune shell-outs that nothing calls.  It is called, and it
+is on the live photo transfer: `src/DeviceWorker.cpp:736` -> `zune_smuggle_photo()` ->
+`zune_arm_photo()`.  The contract on failure is what hid it - that caller takes a NULL
+return to mean "no preprocessing needed" and sends the untouched original, so every
+prepare on Windows failed quietly and the transfer still reported success.
+
+The command the old code built was reproduced verbatim through `cmd.exe` against a fixture
+folder with a space in its name (`build\scratch\picfix\My Pics\in.png`).  `ffmpeg` never
+starts: no `ffmpeg` output at all, `ERRORLEVEL=-22`, twice.  `cmd.exe` reads a single quote
+as an ordinary character, so `'C:\My Pics\in.png'` is several arguments, and its
+`2>/dev/null` is a redirect into a `\dev\null` folder nobody has.  The line also wrote its
+output under a hardcoded `/tmp/` and then tested that same path with `access()`, so even a
+successful encode would have been reported as a failure.  `zune_arm_photo()` now quotes the
+way `thumbnail.c` Method 2 already did - `shell_quote_dup()`, `ZUUNED_TMPDIR`,
+`>nul 2>&1` - and refuses when the command line will not fit rather than launching half an
+argument list.
+
+Quoting is not the whole defect, and the second half was measured rather than reasoned.
+This machine's ANSI code page is 936, and a harness that links the rebuilt `libzune` and
+calls `zune_arm_photo()` directly shows three cases:
+
+- an ASCII path with a space, handed over as `argv` bytes: `ARM=ok`.
+- the same picture one folder deeper, spelled `照片`, also as `argv` bytes - the
+  CRT gives narrow `argv` in the code page, so this is a path already in what `cmd.exe`
+  reads: `ARM=ok`.
+- that same folder as UTF-8 bytes, which is the convention every Qt caller uses
+  (`filepath.toUtf8()`): **`ARM=failed bytes=80`** before, `ARM=ok` after, and `ffprobe`
+  on the artifact answers `mjpeg 480x315` from a 640x420 source, so the resize really ran
+  rather than a stale file being reused.
+
+8.3 short names are no rescue: NTFS does not hand one out for a directory the code page
+cannot spell, and `dir /x` shows none for `照片`.  So `compat/win/wincompat.c:1580`
+adds `zuuned_narrow_path_for_shell()`, on the UTF-8-first rule `decode_path()` already
+applies when it opens a file - valid UTF-8 is UTF-8, anything else is already code-page
+bytes - and re-spells the path with `WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS)`.
+The used-default flag is the point, not decoration: a name the active code page genuinely
+cannot spell returns NULL instead of the `?` bytes that would name some other file and
+read back as a missing picture.  `zune_arm_photo()` narrows its input
+(`libzune/src/photo.c:361`); `zune_grab_photo_thumb()` narrows the cache path it writes
+(`libzune/src/thumbnail.c:155`).  Neither narrows a `ZUUNED_TMPDIR` path, because
+`build_win_tmpdir()` wrote that one in the code page already and a two-byte GBK sequence is
+very often valid UTF-8, so re-spelling it would invent a different directory.
+
+The gate for that rule is the `shell_bytes` group in `tests/win-compat`: 17 checks that use
+Windows as the oracle, spelling every candidate through `WideCharToMultiByte` itself and
+requiring NULL for whatever the code page refuses.  That replaced an assertion that U+E000
+is unspellable, which holds on cp1252 and is **false on cp936** - GBK has a spelling for
+the private use area - and it was the first time this gate ever failed here for a reason
+inside the gate rather than inside the code.
+
+All of it on one clean rebuild (`cmake --build build --clean-first`, 329 targets, no new
+warnings from the touched C files): `tests\win-compat\run.ps1` answers
+`201 checks, 0 failures, 0 skips`; `librarytool paths` 52, `names` 17 and `customize` 21
+each answer `ALL PASS (0 failures)`; `tests\win-usability\run.ps1` answers
+`launches=18 checks=99 failures=0 skips=0 killed=0` and `OVERALL=ok` - the number being a
+clean solo re-run, because the first run lost two timed checks with the photo harness
+running beside it (`docs/WINDOWS_COMPAT_AUDIT.md` carries why).  The three-case photo
+harness is scratch code under `build\scratch\`, not a committed gate; the committed gate
+is `shell_bytes`, and the photo path still needs a device.
+
+What this pass did not do: nothing opened a USB handle.  `zune_arm_photo()` is proven in a
+harness and never once against a player, so photo transfer to a device is still unproven on
+Windows, and the upload and download gates were not re-run because the player is still in
+the state the pass above describes.  `ffmpeg` is still not bundled, so on a machine without
+it on `PATH` Method 2 fails exactly as it always did.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and
@@ -725,7 +794,7 @@ general.  The player needs a power cycle before any device gate can be re-run fr
    explained: the same save that added MTPZ credentials made that write succeed,
    so it was an unauthenticated save and not a refusal.  One is still unanswered,
    `0x2002` on `GetObjectInfo(0x07000002)`, three times per scan.  The reset claim that
-   sat behind the wedge is corrected in the pass above and measured in
+   sat behind the wedge is corrected in the seventh pass and measured in
    `libzune/docs/WINUSB_QUIRKS.md`: a reset on WinUSB reports success without reviving
    anything, which is a different failure than the one this document used to describe.
 2. Audio anyone can hear.  The gate opens WASAPI for real and asserts mpv reports it
@@ -776,7 +845,11 @@ general.  The player needs a power cycle before any device gate can be re-run fr
     from it, so those rules are in the running binary; what they still do not have
     is the hand test.  The fifth pass put software gates behind two of the three -
     `safeFilePart:` and the `decode:` checks, the latter extended to UTF-16 with a BOM - and
-    the photo-thumbnail fallback still has neither gate nor hand test.
+    the photo-thumbnail fallback still has neither gate nor hand test.  The eighth pass put
+    both photo shell-outs right and gave the code-page rule a gate of its own, and neither
+    one has met a player: no picture has been prepared and smuggled to a device from
+    Windows, and no device thumbnail has come back through the `zune_grab_photo_thumb()`
+    fallback.
 
 ## Order to close it in
 
@@ -794,4 +867,9 @@ general.  The player needs a power cycle before any device gate can be re-run fr
    `spokenmediatool` phase, and a launch that plays a spoken item so the resume write
    behind the bounded spoken close is exercised.  Measure NVDEC against software on a
    real 1080p item before quoting a speed-up for Windows.
-5. Only then talk about Windows packaging or a Windows release channel.
+5. One photo and one spoken item across the wire, so the two photo shell-outs the eighth pass
+   fixed and the `zune_grab_photo_thumb()` fallback stop being software-only claims.  While
+   spoken transfer is open anyway, route the import walk at
+   `src/spoken/SpokenMediaService.cpp:1144` through `LibraryScan::walkFiles()`: it is the
+   last recursive walk in the tree, and `QDir::NoSymLinks` does not exclude a junction.
+6. Only then talk about Windows packaging or a Windows release channel.

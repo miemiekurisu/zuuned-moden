@@ -1556,6 +1556,66 @@ char *zuuned_win_tmpdir(void)
     return win_tmpdir_buffer;
 }
 
+/* Spell one path in the bytes the shell behind system() decodes.
+ *
+ * cmd.exe reads its command line with the active ANSI code page.  The portable
+ * sources hand UTF-8, which is the shape a POSIX filename already has, so a
+ * name outside ASCII reaches ffmpeg as mojibake: the encoder cannot open the
+ * file, the shell-out reports a plain failure, and zune_smuggle_photo() then
+ * sends the untouched original.  Re-encode into what that shell reads back as
+ * the same file.
+ *
+ * The UTF-8-first test is the one decode_path() already makes, so a name means
+ * the same file here as it does wherever the shim opens it.  That shared rule is
+ * also why a caller may only hand this UTF-8: a two-byte GBK sequence is very
+ * often valid UTF-8 as well, so bytes that arrived in the code page would be
+ * read as some other characters entirely.  ZUUNED_TMPDIR is such a path and is
+ * never passed here - build_win_tmpdir() already wrote it in the code page, or
+ * in the 8.3 name when the code page could not carry it.
+ *
+ * WC_NO_BEST_FIT_CHARS and the used-default flag are the point rather than
+ * decoration: a name with no spelling in the active code page has to come back
+ * NULL, because the '?' bytes WideCharToMultiByte substitutes otherwise name a
+ * different file and the failure looks like a missing picture. */
+char *zuuned_narrow_path_for_shell(const char *path)
+{
+    if (!path) return NULL;
+
+    int wide_len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
+    if (wide_len <= 0) return _strdup(path);   /* not UTF-8: code-page bytes already */
+
+    wchar_t *wide = (wchar_t *)malloc((size_t)wide_len * sizeof(wchar_t));
+    if (!wide) { errno = ENOMEM; return NULL; }
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, wide_len) <= 0) {
+        free(wide);
+        return _strdup(path);
+    }
+
+    int plain_ascii = 1;
+    for (const wchar_t *c = wide; *c; ++c)
+        if (*c > 0x7F) { plain_ascii = 0; break; }
+    if (plain_ascii) { free(wide); return _strdup(path); }
+
+    char *narrow = NULL;
+    BOOL used_default = FALSE;
+    const int narrow_len = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, wide, -1,
+                                               NULL, 0, NULL, NULL);
+    if (narrow_len > 0) {
+        narrow = (char *)malloc((size_t)narrow_len);
+        if (narrow
+            && WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, wide, -1, narrow,
+                                   narrow_len, NULL, &used_default) > 0
+            && !used_default) {
+            free(wide);
+            return narrow;
+        }
+    }
+    free(narrow);
+    free(wide);
+    errno = EILSEQ;
+    return NULL;
+}
+
 /* ---- process start ----
  * Binary stdio is not cosmetic: the default text mode translates CRLF and stops
  * at 0x1A, which would corrupt every media file read through the CRT and garble

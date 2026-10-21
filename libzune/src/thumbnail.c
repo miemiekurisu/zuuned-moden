@@ -147,8 +147,22 @@ int zune_grab_photo_thumb(ZuneDevice *dev, uint32_t item_id,
          * one Method 2 fails the same way it always did and only the
          * representative sample (Method 1) produces a thumbnail. */
         char in_q[512], out_q[512];
-        if (shell_quote_path(in_q, sizeof(in_q), tmp) != 0
-            || shell_quote_path(out_q, sizeof(out_q), cache_path) != 0) {
+        /* cache_path arrives as UTF-8 and cmd.exe reads this line with the ANSI
+         * code page, so the name ffmpeg writes has to be re-spelled or it
+         * publishes a thumbnail no caller will ever find.  tmp needs nothing: it
+         * is ZUUNED_TMPDIR plus a number, and that directory was built in the
+         * code page already. */
+        char *out_bytes = zuuned_narrow_path_for_shell(cache_path);
+        if (!out_bytes) {
+            fprintf(stderr, "[libzune] no code-page spelling for the thumbnail"
+                            " cache path: %s\n", cache_path);
+            remove(tmp);
+            return -1;
+        }
+        int fit = shell_quote_path(in_q, sizeof(in_q), tmp) == 0
+               && shell_quote_path(out_q, sizeof(out_q), out_bytes) == 0;
+        free(out_bytes);
+        if (!fit) {
             fprintf(stderr,
                     "[libzune] thumbnail path too long for cmd line %u\n", item_id);
             remove(tmp);
