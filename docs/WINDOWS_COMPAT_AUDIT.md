@@ -354,6 +354,13 @@ account in `BUILDING.md` under *Path encodings on a non-English Windows*.
   own hotplug auto-connect opened and read the device inside every isolated profile.
   Those profiles hold no library and no transfer queue, so nothing was written to the
   player, but "no device handle" is true of the harness and not of the app.
+- A later confirmation pass on the same executable reproduced all of it -
+  `184 checks, 0 failures, 0 skips`, `launches=17 checks=95 failures=0 skips=0`,
+  `paths` still at 28 - and is written up next to the device round trip in
+  `docs/WINDOWS_PORT.md`.  One launch of that gate failed there and passed a clean
+  re-run because a process outside this repository was holding the Windows
+  clipboard open.  A GUI gate runs on somebody's desktop, so a single white-frame
+  launch is worth a re-run before it is worth a bisect.
 - Device facts are in `docs/WINDOWS_PORT.md` and are hand-tested, not gated.
 
 ## Not re-checked by this sweep, and what it would take

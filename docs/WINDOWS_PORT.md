@@ -462,6 +462,58 @@ did, and none of it had a gate.  All three are fixed here.  Still not hand-teste
 album with a colon in its name saved to the library, a foreign-authored playlist
 imported, a device photo thumbnail through the `cmd.exe` branch.
 
+## Re-checked in one sitting, both directions, on one binary (2026-10-21, again)
+
+Nothing in the tree changed between this pass and the one above, and that is the
+point of it: every number below was produced on this machine, in order, from the
+same `build\zuuned.exe`, rather than carried forward from a checkpoint that
+predates the rebuild it claims to prove.
+
+- `tests\win-compat\run.ps1`: `184 checks, 0 failures, 0 skips`.
+- `build\librarytool.exe paths` at 28 checks, plus `names` and `customize`: all
+  pass.
+- `tests\win-usability\run.ps1`: `launches=17 checks=95 failures=0 skips=0
+  killed=0 pid-scan-fallbacks=7`, `OVERALL=ok`.
+- The `--qa-device` round trip, both directions, from a tagless 193,768-byte sine
+  fixture that sits outside every watch folder.  Out: `add added=1 duplicates=0
+  onDevice=0 rejected=0 ambiguous=0`, `sync-summary elapsedMs=1614 tracks=1
+  failed=0`, `upload-settled failed=0 tracks=1`, with the device at 190 tracks
+  before the sync and 191 in the next session.  Back: `download-from
+  itemId=16777480 readbackDurationMs=8000` and `download-saved
+  name='SineQA1021.mp3' ok=true`, landing in
+  `Music\Zuuned Imports\ZuunedQA\Windows Roundtrip 1021\` as a native
+  drive-letter path built from `QStandardPaths::MusicLocation` - the same call
+  the Linux build answers with `$HOME/Music`.
+- The landing file was then read by something that is not this repository's code:
+  `ffprobe` reports MP3, mono, 44.1 kHz, 8.0457 s, the fixture's own length.
+  Strip the tag from each side and 193,723 audio bytes remain, byte-for-byte
+  equal, so the payload survived the send, the device's own re-index and the
+  pull.  The 1,177-byte size difference is exactly the ID3v2.3 written ahead of a
+  send (1,049) plus the ID3v1 tail (128).
+- Recorded rather than fixed, because it is not a defect: `zuuned_retag_mp3()`
+  carries over the frames the source already had and injects only the album
+  artist, so a source with no tags comes back with an ID3v1 that holds nothing
+  but the artist and an empty title.  The Zune still shows the right title, album
+  and duration because those are MTP object properties, and those came back
+  correct; but a tagless import does not name itself once it is on disk.
+- One launch of the usability gate failed on this binary, once, and passed a clean
+  re-run.  `06-page-deviceMusic` timed out at exit 124 on a near-blank frame with
+  no `[qa] splash report`; its own session log held one application line,
+  `[qa] startup page=deviceMusic panel=false`, and 712 clipboard complaints - 474
+  `qt.qpa.mime: Retrying to obtain clipboard.` and 237 `Unable to obtain
+  clipboard.` - seven a second for 36 s.  No source file in this repository
+  mentions a clipboard, so those reads are Qt's own; its Windows clipboard
+  backend opens the clipboard and retries with a sleep, on the GUI thread, which
+  is enough to keep `SplashView` from reaching `onFinished` and therefore from
+  starting the tick timer through which the harness reports its verdict.  Three
+  controlled attempts reproduced nothing: a clean launch, a separate process
+  holding the clipboard open for the whole window, and a process writing it every
+  120 ms.  The machine still answers `GetClipboardOwner()` with 0 while
+  `OpenClipboard()` keeps returning `ERROR_ACCESS_DENIED`, which is what a
+  process that opened the clipboard and never closed it looks like.  That is the
+  desktop and not the application; the practical rule is that one white-frame
+  launch is worth a re-run before it is worth a bisect.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and
@@ -516,8 +568,9 @@ imported, a device photo thumbnail through the `cmd.exe` branch.
     naming path in particular is a *change* to what a save-to-library file is called
     on Linux not at all and on Windows only for names that could not be created
     before, so it is safe in the ordinary case and unverified in the one case it
-    exists for.  A full rebuild and an app restart are also still pending, so none of
-    it is in the binary that is running.
+    exists for.  A clean rebuild has since happened and the app has been restarted
+    from it, so those rules are in the running binary; what they still do not have
+    is the hand test.
 
 ## Order to close it in
 

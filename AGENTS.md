@@ -1164,3 +1164,30 @@ own - it now latches on `onSyncSummary`. `devicetool`, `playertool` and
 171 checks, `tests/win-usability` launches=17 checks=94 failures=0 skips=0
 killed=0. Still not claimed: anything listened to on the player, deletion,
 podcast, audiobook, photo or video transfer, and any model but this Pavo Zune HD.
+
+**2026-10-21 Windows full re-check on one binary:** the Windows surface was walked
+again end to end against a single `--clean-first` build rather than inherited from
+earlier checkpoints. `tests/win-compat` 184 checks / 0 failures / 0 skips,
+`librarytool paths` 28 checks, `names` and `customize` all pass, and
+`tests/win-usability` launches=17 checks=95 failures=0 skips=0 killed=0
+`OVERALL=ok`. The `--qa-device` round trip ran again in both directions from that
+same binary: out with `add added=1` and `sync-summary tracks=1 failed=0`, then the
+next session found the track at `readbackDurationMs=8000` and answered
+`download-saved name='SineQA1021.mp3' ok=true`. A decoder from outside this
+repository confirmed the pulled file is MP3, mono, 44.1 kHz, 8.0457 s, and that
+all 193,723 audio bytes match the source; the 1,177-byte difference is exactly the
+rewritten ID3v2.3 plus the appended ID3v1. A tagless source therefore comes back
+carrying only the injected album artist in its file tags, because the identity the
+Zune shows lives in the MTP object, which came back correct. One GUI-gate launch
+failed once on this binary and passed a clean re-run: `06-page-deviceMusic` exited
+124 on a white frame with no `[qa] splash report`, and its own log held 712
+clipboard complaints - 474 `Retrying to obtain clipboard.` and 237
+`Unable to obtain clipboard.`, seven a second for 36 s. No source file in this
+repository mentions a clipboard; Qt's own Windows clipboard backend opens it and
+retries with a sleep on the GUI thread, and while a foreign process held it
+`SplashView` never reached `onFinished`, so the tick timer the QA handshake
+reports through never started. A clean launch, a process holding the clipboard
+open, and a process writing it every 120 ms all reproduced nothing. Recorded as an
+environment fault, not a regression. Scope claims are otherwise unchanged: still
+one Pavo Zune HD, still no deletion, no podcast, audiobook, photo or video
+transfer, and nothing listened to on the player.
