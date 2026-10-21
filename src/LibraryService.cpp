@@ -11,6 +11,7 @@
 #include "library/LibraryScanner.h"
 #include "library/LocalTrackModel.h"
 #include "library/MusicIdentityClient.h"
+#include "library/PlaylistText.h"
 #include "library/TmdbClient.h"
 #include "library/VideoMatcher.h"
 #include "library/VideoNaming.h"
@@ -35,6 +36,7 @@
 #include <QSaveFile>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QStringList>
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
@@ -2242,16 +2244,8 @@ QVariantMap LibraryService::importPlaylistM3U(const QString &fileUrl) {
     // against the playlist's own folder, and clean the result — which is the
     // form LibraryScanner writes into filepath.
     const QString base = QFileInfo(path).absolutePath();
-    const auto locate = [&base](const QString &entry) {
-        QString local = entry;
-        const QUrl asUrl(local);
-        if (asUrl.isLocalFile())
-            local = asUrl.toLocalFile();
-        local = QDir::fromNativeSeparators(local);
-        if (!local.isEmpty() && !QDir::isAbsolutePath(local))
-            local = base + QLatin1Char('/') + local;
-        return QDir::cleanPath(local);
-    };
+    // The resolution itself lives in LibraryPaths::resolveEntry, beside the other
+    // path helpers, so librarytool can gate it from a command line.
 
     // filepath → library id
     QHash<QString, qint64> byPath;
@@ -2260,11 +2254,20 @@ QVariantMap LibraryService::importPlaylistM3U(const QString &fileUrl) {
 
     QVariantList ids;
     int missing = 0;
-    while (!f.atEnd()) {
-        const QString line = QString::fromUtf8(f.readLine()).trimmed();
+    // Decoding is a separate decision from resolving, and the per-line fromUtf8()
+    // this replaces got both wrong at once: a CP936 playlist from Notepad's
+    // "ANSI" save arrived as U+FFFD runs that matched no row, and a Notepad or
+    // PowerShell BOM glued two invisible characters onto the first entry.  Bytes
+    // are decoded once, up front, by PlaylistText; splitting on '\n' and trimming
+    // still eats the CR of a CRLF file, which readLine() used to hide.
+    const QStringList lines
+        = PlaylistText::decode(f.readAll()).split(QLatin1Char('\n'));
+    for (const QString &raw : std::as_const(lines)) {
+        const QString line = raw.trimmed();
         if (line.isEmpty() || line.startsWith(QLatin1Char('#')))
             continue;
-        const auto it = byPath.constFind(LibraryPaths::caseKey(locate(line)));
+        const auto it = byPath.constFind(
+            LibraryPaths::caseKey(LibraryPaths::resolveEntry(base, line)));
         if (it != byPath.constEnd())
             ids.append(double(it.value()));
         else

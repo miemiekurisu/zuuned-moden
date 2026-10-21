@@ -1,5 +1,7 @@
 #pragma once
 
+#include "LibraryPaths.h"
+
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QString>
@@ -40,6 +42,13 @@ inline QString safeFilePart(QString name) {
     name.replace(illegal, QStringLiteral("_"));
     name = name.trimmed();
     while (name.endsWith(QLatin1Char('.'))) name.chop(1);
+    // A device can hold an episode object called NUL.wmv - nothing on the Zune
+    // side forbids it - and this is the name the import writes on the host, so a
+    // reserved stem here produces a file that extraction reports as saved and
+    // nothing can open afterwards.  LibraryPaths owns the rule; it answers false
+    // on POSIX, where the name is legal and the import behaves as it always did.
+    if (LibraryPaths::isReservedWindowsName(name))
+        name.prepend(QLatin1Char('_'));
     if (name.isEmpty() || name == QLatin1String("..")) name = QStringLiteral("video");
     return name;
 }

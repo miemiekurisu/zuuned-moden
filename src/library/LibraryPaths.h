@@ -101,6 +101,29 @@ inline QString caseKey(const QString &path) {
 #endif
 }
 
+// Whether a finished component collides with a DOS device name.
+//
+// Windows refuses to OPEN a path whose component is  CON ,  PRN ,  AUX ,
+//  CLOCK$ ,  NUL ,  COM0-9  or  LPT0-9 , and it matches the stem with the
+// extension included, so  NUL.mp3  is a file nobody can reopen by path.
+// CreateFile walks the component, hits the device namespace and answers without
+// consulting the directory, so the write succeeds and the read that follows it
+// fails - the worst kind of failure to diagnose, because the file is sitting
+// there in Explorer.  The check is on the last component, case-folded.
+// The rule exists nowhere else: on POSIX these are ordinary filenames, so there
+// the answer is no and no existing Linux name gains an underscore.
+inline bool isReservedWindowsName(const QString &component) {
+#ifdef Q_OS_WIN
+    static const QRegularExpression reserved(
+        QStringLiteral("^(?:CON|PRN|AUX|CLOCK\\$|NUL|COM[0-9]|LPT[0-9])(?:\\.|$)"),
+        QRegularExpression::CaseInsensitiveOption);
+    return reserved.match(component).hasMatch();
+#else
+    Q_UNUSED(component);
+    return false;
+#endif
+}
+
 // One filesystem component, named by something nobody chose a filename for:
 // a device artist, a device album, a device-side folder.
 //
@@ -120,8 +143,8 @@ inline QString caseKey(const QString &path) {
 // because a backslash inside a Linux filename is an ordinary character.  The
 // "." and ".." refusal is not about the platform: those are device folder
 // names that would walk an import out of the folder it was meant to land in,
-// on either side.  VideoIdentity::safeFilePart already applies this shape to a
-// device video name; this is the same rule where it was still hand-rolled.
+// on either side.  VideoIdentity::safeFilePart applies the same rule to a
+// device video name; this is where it was still hand-rolled.
 inline QString safeComponent(const QString &name, const QString &fallback) {
     QString safe = name;
 #ifdef Q_OS_WIN
@@ -132,10 +155,7 @@ inline QString safeComponent(const QString &name, const QString &fallback) {
     while (!safe.isEmpty()
            && (safe.endsWith(QLatin1Char('.')) || safe.endsWith(QLatin1Char(' '))))
         safe.chop(1);
-    static const QRegularExpression reserved(
-        QStringLiteral("^(?:CON|PRN|AUX|CLOCK\\$|NUL|COM[0-9]|LPT[0-9])(?:\\.|$)"),
-        QRegularExpression::CaseInsensitiveOption);
-    if (reserved.match(safe).hasMatch())
+    if (isReservedWindowsName(safe))
         safe.prepend(QLatin1Char('_'));
 #else
     safe.replace(QLatin1Char('/'), QLatin1Char('_'));
@@ -143,6 +163,28 @@ inline QString safeComponent(const QString &name, const QString &fallback) {
     if (safe.isEmpty() || safe == QLatin1String(".") || safe == QLatin1String(".."))
         return fallback;
     return safe;
+}
+
+// One line of a playlist, resolved to the spelling the library stores.
+//
+// A playlist entry is a claim about a file, not a string equal to a database
+// filepath.  Windows Media Player writes  E:\Music\A.mp3 , iTunes writes
+// file:// URLs, and anything hand-made or exported elsewhere lists its files
+// relative to the playlist; compared as text all three are "missing".  Decode a
+// URL, take Qt's forward-slash form (a no-op on Linux, where a backslash is an
+// ordinary character), resolve a relative entry against  base - the playlist's
+// own folder - and clean the result, which is the form LibraryScanner writes
+// into filepath.  Relative entries were wrong on Linux too, so this is
+// unconditional rather than Windows-branched.
+inline QString resolveEntry(const QString &base, const QString &entry) {
+    QString local = entry;
+    const QUrl asUrl(local);
+    if (asUrl.isLocalFile())
+        local = asUrl.toLocalFile();
+    local = QDir::fromNativeSeparators(local);
+    if (!local.isEmpty() && !QDir::isAbsolutePath(local))
+        local = base + QLatin1Char('/') + local;
+    return QDir::cleanPath(local);
 }
 
 }  // namespace LibraryPaths

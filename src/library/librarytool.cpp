@@ -15,6 +15,12 @@
  *   librarytool names
  *     VideoNaming self-test: the parsing cases the mac fixed one bug at
  *     a time, frozen as expectations.
+ *
+ *   librarytool paths
+ *     Path/text self-test: what a filename may contain on the host OS, how two
+ *     spellings of one file compare, how a playlist line resolves, and how
+ *     playlist bytes decode.  Expectations are branched where the right answer
+ *     genuinely differs by platform, so one source gates both.
  */
 /* Keep first on Windows: the compat shim declares the POSIX surface this
  * file uses (64-bit struct stat, dirent, poll, ...) and the console code page
@@ -26,7 +32,10 @@
 #endif
 
 #include "LibraryDb.h"
+#include "LibraryPaths.h"
 #include "LibraryScanner.h"
+#include "PlaylistText.h"
+#include "VideoIdentity.h"
 #include "VideoMatcher.h"
 #include "VideoNaming.h"
 
@@ -301,6 +310,196 @@ static int runCustomizeSelfTest() {
     return failed ? 1 : 0;
 }
 
+/* LibraryPaths and PlaylistText decide what the application is allowed to name a
+ * file and what it thinks two files have in common.  Both are header-only, both
+ * run at every save, and a wrong answer does not crash anything - it just makes a
+ * transfer report "Fail to save", or makes an import report a library full of
+ * missing songs.  Those are the failures a hand test on one platform misses, so
+ * the cases are frozen here, on both sides of every #ifdef. */
+static int runPathsSelfTest() {
+    int failed = 0;
+    const auto check = [&failed](bool ok, const char *what) {
+        printf("  %s %s\n", ok ? "PASS" : "FAIL", what);
+        if (!ok)
+            failed++;
+    };
+    const auto eq = [&check](const char *what, const QString &got,
+                             const QString &expect) {
+        const bool ok = got == expect;
+        check(ok, what);
+        if (!ok)
+            printf("      got '%s' expected '%s'\n", got.toUtf8().constData(),
+                   expect.toUtf8().constData());
+    };
+
+    /* ---- what one filesystem component may be called ---- */
+    eq("safeComponent: a colon in an album title is an ordinary character on Linux",
+       LibraryPaths::safeComponent(
+           QStringLiteral("The Dark Side of the Moon: Immersion"),
+           QStringLiteral("fallback")),
+       QStringLiteral("The Dark Side of the Moon_ Immersion"));
+    eq("safeComponent: a slash is a separator on every platform",
+       LibraryPaths::safeComponent(QStringLiteral("Drake/Mixtape"),
+                                   QStringLiteral("fallback")),
+       QStringLiteral("Drake_Mixtape"));
+    eq("safeComponent: empty, . and .. all take the caller's fallback",
+       LibraryPaths::safeComponent(QString(), QStringLiteral("fallback"))
+           + QLatin1Char('|')
+           + LibraryPaths::safeComponent(QStringLiteral("."), QStringLiteral("fallback"))
+           + QLatin1Char('|')
+           + LibraryPaths::safeComponent(QStringLiteral(".."), QStringLiteral("fallback")),
+       QStringLiteral("fallback|fallback|fallback"));
+#ifdef Q_OS_WIN
+    eq("safeComponent: the whole shell-illegal set becomes underscore",
+       LibraryPaths::safeComponent(QStringLiteral("a<b>c|d?e*f\"g\\h/i:j"),
+                                   QStringLiteral("fallback")),
+       QStringLiteral("a_b_c_d_e_f_g_h_i_j"));
+    eq("safeComponent: a control character cannot survive",
+       LibraryPaths::safeComponent(QStringLiteral("bad") + QChar(1)
+                                       + QStringLiteral("name"),
+                                   QStringLiteral("fallback")),
+       QStringLiteral("bad_name"));
+    eq("safeComponent: a trailing dot or space goes, Explorer hides them",
+       LibraryPaths::safeComponent(QStringLiteral("Trailing.  "),
+                                   QStringLiteral("fallback")),
+       QStringLiteral("Trailing"));
+    eq("safeComponent: NUL and nul.mp3 are both unopenable by path",
+       LibraryPaths::safeComponent(QStringLiteral("NUL"), QStringLiteral("fallback"))
+           + QLatin1Char('|')
+           + LibraryPaths::safeComponent(QStringLiteral("nul.mp3"), QStringLiteral("fallback")),
+       QStringLiteral("_NUL|_nul.mp3"));
+    eq("safeComponent: CON, aux and COM1.txt take the prefix",
+       LibraryPaths::safeComponent(QStringLiteral("CON"), QStringLiteral("fallback"))
+           + QLatin1Char('|')
+           + LibraryPaths::safeComponent(QStringLiteral("aux"), QStringLiteral("fallback"))
+           + QLatin1Char('|')
+           + LibraryPaths::safeComponent(QStringLiteral("COM1.txt"), QStringLiteral("fallback")),
+       QStringLiteral("_CON|_aux|_COM1.txt"));
+    eq("safeComponent: a stem that only starts like a device keeps its name",
+       LibraryPaths::safeComponent(QStringLiteral("NULL album"), QStringLiteral("fallback"))
+           + QLatin1Char('|')
+           + LibraryPaths::safeComponent(QStringLiteral("CONCERT"), QStringLiteral("fallback"))
+           + QLatin1Char('|')
+           + LibraryPaths::safeComponent(QStringLiteral("CLOCK$"), QStringLiteral("fallback")),
+       QStringLiteral("NULL album|CONCERT|_CLOCK$"));
+    check(LibraryPaths::isReservedWindowsName(QStringLiteral("LPT9.log"))
+              && LibraryPaths::isReservedWindowsName(QStringLiteral("PRN")),
+          "isReservedWindowsName: LPTn and PRN are devices");
+    check(!LibraryPaths::isReservedWindowsName(QStringLiteral("music"))
+              && !LibraryPaths::isReservedWindowsName(QStringLiteral("Noodle")),
+          "isReservedWindowsName: ordinary names are not devices");
+#else
+    eq("safeComponent: POSIX touches nothing but the slash",
+       LibraryPaths::safeComponent(QStringLiteral("a<b>c|d?e*f\"g\\h/i:j"),
+                                   QStringLiteral("fallback")),
+       QStringLiteral("a<b>c|d?e*f\"g_h:i:j"));
+    eq("safeComponent: POSIX keeps a trailing dot and space - they are legal",
+       LibraryPaths::safeComponent(QStringLiteral("Trailing.  "),
+                                   QStringLiteral("fallback")),
+       QStringLiteral("Trailing.  "));
+    eq("safeComponent: POSIX has no reserved stems, so NUL stays NUL",
+       LibraryPaths::safeComponent(QStringLiteral("nul.mp3"), QStringLiteral("fallback")),
+       QStringLiteral("nul.mp3"));
+    check(!LibraryPaths::isReservedWindowsName(QStringLiteral("NUL")),
+          "isReservedWindowsName: no device namespace on POSIX, so no name gains an underscore");
+#endif
+
+    /* ---- two spellings of one file ---- */
+#ifdef Q_OS_WIN
+    check(LibraryPaths::caseKey(QStringLiteral("E:/Music/A.MP3"))
+              == LibraryPaths::caseKey(QStringLiteral("e:/music/a.mp3")),
+          "caseKey: a Windows folder cannot hold both spellings, so they are one key");
+    check(LibraryPaths::caseKey(QStringLiteral("E:/Music/A.MP3"))
+              != LibraryPaths::caseKey(QStringLiteral("E:/Music/B.MP3")),
+          "caseKey: folding still separates different files");
+#else
+    eq("caseKey: POSIX folds nothing, so every stored key stays byte-identical",
+       LibraryPaths::caseKey(QStringLiteral("/Music/A.MP3")),
+       QStringLiteral("/Music/A.MP3"));
+    check(LibraryPaths::caseKey(QStringLiteral("/Music/A.MP3"))
+              != LibraryPaths::caseKey(QStringLiteral("/Music/a.mp3")),
+          "caseKey: on POSIX case is part of the filename");
+#endif
+
+    /* ---- one playlist line, resolved ---- */
+    const QString base = QStringLiteral("/music/playlists");
+    eq("resolveEntry: an absolute entry is left alone",
+       LibraryPaths::resolveEntry(base, QStringLiteral("/music/A.mp3")),
+       QStringLiteral("/music/A.mp3"));
+    eq("resolveEntry: a bare name belongs to the playlist's own folder",
+       LibraryPaths::resolveEntry(base, QStringLiteral("A.mp3")),
+       QStringLiteral("/music/playlists/A.mp3"));
+    eq("resolveEntry: a relative entry is cleaned, not left with a traversal in it",
+       LibraryPaths::resolveEntry(base, QStringLiteral("sub/../A.flac")),
+       QStringLiteral("/music/playlists/A.flac"));
+    eq("resolveEntry: a parent escape resolves and stays resolved",
+       LibraryPaths::resolveEntry(base, QStringLiteral("../A.mp3")),
+       QStringLiteral("/music/A.mp3"));
+#ifdef Q_OS_WIN
+    eq("resolveEntry: a Windows playlist spells it with backslashes and a drive",
+       LibraryPaths::resolveEntry(base, QStringLiteral("E:\\Music\\A.mp3")),
+       QStringLiteral("E:/Music/A.mp3"));
+    eq("resolveEntry: an iTunes file:// URL with a drive decodes",
+       LibraryPaths::resolveEntry(base, QStringLiteral("file:///E:/Music/A.mp3")),
+       QStringLiteral("E:/Music/A.mp3"));
+#else
+    eq("resolveEntry: a backslash on POSIX is an ordinary filename character",
+       LibraryPaths::resolveEntry(base, QStringLiteral("E:\\Music\\A.mp3")),
+       QStringLiteral("/music/playlists/E:\\Music\\A.mp3"));
+#endif
+
+    /* ---- playlist bytes -> text ---- */
+    eq("decode: plain ASCII is the text it already was",
+       PlaylistText::decode(QByteArrayLiteral("01 - Track.mp3\n")),
+       QStringLiteral("01 - Track.mp3\n"));
+    check(PlaylistText::decode(QByteArray()).isEmpty(),
+          "decode: an empty file is empty text, not a missing entry");
+    /* No non-ASCII literal here: MSVC reads a source file in the active code page
+     * unless /utf-8 is passed, so the bytes are spelled out instead.  E5 91 A8
+     * E6 B8 B8 is two CJK characters, ten bytes of valid UTF-8. */
+    const QByteArray utf8Name("\xE5\x91\xA8\xE6\xB8\xB8.mp3");
+    eq("decode: valid UTF-8 multibyte decodes as UTF-8",
+       PlaylistText::decode(utf8Name), QString::fromUtf8(utf8Name));
+    const QString afterBom
+        = PlaylistText::decode(QByteArray("\xEF\xBB\xBF") + utf8Name);
+    check(!afterBom.startsWith(QChar(0xFEFF)) && afterBom == QString::fromUtf8(utf8Name),
+          "decode: a UTF-8 BOM is stripped instead of corrupting the first entry");
+    /* C4 E3 C3 C7 is two GBK characters and is not valid UTF-8 - 0xC4 demands a
+     * continuation byte and gets 0xE3.  Notepad's "ANSI" save, Windows Media
+     * Player and most converters emit exactly this shape. */
+    const QByteArray ansiName("\xC4\xE3\xC3\xC7.mp3");
+    eq("decode: a file that is not UTF-8 falls back to the locale code page",
+       PlaylistText::decode(ansiName), QString::fromLocal8Bit(ansiName));
+#ifdef Q_OS_WIN
+    check(!PlaylistText::decode(ansiName).contains(QChar(0xFFFD)),
+          "decode: an ANSI playlist does not arrive as replacement characters");
+#endif
+    check(PlaylistText::decode(QByteArrayLiteral("A.mp3\r\nB.mp3\r\n"))
+                  .split(QLatin1Char('\n'))
+                  .at(0)
+                  .trimmed()
+              == QLatin1String("A.mp3"),
+          "decode: a CRLF playlist still yields the path and nothing else");
+
+    /* ---- the video import name shares the same device-name rule ---- */
+    eq("safeFilePart: an ordinary device object name is untouched",
+       VideoIdentity::safeFilePart(QStringLiteral("Show A - S01E01 - Pilot.wmv")),
+       QStringLiteral("Show A - S01E01 - Pilot.wmv"));
+#ifdef Q_OS_WIN
+    eq("safeFilePart: a device object called NUL.wmv imports to a file that opens",
+       VideoIdentity::safeFilePart(QStringLiteral("NUL.wmv")),
+       QStringLiteral("_NUL.wmv"));
+#else
+    eq("safeFilePart: POSIX imports NUL.wmv under that exact name",
+       VideoIdentity::safeFilePart(QStringLiteral("NUL.wmv")),
+       QStringLiteral("NUL.wmv"));
+#endif
+
+    printf("paths self-test: %s (%d failures)\n",
+           failed == 0 ? "ALL PASS" : "FAILED", failed);
+    return failed == 0 ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
 #if defined(_WIN32)
@@ -325,6 +524,8 @@ int main(int argc, char **argv) {
         return runNamesSelfTest();
     if (mode == QLatin1String("customize"))
         return runCustomizeSelfTest();
+    if (mode == QLatin1String("paths"))
+        return runPathsSelfTest();
 
     const bool videoMode = mode == QLatin1String("videoscan");
     if (arguments.size() < 4 || (mode != QLatin1String("scan") && !videoMode)) {
@@ -333,7 +534,8 @@ int main(int argc, char **argv) {
                 "  librarytool scan <folder> <tmpdb>\n"
                 "  librarytool videoscan <folder> <tmpdb> [movies|tv|anime]\n"
                 "  librarytool names\n"
-                "  librarytool customize\n");
+                "  librarytool customize\n"
+                "  librarytool paths\n");
         return 2;
     }
     const QString folder = arguments.at(2);

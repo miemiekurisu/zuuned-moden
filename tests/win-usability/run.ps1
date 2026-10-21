@@ -851,6 +851,11 @@ if (Select-Phase 'tools') {
     $cust = Invoke-Proc -File $libraryTool -Arguments @('customize') -Timeout 900
     Check 'librarytool customize runs the v0/v2 to v9 migration chain' `
         ($cust.Code -eq 0 -and $cust.Out -match 'ALL PASS \(0 failures\)') ('code=' + $cust.Code)
+    # The filename, path-comparison and playlist rules are header-only, so no other
+    # part of this gate can see them: they are reached through the tool instead.
+    $paths = Invoke-Proc -File $libraryTool -Arguments @('paths') -Timeout 600
+    Check 'librarytool paths pins the Windows filename and playlist rules' `
+        ($paths.Code -eq 0 -and $paths.Out -match 'ALL PASS \(0 failures\)') ('code=' + $paths.Code)
 }
 
 Write-Host ''

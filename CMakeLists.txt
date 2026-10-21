@@ -252,6 +252,7 @@ qt_add_executable(zuuned
     src/library/LibraryDb.cpp
     src/library/LibraryDb.h
     src/library/LibraryPaths.h
+    src/library/PlaylistText.h
     src/library/LibraryScanner.cpp
     src/library/LibraryScanner.h
     src/library/AudioCopyFingerprint.h

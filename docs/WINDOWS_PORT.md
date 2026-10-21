@@ -414,6 +414,54 @@ environment to reproduce them.
   format, so the earlier note here that Windows had only ever decoded in software was
   read off a label that could not tell the two apart either way.
 
+## Re-checked against a clean rebuild (2026-10-21, later the same day)
+
+The filename and playlist fixes committed earlier that morning were merged while
+`build\zuuned.exe` still predated them, so "the gates pass" was a statement about the
+source and not about the binary.  Everything was rebuilt and run again.
+
+- `cmake --build build --clean-first`: 329 steps, no errors, `zuuned.exe` and
+  `librarytool.exe` both produced from the sources in the tree.
+- **A relink is not evidence on this machine, which is why the line above is a clean
+  rebuild.**  The Ninja rules use `deps = msvc`: Ninja learns what a `.cpp` includes by
+  parsing `cl`'s `/showIncludes` echo for the literal English prefix, and this Visual
+  Studio answers `注意: 包含文件:`, so nothing matches and
+  `ninja -t deps CMakeFiles\zuuned.dir\src\LibraryService.cpp.obj` reports `#deps 0`.
+  Edit one of the header-only helpers - the filename, playlist and video-name rules all
+  live in headers - rebuild, and nothing recompiles while the AUTOMOC steps and the link
+  make the run look productive.  A Windows gate counter is worth exactly what the last
+  clean rebuild cost; `BUILDING.md` carries the diagnosis and the workaround.
+- `tests\win-compat\run.ps1`: `184 checks, 0 failures, 0 skips`.
+- `librarytool names`, `customize` and the new `paths` group: all pass, `paths` at
+  28 checks.  `paths` is where the filename, comparison, resolution and decoding rules
+  are pinned (`src/library/librarytool.cpp:319`); it exists because neither existing
+  gate could reach a C++ header, and it now runs inside the usability gate's tools phase
+  so that it cannot be the one check nobody remembered to run.
+- `tests\win-usability\run.ps1`: `launches=17 checks=95 failures=0 skips=0
+  killed=0 pid-scan-fallbacks=6`, `OVERALL=ok` - the same seventeen launches as the
+  checkpoint above and one check more, the extra one being `paths`.  Against a binary
+  that provably contains the fixes, this time.  The Han profile-folder,
+  profile-isolation and single-instance cases are all in that count.
+  `pid-scan-fallbacks` is a harness-side timing artifact rather than an application
+  result: it counts the launches where the harness had to enumerate the process's windows
+  because `MainWindowHandle` had not filled in on the first poll, and it read 7, then 3,
+  then 6 across three runs of this gate on 2026-10-21.
+- One qualification on the usability numbers, because the gate's `SCOPE` line is
+  narrower than it reads: it means the harness opened no device handle.  A Zune HD was
+  attached while the run happened, so the application's own hotplug auto-connect opened
+  and browsed the player inside each isolated profile - visible in the recorded
+  diagnostics as `[mtp] get_object_info ... response 0x2002` and the thumbnail
+  fallbacks.  Isolated profiles hold no library and no transfer queue, so nothing was
+  written to the device, but a future run should either unplug it or expect the device
+  in the log.
+
+Re-reading that commit also turned up three defects in it, documented in
+`docs/WINDOWS_COMPAT_AUDIT.md` under the third sweep: the m3u fix decoded nothing about
+encoding, `safeFilePart` did not carry the reserved-stem rule the comment claimed it
+did, and none of it had a gate.  All three are fixed here.  Still not hand-tested: an
+album with a colon in its name saved to the library, a foreign-authored playlist
+imported, a device photo thumbnail through the `cmd.exe` branch.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and

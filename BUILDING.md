@@ -116,6 +116,42 @@ vcpkg DLLs next to every executable. Run `windeployqt` in `build` for the Qt
 runtime and copy the FFmpeg `bin` DLLs plus `libmpv-2.dll` beside the
 executable.
 
+Two build-hygiene facts cost time on 2026-10-21 and are worth having written down.
+Building without the MSVC environment loaded in the *same* shell does not fail the way
+you expect: instead of `LNK1104: ws2_32.lib` it emits around a hundred impossible
+`std::thread`/`std::mutex` diagnostics pointing into
+`...\Windows Kits\10\Include\...\ScopeCppSDK\vc15\VC\include`, because that SDK folder
+shadows the real STL headers. The cure is the environment, not the code.
+
+Second, and the one that can make a passing gate mean nothing: on a localized Visual
+Studio an incremental build does not know that a header changed. The Ninja rules carry
+`deps = msvc`, so Ninja learns what a `.cpp` includes by reading the `/showIncludes`
+echo from `cl`, and it looks for the literal English prefix `Note: including file:`.
+A Chinese MSVC writes `注意: 包含文件:` instead, nothing matches, and the dependency
+log comes back empty:
+
+```
+build> ninja -t deps CMakeFiles\zuuned.dir\src\LibraryService.cpp.obj
+CMakeFiles/zuuned.dir/src/LibraryService.cpp.obj: #deps 0, deps mtime ... (VALID)
+```
+
+`#deps 0` is the whole story: no translation unit on this machine knows about any
+header. Edit `src/library/LibraryPaths.h` - header-only, compiled into the app and into
+`librarytool` - and `cmake --build build` recompiles nothing, relinks anyway, and prints
+`[5/7] Building CXX object ...mocs_compilation.cpp.obj` because AUTOMOC touched its own
+generated file, which makes the run look busy and reassuring. A gate executed on the
+result can pass against an executable that predates the change under test, which is the
+failure this page has had to record more than once. Nor is there a depfile to fall back
+on: the eleven `.d` files under `build/CMakeFiles/d/` belong to CMake's own configure
+steps, not to the C++ translation units.
+
+So before writing down any gate counter on Windows, `cmake --build build --clean-first`
+- a full rebuild costs a few minutes, and every recorded number in these documents came
+from one. When you only need one target, touch each `.cpp` that includes the changed
+header instead: source-file dependencies are tracked correctly. Fixing the underlying
+problem needs an English `cl` or a Ninja that parses localized notes; `VSLANG=1033` was
+tried on the 2026-10-21 machine and did not change the output language.
+
 `CMakeLists.txt` keeps one source tree for both platforms: the D-Bus/Mpris
 service and the POSIX-only install rules are skipped on Windows, and
 `compat/win/` is built once as `zuuned_wincompat` and force-included into every
@@ -142,9 +178,13 @@ never share one, and it survives a rename - the artwork cache's
 
 The bash suites in `ci/check.sh` need pkg-config and a POSIX shell, so on
 Windows the library core is covered by the native tools instead:
-`build\librarytool.exe names` and `build\librarytool.exe customize` (the latter
+`build\librarytool.exe names`, `build\librarytool.exe customize` (the latter
 rebuilds a pre-Customize database and runs the real v0/v2 to v9 migration chain,
-including the pre-migration backup). Both pass; neither touches a device.
+including the pre-migration backup) and `build\librarytool.exe paths` - 28 checks
+over the filename, path-comparison, playlist-resolution and playlist-decoding rules
+the Windows port depends on, with the expectations branched per platform so the same
+file gates a Linux run without changing a Linux answer. All three pass; none touches a
+device, and all three run inside `tests\win-usability\run.ps1`'s tools phase.
 
 Scanning is covered the same way, with a fixture built from the cases Windows
 historically gets wrong: a plain MP3, a WMA file named `.mp3`, a folder named in
@@ -183,7 +223,7 @@ real profile stayed untouched.
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 ```
 
-Expected: `launches=17 checks=94 failures=0 skips=0 killed=0` and `OVERALL=ok`. It
+Expected: `launches=17 checks=95 failures=0 skips=0 killed=0` and `OVERALL=ok`. It
 needs the same MSVC environment as the build and compiles its own capture tool into
 `build\win-usability\`. `-Only fixture,pages` and similar run a subset - the phase
 list is comma-separated, and because the scratch tree is rebuilt on every run a page

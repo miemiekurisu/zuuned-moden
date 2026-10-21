@@ -63,7 +63,7 @@ header-only edit silently links a stale object: force a full rebuild, with
 `--clean-first`, after any header-only change until that changes.
 The Windows usability gate is finished and passing:
 `pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1` reports
-`launches=17 checks=94 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
+`launches=17 checks=95 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
 built app once per page (music, videos, photos, podcasts, audiobooks, and the device
 page with no device attached), the five settings tabs, the header pinned at 0 and at
 1, a queue played through the compact island after a real `winshot --move` resize, the
@@ -270,6 +270,39 @@ only: no hand test yet, and `zuuned.exe` has not been relinked since.
 alone - four uncalled libzune shell sites, and no `<longPathAware>` in the executable
 manifest, which keeps the Qt-side paths under 260 characters. Device evidence is
 unchanged and still one hand-tested Pavo Zune HD.
+
+**Windows third sweep, and everything re-run on the relinked build, 2026-10-21:** the
+sweep above was re-read rather than re-run, which found three defects inside it. An m3u
+line was resolved correctly and still decoded line-by-line with `fromUtf8()`, so a
+Notepad "ANSI"/CP936 playlist matched no row at all and a UTF-8 BOM corrupted exactly the
+first entry; `PlaylistText::decode()` owns the bytes now and the resolution moved into
+`LibraryPaths::resolveEntry()`. `VideoIdentity::safeFilePart()` did not in fact carry the
+reserved-stem rule the comment in `LibraryPaths.h` claimed it did, so a device object
+named `NUL.wmv` still imported to a file that reports success and cannot be reopened;
+`LibraryPaths::isReservedWindowsName()` is now the single rule both call. And none of it
+had a test - neither Windows gate can reach a C++ header - so `librarytool paths`
+(28 checks, expectations branched `#ifdef Q_OS_WIN` so one source gates both platforms)
+ is where the filename, comparison, resolution and decoding rules are pinned, and the
+ usability gate's tools phase now runs it beside `names` and `customize` - which is why
+ that gate counts one check more than the checkpoint above. Both executables were rebuilt
+ with `cmake --build build --clean-first` and the gates pass against them: 184 compat
+ checks, `launches=17 checks=95 failures=0`, and
+ `names`/`customize`/`paths`. Three corrections worth keeping. The usability gate's
+`SCOPE: no device handle` line describes the harness, not the application - with a Zune
+attached its own hotplug auto-connect browses it inside every isolated profile. A build
+with no MSVC environment loaded fails as ~100 bogus `std::thread` diagnostics from the
+Windows SDK's `ScopeCppSDK` include, not as a linker error. And the one that invalidates
+evidence rather than only costing time: Ninja's `deps = msvc` never matches this machine's
+localized `/showIncludes` output, so every object records `#deps 0` and an incremental
+build silently recompiles nothing after a header edit while still relinking and looking
+busy. Check with `ninja -t deps <obj>`; rebuild `--clean-first` before quoting any Windows
+gate counter. Details in `BUILDING.md`. Deliberate gaps, all in
+`docs/WINDOWS_COMPAT_AUDIT.md`: UTF-16 m3u is not decoded,
+playlist *export* names keep their own narrower rule because sharing `safeComponent()`
+would rename existing Linux exports, `safeComponent()` bounds spelling but not length, and
+there is still no `<longPathAware>` entry. POSIX behaviour is unchanged by construction
+and still unverified on this machine. Device evidence is unchanged: one hand-tested Pavo
+Zune HD, and no device claim was added.
 
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow

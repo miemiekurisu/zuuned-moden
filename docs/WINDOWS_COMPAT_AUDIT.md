@@ -130,7 +130,7 @@ component.  Every save-to-library site sanitised device text for `/` alone, so
 with nothing wrong with it - the same message the root-path defect produced, from an
 unrelated cause, which is worth remembering the next time that string appears.
 
-`LibraryPaths::safeComponent(name, fallback)` (`src/library/LibraryPaths.h:125`) is
+`LibraryPaths::safeComponent(name, fallback)` (`src/library/LibraryPaths.h:148`) is
 now the one answer, applied at `src/DeviceService.cpp:797`,
 `src/DeviceService.cpp:829`, `src/DeviceService.cpp:835`, `src/DeviceService.cpp:849`
 and `src/DeviceService.cpp:854` - video, photo (subfolder *and* raw filename) and
@@ -174,8 +174,63 @@ unconditional rather than Windows-branched: decode a URL, take
 `QDir::fromNativeSeparators()` (a no-op on Linux, where a backslash is an ordinary
 character), resolve a relative entry against the playlist's own folder, then
 `QDir::cleanPath()` - the form `LibraryScanner` stores - and compare through
-`caseKey()` on both sides (`src/LibraryService.cpp:2259`,
-`src/LibraryService.cpp:2267`).
+`caseKey()` on both sides.
+
+## Third sweep: what a playlist is written in, and a name nobody can reopen
+
+The second sweep left two holes of its own making and one claim it had overstated.
+All three came from re-reading that diff a day later rather than from a new symptom,
+which is the check worth running on your own fix the day after it ships.
+
+**Deciding what an m3u line *means* was half the job; deciding what its bytes *are* was
+the other half.**  The fix above still read every line with `QString::fromUtf8()`.  m3u
+declares no encoding and carries no magic.  This app writes UTF-8 without a BOM, so its
+own exports were always fine; a playlist the user points at usually came from somebody
+else, and on Windows somebody else defaults to the ANSI code page - Notepad's "ANSI"
+save, Windows Media Player exports, most shareware converters - which is CP1252 in the
+west and CP936 here.  Run through `fromUtf8()` those bytes arrive as U+FFFD runs, no
+entry matches a row, and the import answers "0 added, 41 missing" for a playlist naming
+forty-one songs the library plainly holds.  That is the same symptom as the resolution
+defect, from an unrelated cause, one function deep.  A BOM is the milder instance of the
+same carelessness: Notepad, PowerShell and Visual Studio all add one to a UTF-8 file, and
+it corrupts exactly one entry - the first - which reads like a bug in the matching code
+and not in the decoding.
+
+`PlaylistText::decode()` (`src/library/PlaylistText.h:39`) owns that decision now: honour
+a BOM, take UTF-8 when the bytes really are UTF-8, otherwise fall back to the locale's own
+code page, which is precisely what "no BOM and not valid UTF-8" means on the machine that
+wrote the file.  The UTF-8 test is `fromUtf8()` followed by the round trip: Qt replaces an
+invalid sequence with U+FFFD, which re-encodes to `EF BF BD` and so never reproduces the
+input, making the comparison evidence rather than a tautology.  The resolution moved out
+of the lambda into `LibraryPaths::resolveEntry()` (`src/library/LibraryPaths.h:179`),
+beside the helpers it shares with the scanner, so a command line can reach both; the import
+is now decode, split, resolve, `caseKey()` (`src/LibraryService.cpp:2264`,
+`src/LibraryService.cpp:2270`).
+
+**`safeFilePart()` did not in fact "already apply this shape".**  The comment in
+`src/library/LibraryPaths.h` said so of the reserved-stem rule, and it was inexact:
+`VideoIdentity::safeFilePart` applied the illegal set and the trailing dot, and not the
+device namespace.  So a Zune holding an object named `NUL.wmv` still imported to a file
+that extraction reports as saved and nothing can afterwards open - the write succeeds, the
+read fails, and the file sits there in Explorer.  The rule is now one function,
+`LibraryPaths::isReservedWindowsName()` (`src/library/LibraryPaths.h:115`), called from
+`safeComponent()` (`src/library/LibraryPaths.h:148`) and from `safeFilePart()`
+(`src/library/VideoIdentity.h:50`).  It answers false on POSIX, where `NUL.wmv` is an
+ordinary filename and the import does exactly what it did before.
+
+**None of the second sweep's helpers had a test, and neither gate could have given them
+one.**  `tests/win-compat` is deliberately Qt-free - it compiles the shim with the MSVC C
+compiler and nothing else - so it cannot reach a C++ header, and the bash suites in
+`ci/check.sh` do not run here.  The helpers are header-only, run on every save, and fail by
+printing "Fail to save", the least diagnosable message the app has.  `librarytool paths`
+(`src/library/librarytool.cpp:319`) is their home now, in the shape the file already used
+for `names` and `customize`: 28 checks, with the expectation branched `#ifdef Q_OS_WIN`
+wherever the right answer genuinely differs, so one source gates both platforms and a
+Linux run is told in as many words that `NUL` stays `NUL`, that a backslash stays an
+ordinary filename character, and that `caseKey()` folds nothing there.  Both gates still
+reach the headers only through the compiled tool, so `paths` now runs from the usability
+gate's tools phase beside `names` and `customize` rather than being a command that has to
+be remembered.
 
 ## Console output
 
@@ -277,6 +332,28 @@ account in `BUILDING.md` under *Path encodings on a non-English Windows*.
   from the Win32 documentation.
 - `tests/win-compat` and `tests/win-usability` are source and runtime gates;
   neither opens a USB handle.  The compat gate is currently 184 checks.
+- `build\librarytool.exe paths` is 28 checks over the helpers above, and
+  `names`/`customize` still pass on the same build.  All three ran here, against the
+  executables produced by `cmake --build build --clean-first`.
+- **"The executable was relinked" is not evidence, and that is a finding of this
+  sweep.**  The Ninja rules carry `deps = msvc`: Ninja learns a translation unit's
+  includes by parsing the `/showIncludes` echo from `cl`, against the literal English
+  prefix.  On this localized host the notes arrive as `注意: 包含文件:`, nothing matches,
+  and `ninja -t deps CMakeFiles\zuuned.dir\src\LibraryService.cpp.obj` answers `#deps 0` -
+  not one header dependency recorded for any object in the build.  Editing a header-only
+  helper above and rebuilding therefore recompiles nothing, relinks anyway, and prints
+  enough AUTOMOC steps to look entirely honest, which means a gate can pass against a
+  binary that predates the very fix it is supposed to prove.  Every counter in this file
+  comes from a `--clean-first` rebuild instead; `BUILDING.md` has the diagnosis and the
+  habit.
+- `tests\win-usability` ran against that `build\zuuned.exe`: 17 launches,
+  94 checks, 0 failures, `OVERALL=ok`, including the Han-spelled profile folder and
+  the two profile-isolation checks that compare the real profile byte-for-byte
+  before and after.  One qualification, because the gate's own `SCOPE` line only
+  speaks for the harness: a Zune HD was plugged in while it ran, so the application's
+  own hotplug auto-connect opened and read the device inside every isolated profile.
+  Those profiles hold no library and no transfer queue, so nothing was written to the
+  player, but "no device handle" is true of the harness and not of the app.
 - Device facts are in `docs/WINDOWS_PORT.md` and are hand-tested, not gated.
 
 ## Not re-checked by this sweep, and what it would take
@@ -321,6 +398,23 @@ the defect and pretending otherwise would put an unverified claim in the tree.
   a junction takes privileges or developer mode and nothing this app indexes is
   expected to contain one; the asymmetry is recorded rather than guessed at.
   Untested either way.
+- **`safeComponent()` bounds nothing but spelling.**  A component longer than 255
+  characters - legal on a Zune, since MTP has no such limit - still fails `mkpath()`
+  on Windows and the save still reports a plain failure.  Truncating a name is a
+  visible change to a user's folder layout and needs a collision rule with it, which
+  is a bigger decision than this sweep.
+- **Playlist export names the file with its own hand-rolled rule.**
+  `LibraryService::exportPlaylists()` replaces the illegal set but not a reserved stem
+  or a trailing dot/space, so a playlist called `NUL` exports to a file nobody can
+  reopen.  Routing it through `safeComponent()` would fix that and would also rename
+  existing Linux exports, whose names contain characters Linux allows and the inline
+  rule did not, so the directory would fill with both old and new spellings.  Left as
+  it is, deliberately.
+- **UTF-16 m3u is still not decoded.**  Notepad's retired "Unicode" option writes
+  `FF FE` and interleaves a NUL through every entry; `PlaylistText::decode()` takes it
+  for bytes in some code page and every entry comes back missing.  The export this app
+  writes, Notepad's current default, WMP and iTunes are all covered; this is the one
+  spelling that is not.
 
 ## Known gaps, on purpose
 
