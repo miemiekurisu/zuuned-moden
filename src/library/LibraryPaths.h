@@ -165,6 +165,32 @@ inline QString safeComponent(const QString &name, const QString &fallback) {
     return safe;
 }
 
+// The filename a playlist of the user's own naming becomes on export.
+//
+// exportPlaylistsM3U() used to carry its own idea of what is illegal, and on
+// Windows it was wrong in both directions at once: it replaced the eight
+// characters it knew about while letting a trailing dot or space stand, which
+// Explorer drops - so "Mixtape." and "Mixtape " export onto one .m3u8 and one of
+// them silently wins - and it handed a playlist called NUL straight through,
+// which writes a file no path can open again.  safeComponent() is that rule with
+// both holes closed.
+//
+// POSIX deliberately does not take it.  The old set replaced more than "/" ,
+// which safeComponent() leaves alone because a colon in a Linux filename is a
+// character and not a separator, so the Linux answer is spelled out here instead:
+// every playlist this app has ever written keeps exactly the filename it had.
+inline QString playlistFileName(const QString &name, const QString &fallback) {
+#ifdef Q_OS_WIN
+    return safeComponent(name, fallback);
+#else
+    static const QRegularExpression replaced(
+        QStringLiteral("[/\\:*?\"<>|]"));
+    QString safe = name;
+    safe.replace(replaced, QStringLiteral("_"));
+    return safe.isEmpty() ? fallback : safe;
+#endif
+}
+
 // One line of a playlist, resolved to the spelling the library stores.
 //
 // A playlist entry is a claim about a file, not a string equal to a database

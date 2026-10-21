@@ -558,6 +558,75 @@ with the device attached throughout.
 
 Still nothing heard on the player, still one Pavo Zune HD, still no deletion.
 
+## The fifth pass: a manifest, two playlist names, and the round trip again (2026-10-21)
+
+Three things the fourth pass recorded as gaps are closed.  `docs/WINDOWS_COMPAT_AUDIT.md` has
+the fifth sweep in full - why the manifest had to be a whole manifest rather than a fragment,
+why CMake needs `/MANIFEST:NO` before it will accept one, and why a gate written only against
+Qt would have concluded that the declaration buys nothing.
+
+Every software gate below ran on one `cmake --build build --clean-first` rebuild - 329
+steps, the habit `BUILDING.md` asks for before any number is written down - in order, on
+this machine, with the Zune HD attached.  The `--qa-device` round trip ran on a binary
+carrying the same code a few minutes earlier, and is marked as such below.
+
+- All six executables carry exactly one embedded manifest, read back with `mt.exe`:
+  `asInvoker`, and `longPathAware=true`.
+- `build\librarytool.exe paths`: 52 checks, `ALL PASS` - thirteen more than the fourth pass,
+  being three `playlistFileName:`, three UTF-16 `decode:`, five `deep:` and two `deep crt:`.
+  Those last two are what justifies the manifest: `QFile`, `QDir` and the watch-folder walk
+  reach the fixture past 260 characters with or without it, `_wfopen()` reaches it only with
+  it, and a transcode temporary is written through the C runtime.  Reproduced outside the
+  tree with two copies of the same 36-line C probe: on this machine, against a 356-character
+  file, the undeclared binary gets `ERROR_PATH_NOT_FOUND` from `_wfopen()` and the declared
+  one reads the byte back.
+- `build\librarytool.exe names` 17 checks and `customize` 21 checks, both `ALL PASS` on the
+  same build.
+- `tests\win-compat\run.ps1`: `184 checks, 0 failures, 0 skips`.
+- `tests\win-usability\run.ps1`, and all four runs of it in this pass belong to the record.
+  The first answered `failures=2`, and the fault was the harness's precondition rather than
+  the build: a `zuuned.exe` left open from a GUI check wrote its own `qqpc_opengl`
+  pipeline-cache entry into the real profile that the isolation check compares, while the
+  sibling check that looks only at processes the gate started passed.  The rule is that
+  nothing else is signed in to the profile when that gate runs.  The second run was green.
+  The third answered `launches=17 failures=14` on those same binaries, and that one *was* the
+  application: every failing launch came down on `0xC0000409` with
+  `[qt.fatal] QThread: Destroyed while thread '' is still running` as its last line, because
+  closing the window destroyed the device worker's `QThread` while a device operation was
+  still inside libzune - fatal by design in Qt, and taken apart in
+  `docs/WINDOWS_COMPAT_AUDIT.md`.  `src/ThreadDrain.h` waits that worker out now, naming what
+  it is waiting for, instead of betting five seconds on it.  A fourth run answered green on
+  the repaired binary; the fifth, on the clean rebuild above, is the number this pass
+  keeps: `launches=17 checks=95 failures=0 skips=0 killed=0 pid-scan-fallbacks=4`,
+  `OVERALL=ok`, with every launch log but one carrying three `worker still busy at
+  shutdown` lines - `waited 5s`, `waited 10s`, `waited 15s` - before closing at exit code
+  0.  How many logs carry them is the device's choice rather than the application's: the
+  run before this one logged 15 of 17.
+- The manifest read-back and the library gates were repeated on that clean rebuild rather
+  than quoted from the run before it: `mt.exe` still finds exactly one embedded manifest per
+  image, `asInvoker` and `longPathAware=true` on all six; `librarytool` answers `paths` 52,
+  `names` 17, `customize` 21 - `ALL PASS` each; and `tests\win-compat` answered
+  `184 checks, 0 failures, 0 skips` there too.
+- The `--qa-device` round trip again, both directions, on the binary a few minutes older
+  than the clean rebuild, under a new title and album
+  (`SineQA1021C` / `Windows Roundtrip 1021C`): `add added=1`, `forge done: 1 ok, 0 failed`,
+  `sync-summary elapsedMs=1657 tracks=1 failed=0`; the device counted 193 tracks where the
+  session before it counted 192; then `download-from itemId=16777482 readbackDurationMs=8000`
+  and `download-saved name='SineQA1021C.mp3' ok=true`.
+- The read-back was compared afterwards with a script outside this repository: the file
+  the Zune HD returned is 194,945 bytes, the audio payload on either side is 193,723 bytes,
+  and the first byte that differs inside that payload does not exist.  What surrounds the
+  audio is the 1,094-byte ID3v2.3 this app puts ahead of a send and a 128-byte ID3v1 `TAG`
+  the firmware appends, whose artist field reads `ZuunedQA` - the artist the send declared.
+- The application by hand on its own profile, music library at `E:\Temp\testmusic`, device
+  panel showing the Zune HD and its library: no `/E:` spelling in any label, no
+  `watch folder unreachable` line.
+
+Still nothing heard on the player, still one Pavo Zune HD, and still no deletion.  The player
+now carries four QA albums from these round trips - `ZuunedQA`, and `Windows Roundtrip 1021`,
+`1021B`, `1021C` - which this repository cannot take back off it, so the deletion gate starts
+from a device with litter on it.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and
@@ -614,7 +683,9 @@ Still nothing heard on the player, still one Pavo Zune HD, still no deletion.
     before, so it is safe in the ordinary case and unverified in the one case it
     exists for.  A clean rebuild has since happened and the app has been restarted
     from it, so those rules are in the running binary; what they still do not have
-    is the hand test.
+    is the hand test.  The fifth pass put software gates behind two of the three -
+    `safeFilePart:` and the `decode:` checks, the latter extended to UTF-16 with a BOM - and
+    the photo-thumbnail fallback still has neither gate nor hand test.
 
 ## Order to close it in
 

@@ -56,6 +56,7 @@
 #endif
 
 #include <cstdio>
+#include <string>
 
 static int runNamesSelfTest() {
     struct Case {
@@ -412,6 +413,28 @@ static int runPathsSelfTest() {
           "isReservedWindowsName: no device namespace on POSIX, so no name gains an underscore");
 #endif
 
+    /* ---- what a playlist of the user's own naming is allowed to be called ----
+     * The export used to carry its own shorter rule, so a playlist whose name ends
+     * in a dot or a space wrote a file Explorer renames behind the app's back, and
+     * one called NUL wrote a file that cannot be reopened by path. */
+#ifdef Q_OS_WIN
+    eq("playlistFileName: a playlist called NUL exports under a name that opens",
+       LibraryPaths::playlistFileName(QStringLiteral("NUL"), QStringLiteral("playlist")),
+       QStringLiteral("_NUL"));
+    eq("playlistFileName: a trailing dot or space would fold two playlists onto one file",
+       LibraryPaths::playlistFileName(QStringLiteral("Mixtape. "), QStringLiteral("playlist")),
+       QStringLiteral("Mixtape"));
+#else
+    eq("playlistFileName: POSIX keeps the names every earlier export already wrote",
+       LibraryPaths::playlistFileName(QStringLiteral("NUL"), QStringLiteral("playlist"))
+           + QLatin1Char('|')
+           + LibraryPaths::playlistFileName(QStringLiteral("Mixtape. "), QStringLiteral("playlist")),
+       QStringLiteral("NUL|Mixtape. "));
+#endif
+    eq("playlistFileName: an empty name still writes a file somebody can find",
+       LibraryPaths::playlistFileName(QString(), QStringLiteral("playlist")),
+       QStringLiteral("playlist"));
+
     /* ---- two spellings of one file ---- */
 #ifdef Q_OS_WIN
     check(LibraryPaths::caseKey(QStringLiteral("E:/Music/A.MP3"))
@@ -488,6 +511,34 @@ static int runPathsSelfTest() {
                   .trimmed()
               == QLatin1String("A.mp3"),
           "decode: a CRLF playlist still yields the path and nothing else");
+    /* Notepad's retired "Unicode" save and PowerShell's -Encoding unicode write
+     * UTF-16 with a BOM.  Decoded as anything else every entry arrives with a NUL
+     * between its characters, matches no library row, and the import answers with
+     * a count of misses about a playlist that named nothing at all. */
+    {
+        const QString name = QString::fromUtf8("\xE5\x91\xA8\xE6\xB8\xB8")
+                             + QStringLiteral(" - Track.mp3\n");
+        const auto toUtf16 = [](const QString &text, bool bigEndian) {
+            QByteArray out;
+            for (qsizetype i = 0; i < text.size(); ++i) {
+                const ushort unit = text.at(int(i)).unicode();
+                const char low = char(unit & 0xFF);
+                const char high = char((uint(unit) >> 8) & 0xFF);
+                out.append(bigEndian ? high : low);
+                out.append(bigEndian ? low : high);
+            }
+            return out;
+        };
+        const QByteArray little = QByteArray("\xFF\xFE") + toUtf16(name, false);
+        eq("decode: a UTF-16LE playlist is the playlist, not a NUL between every character",
+           PlaylistText::decode(little), name);
+        const QByteArray big = QByteArray("\xFE\xFF") + toUtf16(name, true);
+        eq("decode: a big-endian BOM is honoured rather than byte-swapped away",
+           PlaylistText::decode(big), name);
+        const QString back = PlaylistText::decode(little);
+        check(back.at(0) != QChar(0xFEFF) && !back.contains(QChar(0)),
+              "decode: neither the BOM nor a NUL survives into the first entry");
+    }
 
     /* ---- the video import name shares the same device-name rule ---- */
     eq("safeFilePart: an ordinary device object name is untouched",
@@ -502,6 +553,76 @@ static int runPathsSelfTest() {
        VideoIdentity::safeFilePart(QStringLiteral("NUL.wmv")),
        QStringLiteral("NUL.wmv"));
 #endif
+
+    /* ---- one path past MAX_PATH ----
+     * 260 characters is not a limit Windows still enforces, it is a limit a
+     * process opts out of: the file APIs stop refusing a long path for an image
+     * whose manifest declares longPathAware, on a machine whose registry enables
+     * long paths.  Without that declaration the library keeps working until
+     * somebody's album folder happens to sit deep enough, and then the same song
+     * is sitting there in Explorer and missing from the app.  Every component of
+     * this fixture is short enough to please the filesystem, so what is under test
+     * is the total length and nothing else. */
+    {
+        QTemporaryDir sandbox;
+        check(sandbox.isValid(), "deep: a temporary tree could be made");
+        const QString level =
+            QStringLiteral("DeepAlbumFolderLevelAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        QString deep = sandbox.path();
+        for (int i = 0; i < 6; ++i)
+            deep += QLatin1Char('/') + level;
+        const QString leaf = deep + QStringLiteral("/Distant Song.mp3");
+        check(leaf.size() > 260, "deep: the fixture really is past 260 characters");
+        const bool built = QDir().mkpath(deep);
+        bool written = false;
+        if (built) {
+            QFile song(leaf);
+            written = song.open(QIODevice::WriteOnly) && song.write("x") == 1;
+            song.close();
+        }
+        check(written, "deep: a song past 260 characters can be created and written");
+        bool read = false;
+        if (written) {
+            QFile song(leaf);
+            read = song.open(QIODevice::ReadOnly) && song.readAll() == QByteArrayLiteral("x");
+        }
+        check(read && QFileInfo(leaf).size() == 1,
+              "deep: the same song reads back through the ordinary file API");
+#ifdef Q_OS_WIN
+        /* The rest of this file talks to the disk through Qt, and Qt 6 gets a long
+         * path through on its own.  What does not go through Qt is the transcode
+         * layer: FFmpeg, LAME and SQLite all reach a file with the C runtime, and
+         * the CRT hands the path straight to kernel32, where the 260-character
+         * ceiling is lifted per executable by the manifest rather than by the
+         * registry alone.  A temporary .wmv under a deep folder is exactly the file
+         * that would teach this the hard way, mid-sync, on a machine that already
+         * enabled long paths in the registry and expects it to mean something. */
+        {
+            const std::wstring wide = leaf.toStdWString();
+            bool crtWritten = false;
+            if (FILE *f = _wfopen(wide.c_str(), L"wb")) {
+                crtWritten = std::fwrite("y", 1, 1, f) == 1;
+                std::fclose(f);
+            }
+            check(crtWritten,
+                  "deep crt: the C runtime writes a song past 260 characters");
+            char probe = 0;
+            bool crtRead = false;
+            if (FILE *f = _wfopen(wide.c_str(), L"rb")) {
+                crtRead = std::fread(&probe, 1, 1, f) == 1 && probe == 'y';
+                std::fclose(f);
+            }
+            check(crtRead, "deep crt: the same song reads back through the C runtime");
+        }
+#endif
+        int handedOver = 0;
+        const auto walked = LibraryScan::walkFiles(
+            deep, QDir::Files | QDir::NoDotAndDotDot,
+            [&handedOver](const QFileInfo &) { handedOver++; });
+        check(handedOver == 1 && walked.files == 1 && walked.complete,
+              "deep: the watch-folder walk reaches it and certifies the root");
+        QDir(sandbox.path()).removeRecursively();
+    }
 
     /* ---- one watch folder, walked exactly once ----
      * A Windows junction reports itself as an ordinary directory - a plain

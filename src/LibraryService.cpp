@@ -1,4 +1,5 @@
 #include "LibraryService.h"
+#include "ThreadDrain.h"
 #include "PathText.h"
 #include "ProfilePaths.h"
 
@@ -755,10 +756,8 @@ void LibraryService::ensureGvfsMounts() {
 
 LibraryService::~LibraryService() {
     m_scanner->cancel();
-    m_scanThread.quit();
-    m_scanThread.wait(5000);
-    m_matcherThread.quit();
-    m_matcherThread.wait(5000);
+    Zuuned::drainThread(m_scanThread, "scanner", 3);
+    Zuuned::drainThread(m_matcherThread, "matcher", 3);
     delete m_db;
 }
 
@@ -2193,11 +2192,14 @@ QString LibraryService::exportPlaylistsM3U() {
     int written = 0;
     for (const QVariant &pv : std::as_const(m_playlists)) {
         const QVariantMap p = pv.toMap();
-        QString name = p.value(QStringLiteral("name")).toString();
-        name.replace(QRegularExpression(QStringLiteral("[/\\\\:*?\"<>|]")),
-                     QStringLiteral("_"));
-        if (name.isEmpty())
-            name = QStringLiteral("playlist");
+        // One name the user typed becomes one filename, and that rule belongs
+        // beside the others in LibraryPaths: the local character set used to let a
+        // trailing dot or space through, where Explorer drops both and two
+        // playlists export onto one file, and let a playlist called NUL through as
+        // a file that writes happily and never opens again.
+        const QString name = LibraryPaths::playlistFileName(
+            p.value(QStringLiteral("name")).toString(),
+            QStringLiteral("playlist"));
         QFile f(dir + QLatin1Char('/') + name + QStringLiteral(".m3u8"));
         if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
             continue;

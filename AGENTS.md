@@ -1216,5 +1216,52 @@ contains spaces, so it must arrive as one quoted argv element — passed unquote
 `qaDeviceSpec` returns null, nothing runs, and the launch looks ordinary. Not fixed, and
 recorded as a gap: the audiobook import walk at `src/spoken/SpokenMediaService.cpp:1123`,
 and the `MAX_PATH` ceiling that now also bounds folder depth (no `longPathAware` manifest
-entry). Scope claims are otherwise unchanged: one hand-tested Pavo Zune HD, still no
+entry). The manifest half of that sentence is closed by the entry below; the audiobook walk
+is still open. Scope claims are otherwise unchanged: one hand-tested Pavo Zune HD, still no
 deletion, and nothing listened to on the player.
+
+**2026-10-21 Windows long-path manifest, playlist naming, UTF-16 m3u:** three gaps the
+entry above recorded as gaps are closed, and one of them was load-bearing in a place nobody
+was looking. `longPathAware` is opted out of per executable and nowhere else -
+`LongPathsEnabled` alone is necessary and not sufficient - so
+`packaging/windows/zuuned.manifest` now goes to all six Windows executables through
+`zuuned_long_paths()` (`CMakeLists.txt:166`). CMake has to be told `/MANIFEST:NO` before it
+will accept one: CMake writes its own `CMakeFiles\<tgt>.dir\embed.manifest`, two manifests
+collide on resource ID 1, and the link dies in `cvtres` with `CVT1100` then `LNK1123`,
+which is why that file is a whole manifest with `asInvoker` in it rather than a fragment
+and why every link is confirmed by reading resource 1 back with `mt.exe`. Measured rather
+than assumed, because the obvious test answers wrong: `QFile`, `QDir` and
+`LibraryScan::walkFiles()` reach a path past 260 characters with the declaration absent,
+`_wfopen()` reaches it only with it - and FFmpeg, LAME and SQLite all arrive at a file
+through the C runtime, so a gate written only against Qt would have concluded the
+declaration buys nothing. `librarytool paths` is 52 checks, all passing (the thirteen new
+ones: three `playlistFileName:`, three UTF-16 `decode:`, five `deep:`, two `deep crt:`),
+`names` 17 and `customize` 21 pass, `tests/win-compat` is 184 checks / 0 failures / 0
+skips. `tests/win-usability` had to be repaired first: a re-run of it caught the app
+aborting on its way out (`0xC0000409`, last log line `[qt.fatal] QThread: Destroyed while
+thread '' is still running`) because `~DeviceService` bet five seconds on the device worker
+and then destroyed a running `QThread` anyway, which Qt makes fatal;
+`Zuuned::drainThread()` (`src/ThreadDrain.h`, used by `~LibraryService` too) waits a worker
+out and says how long it is waiting, and the gate then answers launches=17 checks=95
+failures=0 skips=0 killed=0 `OVERALL=ok` on the rebuilt binary. Shutdown rule for any new
+worker thread: never destruct a running `QThread` - drain it. The audio round trip repeated
+on the same build (`SineQA1021C`: `add added=1`, `forge done: 1 ok, 0 failed`, `sync-
+summary tracks=1 failed=0`, device 192 -> 193, `download-saved ... ok=true`, payload
+193,723 bytes with no differing byte, the firmware appending its own 128-byte ID3v1).
+`LibraryPaths::playlistFileName()` replaces the export's hand-rolled rule on Windows only -
+a playlist called `NUL`, and the trailing dot or space that folded two playlists onto one
+`.m3u8` - and spells the old rule out on POSIX so every existing Linux export keeps its
+filename byte for byte; `PlaylistText::decode()` honours a UTF-16 BOM in either byte order,
+ahead of the UTF-8 test. Harness discipline, learned the confusing way: the profile-
+isolation pair in `tests/win-usability` compares the *real* profile before and after, so a
+`zuuned.exe` left running from an earlier check makes it fail truthfully (`Qt pipeline
+cache stayed out of the real profile`) while the sibling check for the gate's own processes
+passes. Close the app before that gate and restart it after, per the handoff rule at the
+top of this file. Still one hand-tested Pavo Zune HD, still no deletion, nothing listened
+to on the player, and the audiobook import walk at `src/spoken/SpokenMediaService.cpp:1123`
+plus the 255-character component limit in `safeComponent()` stay open gaps, and
+`~SpokenMediaService` waits its worker out with no bound at all - it cannot abort, but it
+can hold a closed window open. Closing the window with a device operation in flight now
+waits up to twenty seconds for it and exits 0, where it used to abort; a worker still
+running after twenty-five seconds is terminated, which is a bound this repository chose
+over a crash dialog and has not hardware-tested mid-transfer.

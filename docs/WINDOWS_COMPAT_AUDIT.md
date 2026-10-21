@@ -366,6 +366,120 @@ Three consequences are worth pinning down because none of them is visible in the
   (see the manifest entry below).  Depth 41 is where the loop used to stop, and it is also
   where a genuinely 41-level album tree still stops.  Same ceiling, different fix.
 
+## Fifth sweep: the manifest a process opts out of `MAX_PATH` with, and two names
+
+Nothing new broke. This sweep closed three findings the earlier sweeps wrote down and left
+open on purpose, on the theory that a recorded gap is only honest until somebody has the
+afternoon.
+
+**`MAX_PATH` is opted out of in the executable's own manifest, and nowhere else.**
+`FileSystem\LongPathsEnabled` is necessary and not sufficient: the file APIs lift the
+260-character ceiling for an image that declares `longPathAware`, and for no other.  Nothing
+built here declared it, so a machine whose owner had already enabled long paths - and expects
+that to mean something - still held songs in Explorer that the library never saw.
+`packaging/windows/zuuned.manifest` declares it, and `zuuned_long_paths()`
+(`CMakeLists.txt:166`) gives it to all six executables rather than to the app alone: the
+library CLI, the transcode CLI and the app reach the same folders through the same C runtime,
+so one of them declaring it is not the same as all of them doing so.
+
+Two facts about that link, each bought with a build that did not happen.
+
+- `/MANIFEST:EMBED /MANIFESTINPUT:` on its own does not work with CMake, and the failure
+  does not look related to the cause.  CMake writes `CMakeFiles\<tgt>.dir\embed.manifest`,
+  `cvtres` then meets two manifests on resource ID 1, and the link dies with `CVT1100
+  duplicate resource MANIFEST` followed by `LNK1123`.  Dropping a foreign `*.manifest` in the
+  intermediate directory does nothing: CMake's `vs_link_exe` mt step does not see it, so
+  there is no manifest to append to.  `/MANIFEST:NO` is the switch CMake reads *before* it
+  generates one, which is why the file in `packaging/windows/` is a whole manifest - the
+  `asInvoker` `trustInfo` and `uiAccess="false"` included - and not a fragment.  It follows
+  that nothing else in the build describes the manifest any more, so all six images are read
+  back after the link with `mt.exe -inputresource:"build\zuuned.exe;#1" -out:manifest.xml`:
+  one manifest each, `asInvoker`, `longPathAware=true`.
+- Whether the declaration is load-bearing was measured, and the obvious experiment answers
+  the wrong question.  The `deep:` checks in `librarytool paths` build a fixture past 260
+  characters; on this machine `QFile`, `QDir` and `LibraryScan::walkFiles()` each reach it
+  **with the declaration absent**.  What fails without it is `deep crt:`, which writes that
+  same file with `_wfopen()` and hands kernel32 the path unchanged.  The C runtime is where
+  FFmpeg, LAME and SQLite live, and a transcode temporary is exactly the deep file a sync
+  writes mid-transfer.  A gate written only against Qt would have concluded that the manifest
+  buys nothing.
+- `deep crt:` runs *inside* the declared binary, so it is the regression guard and not the
+  proof.  The proof is a pair outside the tree: two copies of a 36-line C probe, one linked
+  with this manifest and one with the default, run against the same 356-character file that
+  the declared one had just created, on a machine reporting `LongPathsEnabled` = 1.  The
+  undeclared binary answers `_wfopen()` with `ERROR_PATH_NOT_FOUND` (3) and `errno 2`; the
+  declared one writes it and reads `z` back.  Same path, same file, same registry - the only
+  difference is the resource the linker embedded.
+
+**A playlist called `NUL` exported to a file nobody can reopen, and `Mixtape.` trampled
+`Mixtape `.**  `LibraryService::exportPlaylistsM3U()` carried a shorter rule than the rest of
+the app: it replaced the eight characters it knew about and let a trailing dot or space
+stand, which Explorer drops, so two playlists wrote onto one `.m3u8` and one of them quietly
+won.  `LibraryPaths::playlistFileName()` (`src/library/LibraryPaths.h:182`) is that rule with
+both holes closed, and it takes `safeComponent()` on Windows only.  POSIX keeps the old
+inline set spelled out in the same function, because a colon is a character in a Linux
+filename and renaming a year of somebody's existing exports to fix a bug that platform cannot
+have is not a fix; the `#else` branch of the gate says exactly that.
+
+**UTF-16 m3u is decoded.**  `FF FE` and `FE FF` are honoured in `PlaylistText::decode()`
+(`src/library/PlaylistText.h:72`), ahead of the UTF-8 validity test - the only order that
+works, since `FE FF` inside a longer file is nobody's signal and `fromLocal8Bit()` turns
+either BOM into two letters of the active code page and calls it a filename.  A big-endian
+body is swapped byte by byte rather than entrusted to `QString::fromUtf16()`, whose reading
+depends on the order the build happens to use.  Still unread, deliberately: UTF-16 with no
+BOM, which cannot be told apart from a byte pair that happens to look like text, and UTF-32,
+which no playlist writer in the wild produces.
+
+`librarytool paths` is now 52 checks, up from 39: three `playlistFileName:`, three UTF-16
+`decode:`, five `deep:` and the two `deep crt:` that settle the manifest question.
+
+## Shutdown: a `QThread` destroyed while its thread was still running
+
+The fifth pass wrote `tests/win-usability` down as green, and a re-run of it minutes later on
+the same binaries answered `failures=14`.  That was not the gate being flaky.  It was a crash
+on close that had been in the application longer than this port has existed, and the Zune HD
+attached to this machine made it reproducible.
+
+- The exit code is the lead, so it was searched rather than argued with: `-1073740791` is
+  `0xC0000409`, `STATUS_STACK_BUFFER_OVERRUN`, which is also how `abort()` leaves a Windows
+  process under `__fastfail`.  The Application event log named `Qt6Core.dll 6.11.0.0`, which
+  points at `qFatal` rather than at a memory bug, and the last line of every affected session
+  log read `[qt.fatal] QThread: Destroyed while thread '' is still running`.  Qt makes
+  destroying a running `QThread` fatal deliberately, and it names the thread by object name -
+  which no worker in this app carries - so the message alone does not say which thread; the
+  repro does.
+- The site was `DeviceService::~DeviceService()`: `m_workerThread.quit()`, `wait(5000)`,
+  then the member destructor whether or not the wait answered yes.  `quit()` cannot recall a
+  thread that is already inside a call, and the call here is libzune.  The session logs say
+  why five seconds were not enough: `[libusb] bulk_write failed: ep=0x01 err=Operation timed
+  out`, then `open_session: failed to send command`, then `OpenSession dead - resetting
+  device and retrying`, the documented wedge on this hardware, and that retry outlasts the
+  bet.  Fifteen of the seventeen launches in the failed run were inside it when the window
+  was closed; the two that exited cleanly had already finished theirs.
+- Nothing to do with the manifest, playlist naming or UTF-16.  The same destructor runs
+  unchanged on Linux, where a responsive device usually wins those five seconds: the port
+  inherited the race rather than creating it, and what caught it is the gate that closes
+  windows the way a user does.
+
+`src/ThreadDrain.h` is the repair, and it is one function.  `Zuuned::drainThread()` asks the
+loop to quit, waits in five-second slices, prints which worker it is still waiting for, and
+after twenty-five seconds stops the thread itself - the same last resort `UsbWatcher::stop()`
+already uses - because a stopped thread may be destroyed and a running one costs the process.
+`~DeviceService` uses it for the device worker, and `~LibraryService` for the scanner and
+matcher threads, which held the same five-second bet.
+
+Measured here with the Zune HD attached: four launches into a seeded profile, closed eleven
+seconds in, gave four exit codes of `0` and a log reading `[device] worker still busy at
+shutdown, waited 5s` then `waited 10s` before `[libusb] closed`.  In the re-run of the
+whole gate, every launch log but one carried the three lines, running to `waited 15s`, and
+none of the 17 launches produced a fatal; the run immediately before that one logged 15 of
+17, because how many launches are still inside a device operation when their window closes
+is what the device happened to be doing.  The cost is stated in the open rather than
+hidden: a polite close now takes up to twenty seconds while a device operation finishes,
+and a worker still running after twenty-five is terminated instead of taking the app down.
+Neither is what anybody wants to wait for; both are better than a crash dialog from an app
+that already looked closed.
+
 ## What is proven, and by which gate
 
 - `tests/win-usability/watch_folder_repair.py` seeds four roots - a `/E:/` scar, a
@@ -383,9 +497,19 @@ Three consequences are worth pinning down because none of them is visible in the
   from the Win32 documentation.
 - `tests/win-compat` and `tests/win-usability` are source and runtime gates;
   neither opens a USB handle.  The compat gate is currently 184 checks.
-- `build\librarytool.exe paths` is 39 checks over the helpers above, and
+- The profile-isolation pair in `tests\win-usability` reads the *real* profile before and
+  after the run, so it gates the gate: it is only valid while nothing else is using that
+  profile.  One run taken with a `build\zuuned.exe` left open from an earlier check failed on
+  `the real profile gained no file while the gate ran` and `Qt pipeline cache stayed out of
+  the real profile`, while its own sibling check `no process this gate started wrote into the
+  real profile` passed - the running application's own `qqpc_opengl` cache entry, 4,120
+  bytes, and a true observation about the wrong subject.  With the application closed the
+  same gate returned `launches=17 checks=95 failures=0 skips=0`, `OVERALL=ok`.  Read that
+  failure as designed rather than as flaky: it is the check in the suite that would notice a
+  launch escaping its profile, and it noticed.
+- `build\librarytool.exe paths` is 52 checks over the helpers above, and
   `names`/`customize` still pass on the same build.  All three ran here, against the
-  executables produced by `cmake --build build --clean-first`.  Eleven of those 39
+  executables produced by `cmake --build build --clean-first`.  Eleven of those 52
   checks are the fourth sweep's walk above, and they build their own junction rather
   than assume one: `mklink /J` inside a `QTemporaryDir`, which is the only reason the
   case is testable from an unprivileged account at all.  They assert that the three
@@ -427,7 +551,7 @@ Three consequences are worth pinning down because none of them is visible in the
 
 ## Not re-checked by this sweep, and what it would take
 
-Two findings were left as findings on purpose, because the honest fix is bigger than
+Three findings are left as findings on purpose, because the honest fix is bigger than
 the defect and pretending otherwise would put an unverified claim in the tree.
 
 - **Four libzune entry points still build POSIX command lines, and none of them is
@@ -448,20 +572,6 @@ the defect and pretending otherwise would put an unverified claim in the tree.
   (`libzune/src/util.c:712`) is not compiled on Windows at all.  Patching the shell
   sites would mean patching code nobody has run here; whoever wires one up meets
   this first.
-- **`zuuned.exe` has no `<longPathAware>` in its embedded manifest.**  Dumped with
-  `mt.exe -inputresource:"build\zuuned.exe;#1" -out:manifest.xml`, it contains
-  `asInvoker` and nothing else.  So the C layer escapes the 260-character limit -
-  that is what the `\\?\` prefix in `compat/win/wincompat.c` buys - while the Qt/C++
-  side (scanner, artwork cache, database, exports) stays capped unless the machine
-  sets `LongPathsEnabled`.  A deep album folder on a long drive name is the failure
-  this leaves live.  The fix is a manifest input, which has to be verified by
-  relinking and running the app:
-  `target_link_options(zuuned PRIVATE /MANIFEST:EMBED
-  /MANIFESTINPUT:packaging/win/zuuned.manifest)`, keeping the existing `asInvoker`
-  block, then re-dumping the resource to confirm the entry landed.  Deliberately not
-  shipped unverified.  Since the fourth sweep this also bounds folder depth: the
-  walk stops where a path stops being openable, so a library nested deep enough is
-  scanned partially and, correctly, reports itself incomplete.
 - The asymmetry the fourth sweep started on is still true and is now worked around
   rather than depended on: `QFileInfo::isSymLink()` does not report a Windows junction,
   although the shim's own `lstat()` classifies `IO_REPARSE_TAG_MOUNT_POINT` as
@@ -475,18 +585,6 @@ the defect and pretending otherwise would put an unverified claim in the tree.
   on Windows and the save still reports a plain failure.  Truncating a name is a
   visible change to a user's folder layout and needs a collision rule with it, which
   is a bigger decision than this sweep.
-- **Playlist export names the file with its own hand-rolled rule.**
-  `LibraryService::exportPlaylists()` replaces the illegal set but not a reserved stem
-  or a trailing dot/space, so a playlist called `NUL` exports to a file nobody can
-  reopen.  Routing it through `safeComponent()` would fix that and would also rename
-  existing Linux exports, whose names contain characters Linux allows and the inline
-  rule did not, so the directory would fill with both old and new spellings.  Left as
-  it is, deliberately.
-- **UTF-16 m3u is still not decoded.**  Notepad's retired "Unicode" option writes
-  `FF FE` and interleaves a NUL through every entry; `PlaylistText::decode()` takes it
-  for bytes in some code page and every entry comes back missing.  The export this app
-  writes, Notepad's current default, WMP and iTunes are all covered; this is the one
-  spelling that is not.
 
 ## Known gaps, on purpose
 
@@ -501,6 +599,18 @@ the defect and pretending otherwise would put an unverified claim in the tree.
   `MAX_PATH` ceiling, not reproduced here.  It is one folder a user picked a moment ago
   rather than a watch folder revalidated forever, which is why this one is left; routing
   it through `LibraryScan::walkFiles()` is the fix, next time spoken import is open.
+- The spoken worker is drained with no bound at all.  `SpokenMediaService::shutdown()` runs
+  on `aboutToQuit` and posts itself to the worker through
+  `Qt::BlockingQueuedConnection`, and `~SpokenMediaService` follows it with
+  `QThread::wait()` carrying no timeout, so a close that lands during a podcast download
+  or a chapter encode blocks there until the job answers rather than exiting.  It is the
+  same family as the abort above and the opposite failure: it never reaches
+  `QThread: Destroyed while thread`, because it never gets as far as the destructor, and
+  what a user sees is a window that closed with the process still in Task Manager.
+  Left deliberately.  The bound `Zuuned::drainThread()` uses ends in `terminate()`, which
+  here would stop a thread in the middle of a serialized spoken transfer, and the
+  spoken-media rules say that ownership is not this sweep's to break.  Reasoned from the
+  two calls, not reproduced against a live transfer.
 - Case-insensitive dedup below the drive letter: see the reasoning above.
 - UNC roots are produced for `file://host/share` on Windows and are untested
   against a real share; the code path is unit-probed, not device-probed.

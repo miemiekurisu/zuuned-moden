@@ -1,5 +1,6 @@
 #include "DeviceService.h"
 #include "ProfilePaths.h"
+#include "ThreadDrain.h"
 #include "TrackImportPath.h"
 #include "DevicePlaylistState.h"
 #include "UsbWatcher.h"
@@ -233,8 +234,7 @@ DeviceService::~DeviceService() {
     if (m_watcher) m_watcher->stop();
     if (m_connected)
         emit workerSever();
-    m_workerThread.quit();
-    m_workerThread.wait(5000);
+    Zuuned::drainThread(m_workerThread, "device");
 }
 
 void DeviceService::onZuneArrived() {

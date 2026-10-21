@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <!-- The whole manifest, not a fragment.  A Windows target asks for this file
+       with /MANIFEST:NO so CMake stops writing one of its own (two manifests land
+       on resource ID 1 and cvtres fails the link), which means everything the
+       application used to get from CMake's generated manifest has to be here. -->
+
+  <!-- No elevation, no UIAccess: what this app has run under since the first
+       build, spelled out now that nothing else spells it out. -->
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <!-- Long paths are opt-in per executable: Win32 only lifts the 260-character
+       ceiling for an image that declares this, and only on a machine whose
+       FileSystem\LongPathsEnabled value allows it.  Declaring it costs a library
+       folder nothing and spares the next one from silently holding songs the app
+       cannot see. -->
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+</assembly>

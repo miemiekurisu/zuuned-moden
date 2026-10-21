@@ -144,6 +144,34 @@ if(WIN32)
         "$<$<COMPILE_LANGUAGE:C>:/utf-8>" ${ZUUNED_SHIM_FLAGS})
 endif()
 
+# A Windows process opts out of MAX_PATH in its own manifest, and nowhere else:
+# the file APIs lift the 260-character ceiling only for an image that declares
+# longPathAware, and only on a machine whose registry allows long paths at all.
+# An app without the declaration has a music folder whose songs sit in Explorer
+# and stay missing from the library - the kind of bug that reads as a corrupt file
+# until somebody copies the same folder one level shallower.
+#
+# The manifest belongs to the linker, but CMake insists on supplying one for every
+# Windows target, and two manifests cannot share resource ID 1: the link dies in
+# cvtres with a duplicate MANIFEST resource, and the /MANIFEST:EMBED that carries
+# ours makes CMake's own /MANIFESTFILE argument evaporate.  /MANIFEST:NO is the
+# switch CMake reads before it generates anything, so the target takes the whole
+# manifest - the asInvoker trustInfo included, which is why the file is not a
+# fragment.  Every Windows executable takes it rather than only the app: the
+# transcode CLI, the library gate and the app reach the same folders through the
+# same C runtime, so one of them declaring it is not the same as all of them
+# doing so.  One function keeps six link lines from drifting apart.
+set(ZUUNED_WINDOWS_MANIFEST ${CMAKE_CURRENT_LIST_DIR}/packaging/windows/zuuned.manifest)
+
+function(zuuned_long_paths target)
+    if(WIN32 AND MSVC)
+        set_property(TARGET ${target} APPEND_STRING PROPERTY LINK_FLAGS " /MANIFEST:NO")
+        target_link_options(${target} PRIVATE
+            "/MANIFEST:EMBED"
+            "/MANIFESTINPUT:${ZUUNED_WINDOWS_MANIFEST}")
+    endif()
+endfunction()
+
 # ---- libzune ----
 set(LIBZUNE_DIR ${CMAKE_SOURCE_DIR}/libzune)
 
@@ -211,6 +239,7 @@ qt_add_executable(zuuned
     src/AppSettings.h
     src/ProfilePaths.h
     src/PathText.h
+    src/ThreadDrain.h
     src/diagnostics/SessionLog.cpp
     src/diagnostics/SessionLog.h
     src/diagnostics/Redactor.cpp
@@ -496,6 +525,7 @@ add_executable(devicetool src/devicetool.cpp)
 target_link_libraries(devicetool PRIVATE zuuned_presence Qt6::Core ${LIBUSB_LIBRARIES}
     ${ZUUNED_WINCOMPAT})
 target_include_directories(devicetool PRIVATE ${LIBUSB_INCLUDE_DIRS})
+zuuned_long_paths(devicetool)
 
 # ═══════════════════════════════════════════════════════════════════
 # Phase 2: transcode layer (transcode/) — shared C logic with the mac
@@ -533,6 +563,7 @@ if(WIN32)
 else()
     target_link_libraries(transcodetool PRIVATE zuuned_transcode)
 endif()
+zuuned_long_paths(transcodetool)
 
 # Private spoken-media foundation. Reusable worker-only parsers; the inspection
 # harness is a developer target, never an AppImage payload or runtime dependency.
@@ -545,6 +576,7 @@ target_link_libraries(zuuned_spoken PUBLIC Qt6::Core
     PRIVATE ${FFMPEG_LIBRARIES} ${ZUUNED_WINCOMPAT})
 add_executable(spokenmediatool src/spoken/spokenmediatool.cpp)
 target_link_libraries(spokenmediatool PRIVATE zuuned_spoken ${ZUUNED_WINCOMPAT})
+zuuned_long_paths(spokenmediatool)
 
 # ═══════════════════════════════════════════════════════════════════
 # Phase 3: library core CLI gate (librarytool) — scans a folder into a
@@ -572,6 +604,7 @@ target_link_libraries(librarytool PRIVATE
     ${FFMPEG_LIBRARIES}
     ${ZUUNED_WINCOMPAT}
 )
+zuuned_long_paths(librarytool)
 
 # ═══════════════════════════════════════════════════════════════════
 # Phase 4: music playback core (src/player/) — MpvController (libmpv
@@ -602,6 +635,8 @@ if(NOT WIN32)
     )
 endif()
 target_include_directories(zuuned PRIVATE src/player ${MPV_INCLUDE_DIRS})
+zuuned_long_paths(zuuned)
+
 if(WIN32)
     target_link_libraries(zuuned PRIVATE ${MPV_LIBRARIES} Qt6::OpenGL)
 else()
@@ -619,6 +654,7 @@ target_link_libraries(playertool PRIVATE
     ${MPV_LIBRARIES}
     ${ZUUNED_WINCOMPAT}
 )
+zuuned_long_paths(playertool)
 
 # ── Install (E3 ship mechanics) ──
 include(GNUInstallDirs)

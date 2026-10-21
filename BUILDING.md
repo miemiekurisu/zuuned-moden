@@ -116,6 +116,26 @@ vcpkg DLLs next to every executable. Run `windeployqt` in `build` for the Qt
 runtime and copy the FFmpeg `bin` DLLs plus `libmpv-2.dll` beside the
 executable.
 
+Every Windows executable built here embeds `packaging/windows/zuuned.manifest`, through
+`zuuned_long_paths()` (`CMakeLists.txt:166`). That file is what opts the process out of
+`MAX_PATH`: `longPathAware` lifts the 260-character ceiling for the image that declares it
+and for no other, and the listener that matters is the C runtime - the route FFmpeg, LAME
+and SQLite take to a file, and therefore the route a transcode temporary takes during a
+sync.  CMake supplies a manifest of its own for every Windows target and two cannot share
+resource ID 1, so the target first passes `/MANIFEST:NO` to stop CMake generating one,
+which means this file has to be complete - the `asInvoker` `trustInfo` included - and not a
+fragment. Nothing else in the build describes that resource afterwards, so a link is
+confirmed by reading it back:
+
+```powershell
+& 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\mt.exe' `
+  '-inputresource:build\zuuned.exe;#1' '-out:manifest.xml'
+```
+
+Expect exactly one manifest, `level="asInvoker"`, `longPathAware` true. Two of those checks
+in `librarytool paths` (`deep crt:`) fail when the declaration is missing, so the pair is the
+gate that says the manifest is still doing something.
+
 Two build-hygiene facts cost time on 2026-10-21 and are worth having written down.
 Building without the MSVC environment loaded in the *same* shell does not fail the way
 you expect: instead of `LNK1104: ws2_32.lib` it emits around a hundred impossible
@@ -180,10 +200,13 @@ The bash suites in `ci/check.sh` need pkg-config and a POSIX shell, so on
 Windows the library core is covered by the native tools instead:
 `build\librarytool.exe names`, `build\librarytool.exe customize` (the latter
 rebuilds a pre-Customize database and runs the real v0/v2 to v9 migration chain,
-including the pre-migration backup) and `build\librarytool.exe paths` - 39 checks
+including the pre-migration backup) and `build\librarytool.exe paths` - 52 checks
 over the filename, path-comparison, playlist-resolution and playlist-decoding rules
 the Windows port depends on plus the once-only rule for a watch folder that contains
-a junction, with the expectations branched per platform so the same file gates a
+a junction, the reserved-stem and trailing-dot rule a playlist export needs, m3u written
+in UTF-16 with a BOM, and one path past 260 characters written twice - once through Qt
+and once through `_wfopen()`, which is the pair that pins the embedded manifest,
+with the expectations branched per platform so the same file gates a
 Linux run without changing a Linux answer. All three pass; none touches a
 device, and all three run inside `tests\win-usability\run.ps1`'s tools phase.
 
