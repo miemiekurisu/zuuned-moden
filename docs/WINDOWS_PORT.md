@@ -785,6 +785,106 @@ Windows, and the upload and download gates were not re-run because the player is
 the state the pass above describes.  `ffmpeg` is still not bundled, so on a machine without
 it on `PATH` Method 2 fails exactly as it always did.
 
+## The ninth pass: a send the firmware counted, and the wedge that followed (2026-10-21)
+
+Nothing in `src/` moved for this pass.  It is a re-proof of the upload on one
+`cmake --build build --clean-first` of `021d40c`, run serially, because the fifth pass
+already recorded what happens when two gates share a sitting.  That binary:
+`tests\win-compat` 201 checks / 0 failures / 0 skips, `librarytool paths`, `names` and
+`customize` each `ALL PASS (0 failures)`, `tests\win-usability` `OVERALL=ok`.
+
+The upload gate read `add added=1 duplicates=0 onDevice=0 rejected=0 ambiguous=0`, then
+`[libzune] created album "Windows Roundtrip 1021F" by "ZuunedQA" (1 tracks,
+id=100663574)`, then `[sync] forge done: 1 ok, 0 failed` and
+`[qa-device] sync-summary elapsedMs=1665 tracks=1 videos=0 photos=0 skipped=0 failed=0`,
+closed by `[libzune-finalize] trying CleanDataStore (0x9108)...`.  Every one of those is
+the host talking about itself.  What is not came after the ladder reconnected: the same
+session that had read the player's media database as `scanned: 193 tracks, 0 videos, 0
+photos, 19 albums, 12 artists` read it again as `scanned: 194 tracks, ... 20 albums`.
+That line is `libzune/src/zmdb.c` parsing the Zune's own database over vendor opcode
+0x1792, so the count belongs to the firmware, after its own re-index, of an album this
+repository put there.  It is the half of an upload that an ok can fake and a readback
+cannot.
+
+Eleven lines later the wedge came back on its own.  Last success is that device library
+scan; the first failure is the video handle query inside the same reconnect.  The log
+carries 20 `all thumbnail methods failed`, 20 `bulk_write failed: ep=0x01 err=Operation
+timed out`, 16 `prop 0xDC86` misses and 5 `get_object_handles: failed`, and a second
+process printed the seventh pass's ladder line for line, including
+`device reset returned 0 (reported success)`.
+
+With the application shut down a scratch libusb probe asked what the device was actually
+doing, and none of this is committed code:
+
+- `claim_interface` answered 0 and `get_configuration` answered 0 with `cfg=1`.  The
+  interface is ours and the device is configured; nothing is contending for it.
+- The interrupt pipe was holding one 24-byte container, `18 00 00 00 04 00 0c 40 00 00
+  00 00 01 00 01 00 00 00 00 00 00 00 00 00`: a device event, type 0x0004, code 0x400C.
+  libzune names no event codes anywhere in the tree, so this is recorded as bytes and
+  given no name.
+- The bulk IN pipe was holding 32 stale bytes: a `GetObjectInfo` (0x1007) data wrapper
+  for transaction 0x0000000e, an 8-byte fragment of it, then the matching response 0x2001
+  for that same transaction.  A command the application had timed out on had been
+  answered afterwards, into a pipe nobody was reading.
+- Bulk OUT still accepted a 16-byte OpenSession twice and a GetDeviceInfo once, and
+  answered none of the three.  Every class control-IN timed out, and one vendor IN
+  returned `-9 LIBUSB_ERROR_PIPE`.
+
+A responder that is still working, then, and not a device that has gone away - the same
+shape the seventh pass found.  Cause and symptom are still not separated: nothing here
+tells the PTP responder on the player wedging apart from a WinUSB pipe holding bytes
+nobody will drain, and only a power cycle has ever cleared it.  What is new is that one
+end state has now arrived twice from opposite directions, once in the middle of a send and
+once after a send that read itself back.
+
+What this pass did not do: the download half was not re-run on this binary.  The pull
+launch spent its whole patience on the OpenSession dance and never reached a device row,
+so the both-directions proof this document leans on is still the fifth pass's
+`SineQA1021C` pair.  `Windows Roundtrip 1021F` is on the player - the firmware counted it -
+and has never been read back as bytes or heard, so the Zune HD is holding the fifth pass's
+four QA albums plus one more, on hardware this repository cannot clean.
+
+## The tenth pass: the tree re-read, and two diagnostics that only told the truth on Linux (2026-10-21)
+
+A pass proves what it went looking for, so this one went looking at everything else.  The
+path and encoding questions from the earlier sweeps were asked again - recursive walkers,
+`QProcess`, environment reads, `/dev/null` and `/tmp` - and are answered by the sixth
+sweep in `docs/WINDOWS_COMPAT_AUDIT.md`.  The new question was platform `#if` symmetry:
+all 55 `Q_OS_WIN`, `Q_OS_LINUX`, `Q_OS_UNIX` and `_WIN32` hits in `src`, `transcode` and
+`compat` were read in place, and every `if(WIN32)` in `CMakeLists.txt` with them.  Most
+are a hint, a header, or a descriptor trick with the same shape on both sides.  Two were
+not.
+
+`src/diagnostics/SupportReport.cpp` enumerated the Zune on Windows and then threw the
+answer away.  The Windows branch built a `QJsonArray usb` from libusb descriptors and the
+Linux branch built the same array from sysfs, but the `info.insert` for
+`zune_usb_devices` sat at the bottom of the *Linux* branch, so a support report exported on
+Windows named no Zune at all - on the platform where the driver is the question, the
+report stayed silent about the one field that settles it.  The array is declared before the
+split and inserted once after it now, and a scratch probe over that translation unit
+prints what this machine's report really carries: `zune_usb_devices` with `vendor_id
+045e`, `product_id 063e`, bus 2, address 40.  Before the change the key did not exist.
+
+`src/diagnostics/DiagnosticsService.cpp` asked the environment for `USER` to get the name
+it redacts out of reports and session logs.  Windows spells that variable `USERNAME`, so
+here the name arrived empty and `src/diagnostics/Redactor.cpp:125` skipped its rule:
+every support report exported from this port kept the real user name in plain text while
+the home path next to it was folded to `~`.  It falls back to `USERNAME` now, and both
+halves of that are measured rather than argued - one sample line, the real `Redactor`, a
+context built the old way and a context built the new way, which come out
+`for user Kurisu Chan root ~` and `for user [user] root ~`.
+
+Neither fix gained a gate.  The redactor's rules belong to `tests/diagnostics` and
+`tests/diagnostics-report`, both bash, and the `USER`-or-`USERNAME` line lives in a file no
+CLI tool links, so the two probes above are scratch code under `build\scratch\`.  Two
+Windows-only defects, both in exactly the text a user would attach to a bug report, both
+fixed and measured on the machine that had them, neither pinned by a test.
+
+The gates were re-run on one clean rebuild carrying these two changes: `tests\win-compat`
+201 checks / 0 failures / 0 skips; `librarytool paths`, `names` and `customize` each
+`ALL PASS (0 failures)`; `tests\win-usability` 18 launches, `OVERALL=ok`, exit 0.  None of
+them exercises either fix.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and
@@ -849,7 +949,11 @@ it on `PATH` Method 2 fails exactly as it always did.
     both photo shell-outs right and gave the code-page rule a gate of its own, and neither
     one has met a player: no picture has been prepared and smuggled to a device from
     Windows, and no device thumbnail has come back through the `zune_grab_photo_thumb()`
-    fallback.
+11. The download half on a binary that carries the photo, shell and diagnostics
+    fixes.  The ninth pass re-proved the send and had the firmware count it, then
+    wedged before the pull could run, so the newest QA track is proven only as a
+    device-side library count: never read back as bytes, never compared against the
+    fixture, never heard.
 
 ## Order to close it in
 

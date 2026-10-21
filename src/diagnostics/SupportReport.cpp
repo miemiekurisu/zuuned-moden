@@ -66,12 +66,13 @@ QJsonObject systemInformation() {
     }
     info.insert(QStringLiteral("graphics_devices"), graphics);
 
+    // Enumerated one way per platform below, reported the same way on both.
+    QJsonArray usb;
 #if defined(Q_OS_WIN)
     // No sysfs on Windows.  libusb enumeration is the closest honest
     // equivalent, and descriptors alone are enough: opening a device here
     // would contend with a transfer the app may already own, so this reports
     // identity and location only - never whether the device is claimable.
-    QJsonArray usb;
     libusb_context *context = nullptr;
     if (libusb_init(&context) == 0) {
         libusb_device **found = nullptr;
@@ -94,7 +95,6 @@ QJsonObject systemInformation() {
         libusb_exit(context);
     }
 #else
-    QJsonArray usb;
     const QDir devices(QStringLiteral("/sys/bus/usb/devices"));
     for (const QString &entry : devices.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
         const QString path = devices.filePath(entry) + QLatin1Char('/');
@@ -114,8 +114,10 @@ QJsonObject systemInformation() {
         }
         usb.append(item);
     }
-    info.insert(QStringLiteral("zune_usb_devices"), usb);
 #endif
+    // Either branch may fill it, and a Windows report needs it most: the USB
+    // identity is the first thing a driver problem is answered with.
+    info.insert(QStringLiteral("zune_usb_devices"), usb);
     return info;
 }
 

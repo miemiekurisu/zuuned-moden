@@ -49,6 +49,8 @@ Redactor::Context DiagnosticsService::redactionContext() {
     Redactor::Context context;
     context.homePath = QDir::homePath();
     context.userName = qEnvironmentVariable("USER");
+    // Windows has no USER: a report exported there would keep the real name.
+    if (context.userName.isEmpty()) context.userName = qEnvironmentVariable("USERNAME");
     QSettings settings;
     const QRegularExpression secretKey(QStringLiteral("key|token|password|secret|credential"),
                                       QRegularExpression::CaseInsensitiveOption);

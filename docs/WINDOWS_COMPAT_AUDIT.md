@@ -499,6 +499,56 @@ asserted, because the phase does not reach it: nothing in the suite plays a spok
 Windows, so `m_positionId` is empty when those closes happen and the deadline protects a
 branch the harness never arrives at.
 
+## Sixth sweep: the same questions, asked again on one binary (2026-10-21)
+
+The tree went back through the reader with three narrow questions: what walks the
+filesystem, what launches a program, and what reads the environment.  The answers are a
+list now rather than a suspicion, and the third question is what surfaced the two
+asymmetric diagnostics recorded under the tenth pass of `docs/WINDOWS_PORT.md`.
+
+- **Two recursive walks, and no third.**  `LibraryScan::walkFiles()`
+  (`src/library/LibraryScanner.cpp:271`) is the bounded one and the audiobook import at
+  `src/spoken/SpokenMediaService.cpp:1145` is the exception recorded under Known gaps.
+  Everything else that lists a directory in `src` is one level deep: the two
+  `entryList()` loops at `src/diagnostics/SupportReport.cpp:57` and `:99`.
+- **Three process spawns, two of them unreachable here.**  The udev helper at
+  `src/DeviceService.cpp:1031` sits behind `udevRulesApply()`, which is false on
+  Windows, and answers with the driver instruction instead of a child process;
+  `ensureGvfsMounts()` (`src/LibraryService.cpp:752`) only fires for a path matching
+  `/run/user/N/gvfs/`, which no Windows path does.  The third is Windows-only by
+  construction: `src/library/librarytool.cpp:673` runs `cmd.exe /c mklink /J` so the
+  compat gate can build the junction that reproduces a self-containing watch folder.
+  Nothing else in the application hands a string to a shell, so there is no quoting
+  surface left to port.
+- **No POSIX-only device paths.**  No literal `/dev/null` and no `/tmp/` in any source
+  file; the single hit is prose in `tools/artwork-preview/README.md`.
+- **The shim cannot travel.**  It reaches a build only as a force-include through
+  `ZUUNED_SHIM_FLAGS` (`CMakeLists.txt:112`), and `compat/win/posix_shim.h:21` refuses
+  to compile on anything that is not Windows, so a Linux build cannot inherit it by
+  accident.
+- **Eight environment reads, all accounted for.**  Each has a named home:
+  `QT_QPA_PLATFORMTHEME` (`src/main.cpp:88`), `ZUUNED_LOCK_SUFFIX`
+  (`src/main.cpp:172`), `ZUUNED_RESCAN_ON_LAUNCH` (`src/main.cpp:362`),
+  `ZUUNED_PROFILE_DIR` (`src/ProfilePaths.h:41`) and `ZUUNED_MPV_AO`
+  (`src/player/MpvController.cpp:57`, plus the same read in
+  `src/player/playertool.cpp:52`), the two `XDG_` names at
+  `src/diagnostics/SupportReport.cpp:50`, and `USER`
+  (`src/diagnostics/DiagnosticsService.cpp:51`).  There is no `HOME`, no `TMPDIR` and
+  no `PATH` read in `src`.  `USER` is the tenth pass defect: Windows defines
+  `USERNAME`, so until that pass the redactor silently lost its name rule here.
+- **The question that paid for itself.**  For every `#if defined(Q_OS_WIN)`: does the
+  `#else` branch do more than the Windows half?  All 55 platform guards in 21 files
+  under `src`, `transcode` and `compat` were read in place.  Exactly one was
+  asymmetric, and it cost a report field rather than a compile -
+  `src/diagnostics/SupportReport.cpp` filled `zune_usb_devices` only on Linux.  The
+  other thing worth asking again came back clean: all six executables call
+  `zuuned_long_paths()` (`CMakeLists.txt` 528, 566, 579, 607, 638, 657).
+- **Where symmetry is not the same as equal detail.**  The `graphics_devices` block at
+  `src/diagnostics/SupportReport.cpp:55` runs on both platforms and simply finds no
+  `/sys/class/drm` here, and `user_can_read_write` is emitted only from the Linux
+  branch at `:112`.  A Windows report therefore says less, by omission, and the Known
+  gaps entry says as much.
+
 ## What is proven, and by which gate
 
 - `tests/win-usability/watch_folder_repair.py` seeds four roots - a `/E:/` scar, a
@@ -526,6 +576,20 @@ branch the harness never arrives at.
   same gate returned `launches=17 checks=95 failures=0 skips=0`, `OVERALL=ok`.  Read that
   failure as designed rather than as flaky: it is the check in the suite that would notice a
   launch escaping its profile, and it noticed.
+- The `compact` phase sizes the window through `winshot --move`, which speaks device
+  pixels, while the ribbon breakpoints are logical pixels.  On a desktop where the
+  window happens to open on a 150 per cent display the same request lands below the
+  breakpoints, and four ribbon checks fail while the application does exactly what it
+  was told.  Measured twice on 2026-10-21, eleven minutes apart, same executable:
+  `client 1384x1181` with the sequence
+  `compact-retired -> roomy-ribbon -> compact-retired -> roomy-ribbon` on the 100 per
+  cent screen, and `client 1650x1164` for a request of `1400x1220` - which is
+  1100x776 in the application's own units - when the window opened on the scaled one.
+  Nothing in the application is wrong in the second run; the harness asked for a size
+  it did not get.  Multiply the request by `GetDpiForWindow()`, or keep the
+  instrumented window on a 100 per cent display, and the phase stops depending on
+  which screen Qt chose.  Until then a compact-phase failure is a question about the
+  desktop, not about the ribbon.
 - `build\librarytool.exe paths` is 52 checks over the helpers above, and
   `names`/`customize` still pass on the same build.  All three ran here, against the
   executables produced by `cmake --build build --clean-first`.  Eleven of those 52
@@ -669,6 +733,16 @@ pretending otherwise would put an unverified claim in the tree.
 - `~/Music` in a log is the redactor, not a mangled path: see
   `src/diagnostics/Redactor.cpp`. It was the most convincing false lead in this
   investigation.
+- `zune_usb_devices` and the user-name redaction were both Linux-only facts until the
+  tenth pass.  `src/diagnostics/SupportReport.cpp` built the USB array on Windows and
+  inserted it only in the Linux branch, and the redaction context read `USER` at
+  `src/diagnostics/DiagnosticsService.cpp:51`, a variable Windows does not define, so
+  `src/diagnostics/Redactor.cpp` had no name to fold and exported it verbatim.  Both
+  are fixed and each was measured by hand against the real class: a report that now
+  names the attached Zune, and one line that redacts to `[user]` where it used to print
+  the account name.  Neither is pinned by a gate.  The two diagnostics suites are bash,
+  and neither file links into a CLI tool - they reach a build only through the
+  `zuuned` target.
 - Two Linux-only facts a Windows support report cannot state.  `graphics_devices`
   is read from sysfs and is empty here - nothing enumerates WMI or DXGI in its
   place - and the `st_uid == geteuid()` owner checks in
