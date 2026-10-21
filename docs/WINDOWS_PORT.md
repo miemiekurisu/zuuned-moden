@@ -681,6 +681,41 @@ before asking for the write.  The bound on the close is measured; the resume poi
 that bound is bounded by construction and is not gated, and the message that would show it
 working has never come out of a test.
 
+## The seventh pass: a reset that reported success (2026-10-21)
+
+The Zune HD arrived in the wedge this port has never had to face on Windows: it
+enumerated, `devicetool` read the devnode as `CM_PROB_NONE`, `VERDICT=agree`, and every
+bulk transfer timed out, so no `OpenSession` and no device work at all.  The interesting
+part is not the wedge.  It is that the documentation about the wedge was wrong.
+
+`packaging/windows/DRIVER_INSTALL.md` said WinUSB cannot issue a reset and that
+`libusb_reset_device()` therefore always fails.  Two probes against the live device say
+otherwise, and the difference matters: `libusb_reset_device()` **returned 0**, the handle
+reopened on the same bus address 2 / address 40, and the bulk OUT pipe went on timing out
+exactly as before.  `libusb_clear_halt()` returned 0 on both endpoints, and
+`libusb_set_configuration(1)` returned 0 six times, with the same result each time.  The
+control plane answered a device-descriptor request the whole while, and
+`libusb_get_kernel_driver_active()` returned `LIBUSB_ERROR_NOT_SUPPORTED` as it always
+does here.  Three rounds of the whole ladder, then OpenSession: still `-7`.
+
+A recovery path that reports success while doing nothing is the one result guaranteed to
+send the next reader into the wrong layer, so `zune_breach()` is changed rather than
+merely documented.  `libzune/src/device.c` keeps the ladder it has - reset, reopen, retry
+once - because that retry is both the fix on Linux and the only honest liveness probe
+available, and it adds the honesty this measurement asked for: the reset's return value
+now goes to the log, and the error that follows a failed retry says the device still
+answers enumeration but not the bulk pipes and that a power cycle is what remains.  No
+`zune_unjam()` rung was added to the ladder.  It measured useless on this wedge, and a
+rung here costs a second 10-second PTP command timeout on every connect that is going to
+fail anyway, which is a price for nothing.  The returns, the probe shape and the
+reasoning are in `libzune/docs/WINUSB_QUIRKS.md`; the driver guide's bullet is corrected
+in the same commit as the code that changes its consequence.
+
+What this pass does not do is the round trip.  Nothing was written to or read from the
+player while it was in this state, the upload and download gates were not re-run, and the
+measurement is one wedged Pavo on one machine rather than a claim about WinUSB resets in
+general.  The player needs a power cycle before any device gate can be re-run from here.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and
@@ -689,10 +724,10 @@ working has never come out of a test.
    the two responses the first reads left open, `0x200F` on `GetObject` is
    explained: the same save that added MTPZ credentials made that write succeed,
    so it was an unauthenticated save and not a refusal.  One is still unanswered,
-   `0x2002` on `GetObjectInfo(0x07000002)`, three times per scan.  WinUSB
-   cannot reset a device either, so `zune_breach()`'s recovery from an OpenSession
-   wedge does not exist here and an unplug/replug is the workaround - see the
-   driver guide.
+   `0x2002` on `GetObjectInfo(0x07000002)`, three times per scan.  The reset claim that
+   sat behind the wedge is corrected in the pass above and measured in
+   `libzune/docs/WINUSB_QUIRKS.md`: a reset on WinUSB reports success without reviving
+   anything, which is a different failure than the one this document used to describe.
 2. Audio anyone can hear.  The gate opens WASAPI for real and asserts mpv reports it
    through `current-ao`, but always muted, so samples never reach the speaker.
    Audible playback, exclusive mode, a hot-plugged or Bluetooth endpoint, and anything

@@ -256,6 +256,20 @@ identity, and that the rendered row agrees with `PathText::display()`. Gates at 
 checkpoint: `171 checks, 0 failures, 0 skips` from `tests/win-compat` and
 `launches=17 checks=94 failures=0 skips=0 killed=0` from `tests/win-usability`.
 
+**2026-10-21 Windows wedge measurement - a reset that reported success:** the Zune HD
+came back present, driver-clean (`CM_PROB_NONE`, `devicetool` `VERDICT=agree`) and deaf:
+enumeration and control transfers answered, every bulk OUT timed out, and no software
+call brought it back. Measured returns are in `libzune/docs/WINUSB_QUIRKS.md` -
+`clear_halt()` on both endpoints returns success, `set_configuration(1)` returns success
+six times, and `libusb_reset_device()` returns success with the player still on the same
+bus address. That falsifies what this repository carried in
+`packaging/windows/DRIVER_INSTALL.md`, namely that `libusb_reset_device()` always fails
+on Windows; the truth is worse, because a success code from a recovery that did nothing
+points at libzune when the fault is physical. So `zune_breach()` now logs the reset's
+return value and its failure text names a power cycle. No retry rung was added - three
+rounds of clear-halt plus reset were measured, every bulk attempt still `-7` - and the
+device round trip was not re-run in this sitting: the player needs a power cycle first.
+
 **Windows compatibility sweep, 2026-10-21:** a second whole-tree pass over the names
 the app writes and the commands it runs, after the library-root defect was closed.
 `LibraryPaths::safeComponent()` is now the only place device text becomes a file or
@@ -587,8 +601,10 @@ full, `0x02FF` = transport wounded (reset/unjam territory).
 ### Hardware quirks (learned on a real Zune 30, Keel family)
 - **OpenSession wedge:** after ~2 breach/sever cycles the device may
   stop answering OpenSession (bulk IN timeout, autopsy 0x02FF).
-  `zune_breach()` auto-resets and retries once. Manual fallback:
-  `usbreset 045e:0710`.
+  `zune_breach()` auto-resets and retries once and now prints what the reset
+  returned. On Linux the fallback is `usbreset 045e:0710`; on Windows
+  `libusb_reset_device()` reports success without reviving the player, so the
+  fallback there is a power cycle - `libzune/docs/WINUSB_QUIRKS.md`.
 - **ZLP rule:** in split header/data mode the zero-length packet decision
   uses PAYLOAD length, not container length (`ptp.c`). Wire-verified
   against the Windows 8 client. Don't "simplify" it back.

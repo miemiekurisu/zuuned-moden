@@ -143,10 +143,16 @@ to prefer if Secure Boot refuses Zadig's self-signed package.
 
 Record this before a test so a Windows failure is not filed as a libzune bug.
 
-- **No device reset.**  WinUSB cannot issue a port reset, so
-  `libusb_reset_device()` always fails and `zune_breach()`'s auto-reset-and-retry
-  after an OpenSession wedge cannot recover.  On Linux that wedge needs
-  `usbreset 045e:0710`; here the recovery is an unplug and replug.
+- **Reset is a formality, not a recovery.**  WinUSB does answer
+  `libusb_reset_device()`, and it answers with success - but that success is not a bus
+  reset.  Measured 2026-10-21 on a wedged Zune HD: the player came back on the same bus
+  address, `libusb_clear_halt()` on both endpoints answered success,
+  `libusb_set_configuration(1)` answered success six times, and the bulk OUT pipe timed
+  out through all of it (`libzune/docs/WINUSB_QUIRKS.md`).  So `zune_breach()`'s
+  auto-reset-and-retry after an OpenSession wedge cannot recover here; it now prints
+  what the reset returned and its error names the workaround, which is physical -
+  unplug and replug, or hold the power button.  On Linux the same wedge is a
+  `usbreset 045e:0710` away.
 - **Nothing to detach.**  `libusb_kernel_driver_active()` returns
   `LIBUSB_ERROR_NOT_SUPPORTED` on Windows, so libzune's detach step is skipped.
   Correct, not a bug.

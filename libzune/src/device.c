@@ -104,15 +104,27 @@ ZuneDevice *zune_breach(void) {
         /* Zune 30 (Keel) quirk, observed on Linux/libusb: after two
          * breach/sever cycles the device stops answering OpenSession
          * entirely (bulk IN times out before any data). A USB device
-         * reset revives it every time. Reset, reopen, retry once. */
+         * reset revives it every time there. Reset, reopen, retry once.
+         *
+         * The reset verdict is printed because it is not trustworthy
+         * across backends. Measured on the Windows box with a wedged Zune HD
+         * (2026-10-21): enumeration and control transfers still answered,
+         * libusb_reset_device() returned success, the handle came back on
+         * the SAME bus address, and the bulk OUT pipe was still deaf after
+         * the retry - a reset that reports success and revives nothing.
+         * Printing it is what separates "the library gave up" from "this
+         * device needs a power cycle", which is the only real fix left. */
         fprintf(stderr, "[libzune] OpenSession dead — resetting device and retrying\n");
-        dev->usb.backend->reset(&dev->usb);
+        int reset_rc = dev->usb.backend->reset(&dev->usb);
+        fprintf(stderr, "[libzune] device reset returned %d (%s)\n", reset_rc,
+                reset_rc == ZUNE_USB_OK ? "reported success" : "refused");
         dev->usb.backend->close(&dev->usb);
         usleep(1500000);
 
         memset(&dev->usb, 0, sizeof(dev->usb));
         if (zune_usb_find_device(&dev->usb) != ZUNE_USB_OK) {
-            zune_set_error("Zune did not come back after USB reset");
+            zune_set_error("Zune did not come back after USB reset - unplug and "
+                           "replug it, then connect again");
             free(dev);
             return NULL;
         }
@@ -120,7 +132,17 @@ ZuneDevice *zune_breach(void) {
         dev->ptp.abort_flag = &dev->cancel_requested;
 
         if (ptp_open_session(&dev->ptp) < 0) {
-            zune_set_error("Failed to open PTP session (even after device reset)");
+            /* The pipes and the reset each had their chance, so name what is
+             * left: the device is present and talkable-over-control, which is
+             * exactly why it still looks connected in the UI and in Device
+             * Manager, and nothing software-side brings the pipes back. */
+            zune_set_error("Failed to open PTP session: the device still answers "
+                           "USB enumeration but not the bulk pipes, and a device "
+                           "reset %s. Power-cycle the Zune - unplug and replug it, "
+                           "or hold its power button - then connect again.",
+                           reset_rc == ZUNE_USB_OK
+                               ? "reported success and changed nothing"
+                               : "was refused by the platform driver");
             dev->usb.backend->close(&dev->usb);
             free(dev);
             return NULL;

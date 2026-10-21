@@ -21,6 +21,7 @@ complete public signatures and their contracts.
 - [Public authentication setup](PUBLIC_CREDENTIALS.md): embedded-header and external-file behavior.
 - [Wire capture findings](WIRE_CAPTURE_FINDINGS.md): observed Windows-client protocol behavior.
 - [Linux testing](LINUX_TESTING.md): hardware findings and test workflow.
+- [Windows quirks](WINUSB_QUIRKS.md): what WinUSB actually answers on a wedged player, measured.
 - [Artist reuse](ARTIST_REUSE.md): `zune_forge_artist` reuses a live matching artist;
   failed inventory reads do not justify creating one, and existing duplicates are not deleted.
 - [Metadata probe](METADATA_PROBE.md): native/fallback tags and disc/year behavior.
@@ -883,6 +884,7 @@ architecture/API narratives may describe an earlier implementation.
 | [SYNC_PIPELINE.md](SYNC_PIPELINE.md) | Building a sync pipeline with libzune |
 | [VIDEO_TITLES.md](VIDEO_TITLES.md) | Video display titles and transport filenames |
 | [WHY_C.md](WHY_C.md) | Why C? |
+| [WINUSB_QUIRKS.md](WINUSB_QUIRKS.md) | Windows Zune quirks - what WinUSB answers and what it does not |
 | [WIRE_CAPTURE_FINDINGS.md](WIRE_CAPTURE_FINDINGS.md) | Wire Capture Findings — Windows 8 Zune Client Ground Truth |
 | [ZMDB_DUMP_ANALYSIS.md](ZMDB_DUMP_ANALYSIS.md) | ZMDB Dump Analysis — Zuuned Zune (Classic, ZMed v2) |
 | [ZMDB_FORMAT.md](ZMDB_FORMAT.md) | ZMDB Binary Format — Zune Media Database |
