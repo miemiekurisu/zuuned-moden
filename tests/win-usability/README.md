@@ -99,9 +99,9 @@ silent unless asked, on either platform.
 
 ## Status
 
-`run.ps1` is that gate and it is complete.  An unfiltered run makes seventeen
+`run.ps1` is that gate and it is complete.  An unfiltered run makes eighteen
 instrumented launches plus the tool, encoder, decode and profile probes and ends
-`launches=17 checks=94 failures=0 skips=0 killed=0` and `OVERALL=ok`:
+`launches=18 checks=99 failures=0 skips=0 killed=0` and `OVERALL=ok`:
 
     pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 
@@ -171,8 +171,14 @@ the seeded library (`-Only fixture,pages`).
   schema back out of it.  This phase is the regression gate for `SpokenStore` handing
   SQLite the local ANSI code page instead of UTF-8, which on a GBK machine opens a
   different file and lost every podcast and audiobook silently.
+- `spokenclose` - a podcasts page on its own seeded profile, closed through the window
+  rather than killed, because the spoken worker used to be waited on with no deadline
+  at all. The phase fails if that close logs `worker would not stop` or an abandoned
+  resume point, reads the spoken store the launch left behind back through
+  `inspect_spoken_db.py`, and prints rather than asserts how long the close took -
+  17.2 s here, nearly all of it the device worker retrying a wedged `OpenSession`.
 
-Five things it cannot certify, and does not claim to:
+Six things it cannot certify, and does not claim to:
 
 - **Nothing here drives a device.**  No USB handle is opened, and the device page is
   checked only in its healthy no-device state.  The Windows wire evidence is the hand
@@ -186,6 +192,9 @@ Five things it cannot certify, and does not claim to:
 - On a 1080p-class logical desktop the default 1280x800 window is already below
   `Theme.headroomCompactBelow`, so the compact island is the ordinary Windows view and
   the top ribbon needs an enlarged window by design.
+- Nothing here plays a spoken item, so the bounded spoken close is gated only in
+  shape: `spokenclose` proves the worker stops and the store stays readable, while
+  the resume point inside its two-second deadline has never been written by a run.
 
 Profile isolation, the piece that made any of that impossible to run honestly, is
 now in place.  Every profile-owned path in the application goes through

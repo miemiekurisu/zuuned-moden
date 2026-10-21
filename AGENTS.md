@@ -63,17 +63,19 @@ header-only edit silently links a stale object: force a full rebuild, with
 `--clean-first`, after any header-only change until that changes.
 The Windows usability gate is finished and passing:
 `pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1` reports
-`launches=17 checks=95 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
+`launches=18 checks=99 failures=0 skips=0 killed=0` and `OVERALL=ok`. It launches the
 built app once per page (music, videos, photos, podcasts, audiobooks, and the device
 page with no device attached), the five settings tabs, the header pinned at 0 and at
 1, a queue played through the compact island after a real `winshot --move` resize, the
 four command-line probes, a silent `playertool` seek, a decode pair that has to name the
 pixel format the decoder really returned, a muted
 audible `playertool` run that has to bind WASAPI, single-instance refusal, and a
-before-and-after comparison of the real profile. `-Only` takes a comma list and pairs
-a phase with `fixture` because the scratch tree is rebuilt each run. It is software
-only: it opens no USB device handle and calls no libzune function, so **no Zune has
-ever been connected to a Windows build**. The device page is certified only in its
+before-and-after comparison of the real profile, plus a podcasts page closed on a seeded
+profile so the spoken worker exit is measured, not assumed. `-Only` takes a comma list
+and pairs a phase with `fixture` because the scratch tree is rebuilt each run. It is
+software only: it opens no USB device handle and calls no libzune function, so no run
+of this gate has ever touched a Zune: **the Windows wire evidence is the hand round
+trip recorded below, not this harness**. The device page is certified only in its
 healthy no-device state, and `what is plugged in` reads presence without touching the
 device. `winshot`
 captures what a live window actually paints, `--qa-probe` makes `qml/Main.qml`
@@ -1265,3 +1267,31 @@ can hold a closed window open. Closing the window with a device operation in fli
 waits up to twenty seconds for it and exits 0, where it used to abort; a worker still
 running after twenty-five seconds is terminated, which is a bound this repository chose
 over a crash dialog and has not hardware-tested mid-transfer.
+
+**2026-10-21 Windows spoken close:** the entry above records `~SpokenMediaService`
+waiting its worker out with no bound at all, and that is closed here - the sentence
+should be read as superseded. `SpokenMediaService::shutdown()` used to hand the last
+resume-point write to its own thread over `Qt::BlockingQueuedConnection`, which has no
+deadline, and the destructor followed it with a `QThread::wait()` carrying none either,
+so a close landing during an RSS fetch, an episode download or an audiobook probe waited
+for that job as long as it liked. It is the pass above's `qt.fatal` seen from the other
+side: that one died on `QThread: Destroyed while thread`, this one never reached the
+destructor, and what a user got was a window that had closed with the process still in
+Task Manager. The write is a queued post with a two-second deadline now, printing
+`[spoken] last position not saved after 2000ms, closing anyway` when it does not land,
+and the destructor calls `Zuuned::drainThread(m_thread, "spoken", 2)`, where the `2` counts
+two five-second slices rather than two seconds. Why a `terminate()` last resort reads
+tolerable here after this file argued against it once is scope rather than nerve: nothing
+under `src/spoken/` calls libzune or holds a USB handle, the encode a spoken transfer needs
+belongs to the sync worker, and podcast and audiobook transfers are prepared there and sent
+by `SyncEngine`/`DeviceWorker` - so the worst the cut can do is abandon a feed fetch, a
+probe, a cover write or a download, and a download lands through `QSaveFile`, so an
+abandoned one never appears at the episode path and costs at most a scratch file beside it.
+`tests/win-usability` gained a `spokenclose` phase, the first thing in this repository to
+watch a spoken close rather than reason about one, and one clean rebuild answers
+`launches=18 checks=99 failures=0 skips=0 killed=0` with `OVERALL=ok`, alongside
+`librarytool paths` 52, `names` 17, `customize` 21 and `tests/win-compat` 184 checks / 0
+failures / 0 skips. What it does not prove is written down rather than inferred: the last
+resort has not fired, and no Windows gate plays a podcast or an audiobook, so the store
+that close leaves behind answers `rows=0` and the deadline bounds a branch the harness
+never arrives at. Details in `docs/WINDOWS_PORT.md` and `docs/WINDOWS_COMPAT_AUDIT.md`.

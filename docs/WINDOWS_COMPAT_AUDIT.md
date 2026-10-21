@@ -480,6 +480,25 @@ and a worker still running after twenty-five is terminated instead of taking the
 Neither is what anybody wants to wait for; both are better than a crash dialog from an app
 that already looked closed.
 
+The same shape one thread over is the spoken worker, and it is closed too.
+`SpokenMediaService::shutdown()` used to hand the last resume-point write to its own
+thread over `Qt::BlockingQueuedConnection`, and `~SpokenMediaService` used to follow it
+with a `QThread::wait()` carrying no timeout; the write is a queued post with a
+two-second deadline now, the destructor calls `drainThread(m_thread, "spoken", 2)` - the
+`2` counts five-second slices, so ten seconds after the write's two - and the miss case
+prints `[spoken] last position not saved after 2000ms, closing anyway`.  Why the last
+resort is tolerable here, after this file argued against it once, is scope rather than
+nerve: `src/spoken/` holds no libzune call and no USB handle, the encode a spoken transfer
+needs belongs to the sync worker, and podcast and audiobook transfers are prepared there
+and sent by `SyncEngine`/`DeviceWorker`, so `terminate()` could cut short a fetch, a probe,
+a cover write or a download - the last of which lands through `QSaveFile`, so an abandoned
+one never appears at the episode path and costs at most a scratch file beside it.  It
+has not fired: the `spokenclose` phase of `tests\win-usability` closes a spoken page on
+every run and no launch has logged `[spoken] worker would not stop`.  Recorded rather than
+asserted, because the phase does not reach it: nothing in the suite plays a spoken item on
+Windows, so `m_positionId` is empty when those closes happen and the deadline protects a
+branch the harness never arrives at.
+
 ## What is proven, and by which gate
 
 - `tests/win-usability/watch_folder_repair.py` seeds four roots - a `/E:/` scar, a
@@ -599,18 +618,13 @@ the defect and pretending otherwise would put an unverified claim in the tree.
   `MAX_PATH` ceiling, not reproduced here.  It is one folder a user picked a moment ago
   rather than a watch folder revalidated forever, which is why this one is left; routing
   it through `LibraryScan::walkFiles()` is the fix, next time spoken import is open.
-- The spoken worker is drained with no bound at all.  `SpokenMediaService::shutdown()` runs
-  on `aboutToQuit` and posts itself to the worker through
-  `Qt::BlockingQueuedConnection`, and `~SpokenMediaService` follows it with
-  `QThread::wait()` carrying no timeout, so a close that lands during a podcast download
-  or a chapter encode blocks there until the job answers rather than exiting.  It is the
-  same family as the abort above and the opposite failure: it never reaches
-  `QThread: Destroyed while thread`, because it never gets as far as the destructor, and
-  what a user sees is a window that closed with the process still in Task Manager.
-  Left deliberately.  The bound `Zuuned::drainThread()` uses ends in `terminate()`, which
-  here would stop a thread in the middle of a serialized spoken transfer, and the
-  spoken-media rules say that ownership is not this sweep's to break.  Reasoned from the
-  two calls, not reproduced against a live transfer.
+- The spoken worker's close is bounded, and what is left of it is on purpose: the last
+  resort in `Zuuned::drainThread()` has never fired here, and no Windows gate plays a
+  podcast or an audiobook, so neither `[spoken] last position not saved` nor the resume
+  point it protects has ever been produced by a test - the store the `spokenclose` phase
+  closes over answers `rows=0`, which is precisely why that deadline is unexercised.
+  Proving it needs a phase that plays a spoken item, which `docs/WINDOWS_PORT.md` carries
+  on its list; the shape of the close is gated, the write inside it is not.
 - Case-insensitive dedup below the drive letter: see the reasoning above.
 - UNC roots are produced for `file://host/share` on Windows and are untested
   against a real share; the code path is unit-probed, not device-probed.

@@ -260,13 +260,17 @@ function Stop-Zuuned {
     # defect because it means the app would not come down politely.
     param($Handle, [int]$Seconds = 30)
     $p = $Handle.Proc
+    $closeSeconds = 0.0
     if (-not $p.HasExited) {
+        $clock = [Diagnostics.Stopwatch]::StartNew()
         [void]$p.CloseMainWindow()
         if (-not $p.WaitForExit($Seconds * 1000)) {
             $Handle.Killed = $true
             try { $p.Kill($true) } catch { $p.Kill() }
             [void]$p.WaitForExit(5000)
         }
+        $clock.Stop()
+        $closeSeconds = [math]::Round($clock.Elapsed.TotalSeconds, 1)
     }
     $text = ($Handle.ErrTask.Result -split "`r?`n") + ($Handle.OutTask.Result -split "`r?`n")
     $code = $p.ExitCode
@@ -278,6 +282,7 @@ function Stop-Zuuned {
     return [pscustomobject]@{
         Code = $code
         Killed = [bool]$Handle.Killed
+        CloseSeconds = $closeSeconds
         Lines = @($text | Where-Object { $_ -ne '' })
     }
 }
@@ -429,6 +434,7 @@ function Invoke-Case {
         Extra = $extra
         Exit = $stop.Code
         Killed = $stop.Killed
+        CloseSeconds = $stop.CloseSeconds
         Lines = $stop.Lines
         Noise = @(Find-Noise -Lines $stop.Lines)
         QaSplash = Read-Qa -Lines $stop.Lines -Selector '\[qa\] splash '
@@ -1336,6 +1342,63 @@ if (Select-Phase 'cjkprofile') {
     Write-Host ('  note the Qt shader cache wrote ' + $cacheFile.Count + ' file(s) under the' +
         ' Han folder, where an ASCII profile writes one: Qt opens it through a byte path,' +
         ' so a folder name the ANSI code page cannot spell costs the cache, not the data')
+}
+
+Write-Host ''
+Write-Host '== spoken worker across a close'
+if (Select-Phase 'spokenclose') {
+    # Podcasts and audiobooks live on a worker thread of their own, and closing the
+    # window takes that thread with it.  Qt makes destroying a running QThread fatal,
+    # so the service has to wait the worker out - and a wait with no deadline is how a
+    # close turns into a window that never goes away.  It now asks the last resume
+    # point to land, gives it two seconds, and drains the thread inside a budget.
+    # What this phase can honestly measure about that path is below; what it cannot
+    # measure is written down in docs\WINDOWS_PORT.md rather than asserted here.
+    if (-not $seeded) {
+        Skip 'a spoken page opened and then closed' 'no seed library'
+    }
+    else {
+        $spokenDir = Join-Path $out 'spoken-close-profile'
+        New-Item -ItemType Directory -Force -Path $spokenDir | Out-Null
+        $spokenDb = Join-Path $spokenDir 'spoken\spoken.db'
+        $spokenCase = Invoke-Case -Name 'spoken-close' -ProfileDir $spokenDir `
+            -Arguments @('--page', 'podcasts') -Seed
+        Assert-Case -Case $spokenCase `
+            -Label 'the podcasts page opens on the spoken worker and closes by itself' `
+            -ExpectPage 'podcasts' -ExpectOnboarding 'false'
+        $forced = @($spokenCase.Lines | Where-Object { $_ -match '\[spoken\] worker would not stop' })
+        Check 'the spoken worker came down inside its own close budget' ($forced.Count -eq 0) `
+            ($forced | Select-Object -First 1)
+        $abandoned = @($spokenCase.Lines | Where-Object { $_ -match '\[spoken\] last position' })
+        Check 'the close did not have to abandon a resume point' ($abandoned.Count -eq 0) `
+            ($abandoned | Select-Object -First 1)
+        # Recorded rather than asserted: how long a close takes is the worker's choice
+        # as much as the application's, and the drain budget only ever pays out when a
+        # job is genuinely still inside a fetch, a download or a probe.
+        $drained = @($spokenCase.Lines | Where-Object { $_ -match 'still busy at shutdown' })
+        $labels = @($drained | ForEach-Object {
+            if ($_ -match '\[(\w+)\] worker still busy') { $matches[1] }
+        } | Sort-Object -Unique)
+        $who = 'none'
+        if ($labels.Count) { $who = (@($labels | ForEach-Object { '[' + $_ + ']' }) -join ' ') }
+        Write-Host ('  note this close took ' + $spokenCase.CloseSeconds +
+            's from the window close to the exit code, carrying ' + $drained.Count +
+            ' drain line(s) on stderr from ' + $who + ' - not every worker is spoken')
+        if (-not $pythonExe) {
+            Skip 'the spoken store the close left behind' 'no python on this machine'
+        }
+        elseif (Test-Path -LiteralPath $spokenDb) {
+            $spokenInsp = Invoke-Proc -File $pythonExe -Timeout 120 -Arguments @(
+                (Join-Path $PSScriptRoot 'inspect_spoken_db.py'), $spokenDb)
+            Check 'the spoken store the close left behind is still a usable store' `
+                (($spokenInsp.Code -eq 0) -and ($spokenInsp.Out -match 'OVERALL=ok')) `
+                ('code=' + $spokenInsp.Code + ' ' + $spokenInsp.Out.Trim().Replace([Environment]::NewLine, ' '))
+        }
+        else {
+            Check 'the spoken store the close left behind is still a usable store' $false `
+                'no database to inspect'
+        }
+    }
 }
 
 Write-Host ''

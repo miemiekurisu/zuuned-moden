@@ -1,5 +1,6 @@
 #include "SpokenMediaService.h"
 #include "../ProfilePaths.h"
+#include "../ThreadDrain.h"
 #include "../player/PlayerService.h"
 #include "AudiobookProbe.h"
 #include "PodcastFeed.h"
@@ -28,6 +29,7 @@
 #include <algorithm>
 #include <climits>
 #include <cmath>
+#include <cstdio>
 
 namespace {
 QString localPath(const QUrl &url) { return url.isLocalFile() ? url.toLocalFile() : QString(); }
@@ -411,8 +413,13 @@ SpokenMediaService::SpokenMediaService(QObject *parent)
 }
 SpokenMediaService::~SpokenMediaService() {
     shutdown();
-    m_thread.quit();
-    m_thread.wait();
+    // The last job on this thread is a feed fetch, an episode download, a
+    // probe or a hash, none of which can be interrupted part way through and
+    // none of which hold a USB handle - the encode a spoken transfer needs
+    // belongs to the sync worker.  Qt makes destroying a running QThread fatal,
+    // so drain with a deadline rather than hang a close on a job nobody can
+    // cancel.
+    Zuuned::drainThread(m_thread, "spoken", 2);
 }
 void SpokenMediaService::shutdown() {
     if (m_stopping)
@@ -423,24 +430,38 @@ void SpokenMediaService::shutdown() {
     for (const auto &cancel : m_transferCancels)
         cancel->store(true);
     const auto id = m_positionId;
+    if (id.isEmpty())
+        return;
+    // The last resume point is worth a short wait, not an unbounded one.  The
+    // worker may be inside a fetch or a download that no cancel flag cuts short,
+    // and a close must not hand the UI thread to it - Qt's blocking queued
+    // call has no deadline at all.  So ask for the write, give it a moment to
+    // land, and say so out loud when it does not.  The position timer already
+    // saved one at most five seconds ago, so a miss costs that much playback.
+    constexpr int budgetMs = 2000;
     const auto position = m_position;
     const auto root = m_root;
+    auto landed = std::make_shared<std::atomic_bool>(false);
     QMetaObject::invokeMethod(
         m_worker,
-        [id, position, root] {
-            if (id.isEmpty())
-                return;
+        [id, position, root, landed] {
             QString error;
-            SpokenStore s(root);
-            if (!s.open(&error))
-                return;
-            auto row = s.get(id, &error);
-            if (row.isEmpty())
-                return;
-            row["positionMs"] = position;
-            s.put(&row, &error);
+            SpokenStore store(root);
+            if (store.open(&error)) {
+                auto row = store.get(id, &error);
+                if (!row.isEmpty()) {
+                    row["positionMs"] = position;
+                    store.put(&row, &error);
+                }
+            }
+            landed->store(true);
         },
-        Qt::BlockingQueuedConnection);
+        Qt::QueuedConnection);
+    for (int waited = 0; !landed->load() && waited < budgetMs; waited += 25)
+        QThread::msleep(25);
+    if (!landed->load())
+        std::fprintf(stderr, "[spoken] last position not saved after %dms, closing anyway\n",
+                     budgetMs);
 }
 void SpokenMediaService::cancelWork() { m_cancel->store(true); }
 void SpokenMediaService::run(const QString &operation, Job job, int generation,

@@ -627,6 +627,60 @@ now carries four QA albums from these round trips - `ZuunedQA`, and `Windows Rou
 `1021B`, `1021C` - which this repository cannot take back off it, so the deletion gate starts
 from a device with litter on it.
 
+## The sixth pass: the close that outlived its window (2026-10-21)
+
+The fifth pass repaired the device worker's exit and left a second member of the same
+family recorded as a gap: the spoken worker was drained with no bound at all.
+`SpokenMediaService::shutdown()` runs on `aboutToQuit` and passed the last resume-point
+write to its own thread over a `Qt::BlockingQueuedConnection`, which has no deadline, and
+`~SpokenMediaService` followed it with a `QThread::wait()` carrying none either - so a
+close landing during an RSS fetch, an episode download or an audiobook probe waited for
+that job for as long as the job liked.  It is the fifth pass's abort from the other side:
+that one died on `QThread: Destroyed while thread`, this one never reached the
+destructor, and what a user got was a window that had closed with the process still in
+Task Manager.
+
+`shutdown()` now posts that write and gives it two seconds to land, printing
+`[spoken] last position not saved after 2000ms, closing anyway` when it does not, and the
+destructor drains the thread through `Zuuned::drainThread()`, where the `2` counts two
+five-second slices rather than two seconds.  An earlier sweep refused a bound here because
+the helper ends in `terminate()`; what changed is scope rather than nerve, and the reason
+is worth keeping.  Nothing under `src/spoken/` calls libzune or touches a USB handle - the
+only matches for either in that directory are two comments saying so, and the encode a
+spoken transfer needs belongs to the sync worker - so a podcast or audiobook transfer is
+*prepared* on that thread and sent by `SyncEngine`/`DeviceWorker`.  The last resort can
+therefore cut short a feed fetch, a probe, a cover write or a download, and a download
+lands through `QSaveFile`, so an abandoned one never appears at the episode path: the cost
+is a scratch file beside it, because `terminate()` skips `cancelWriting()`.  It has not
+fired: no launch in this pass logged `[spoken] worker would not stop`, which leaves
+`terminate()` in the same standing as the device worker's above it - reasoned about, never
+exercised.
+
+Every number below came off this machine, in order, on one
+`cmake --build build --clean-first` rebuild.
+
+- `build\librarytool.exe paths` 52 checks, `names` 17 and `customize` 21, each `ALL
+  PASS`, and `tests\win-compat\run.ps1` answering `184 checks, 0 failures, 0 skips`.
+- `tests\win-usability\run.ps1`: `launches=18 checks=99 failures=0 skips=0 killed=0`,
+  `OVERALL=ok`, `pid-scan-fallbacks=2`.  The gate gained a phase, `spokenclose`, which is
+  the first thing in this repository to watch a spoken close rather than reason about one:
+  it opens the podcasts page on a seeded profile, closes the window, fails if that close
+  logged `worker would not stop` or an abandoned resume point, and reads the spoken store
+  the launch left behind back through `inspect_spoken_db.py`.
+- What that phase prints instead of asserting is how long the close took - 17.2 s here -
+  because that belongs to the machine, and this machine spent nearly all of it in the
+  device worker: the same launch's log carries three `[device] worker still busy at
+  shutdown` lines around `OpenSession dead — resetting device and retrying`, and no spoken
+  line at all.  Spoken's share of that close is the two assertions above rather than the
+  clock.
+
+What this pass does not prove is narrower than the phase, and is written down rather than
+inferred: nothing here plays a spoken item, the store that close left behind answers
+`rows=0`, so in every launch above `m_positionId` was empty and `shutdown()` returned
+before asking for the write.  The bound on the close is measured; the resume point inside
+that bound is bounded by construction and is not gated, and the message that would show it
+working has never come out of a test.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and
@@ -650,7 +704,9 @@ from a device with litter on it.
    software path, and the gate asserts the software run only when it forces one.
 4. `spokenmediatool` builds and both legs were driven by hand on 2026-10-20 - an
    RSS feed with a Chinese item title, and the audiobook probe the descriptor fix
-   above unblocked - but the tool still has no phase in the usability gate.
+   above unblocked - but the tool still has no phase in the usability gate.  Nor does
+   any phase play a podcast or an audiobook, so the bounded spoken close is gated in
+   shape only: the resume point inside its deadline has never been written by a run.
 5. Packaging.  No installer, no `cmake --install` layout, no verified
    `windeployqt` directory and no release artifact.
 6. The Linux line is unchanged by construction rather than re-verified: this
@@ -699,7 +755,8 @@ from a device with litter on it.
    video, then a Classic, a Draco and an 80/120.
 3. Answer `0x2002` on `GetObjectInfo(0x07000002)` in `libzune/docs/` before it is
    assumed benign or changed.  `0x200F` needs nothing further - see above.
-4. Add the remaining software gates: audible (unmuted) playback and a
-   `spokenmediatool` phase.  Measure NVDEC against software on a real 1080p item before
-   quoting a speed-up for Windows.
+4. Add the remaining software gates: audible (unmuted) playback, a
+   `spokenmediatool` phase, and a launch that plays a spoken item so the resume write
+   behind the bounded spoken close is exercised.  Measure NVDEC against software on a
+   real 1080p item before quoting a speed-up for Windows.
 5. Only then talk about Windows packaging or a Windows release channel.
