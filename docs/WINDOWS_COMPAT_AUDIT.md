@@ -315,6 +315,57 @@ its first Hebrew album.  `LibraryScanner`, `ArtworkPipeline`, `ArtistImageServic
 and `OnlineAlbumArtService` now pass `toUtf8()` - the same bytes on Linux.  Full
 account in `BUILDING.md` under *Path encodings on a non-English Windows*.
 
+## Fourth sweep: a watch folder that contains itself
+
+The path work closed the `E:/Temp/testmusic` report and the report came back: the folder
+scanned, and the library filled with copies of itself.  The cause was not spelling.  A
+Windows junction — `mklink /J`, the link type that needs neither elevation nor developer
+mode — is an ordinary directory to `QFileInfo`: `isSymLink()` is false and the only
+attribute it carries is `FILE_ATTRIBUTE_DIRECTORY`.  The scanner's entire cycle guard was
+that one call, so a music folder holding a link back into one of its own ancestors looked
+like music, and the recursive `QDirIterator` walked into it.
+
+Measured against `music/loop -> music` on Qt 6.11: 160 entries, 96 folders, not one of
+them a link as far as Qt was concerned, 41 levels deep at the point the walk gave up
+because the path had reached 260 characters.  Nothing hung and nothing failed.  The scan
+returned success, reported a complete walk, and had handed in the same handful of songs
+under 41 different paths, which on a real library is one duplicate album per level written
+into SQLite.  A naive `GetFileSystemEntries` recursion over the fixture the gate now uses
+counts 192 entries; three songs is what the walk has to produce.
+
+The two answers that look obvious are not answers:
+
+- `QDirIterator::FollowSymlinks` does detect loops, and Qt documents that it does, but
+  that detection lives in the mode that follows links.  The default mode never descends a
+  POSIX symlink so it never needed one, and a junction is not a link as far as Qt is
+  concerned, so the flag changes nothing about the case that broke.
+- A depth or entry cap turns a wrong answer into a truncated one, and a watch folder that
+  stops early still certifies every folder it never read — which is precisely the signal
+  the music phase uses to decide whether a stored probe failure has genuinely gone away.
+
+So every folder in the walk got an identity.  `LibraryScan::walkFiles()` is a depth-first
+walk with an explicit stack, keyed on the `(st_dev, st_ino)` pair that
+`accessibleDirectory()` gets from `compat/win/wincompat.c:261`: a volume serial number and
+the 64-bit NTFS file index, the same pair the artwork cache identity check already leans
+on.  Opening a junction resolves it, so a link to an ancestor answers with the ancestor's
+identity and cannot pass for somewhere new.  A filesystem that reports zero in both fields
+is walked anyway, without the once-only guarantee, because it could not offer that
+guarantee before this change either.  Music, video and photos all go through the one walk,
+so a future media type cannot skip the guard by forgetting to ask for it.
+
+Three consequences are worth pinning down because none of them is visible in the diff:
+
+- A file reached through a link reports the link's path, not the target's.  A junction
+  pointing out of the music folder at songs that are not inside it contributes those songs
+  once, as `music/<link>/Song.mp3`.  That was already true of junctions before this
+  change; it is now asserted in both directions.
+- A folder that cannot be opened makes `complete` false and the music phase stops
+  certifying that root, so a hole in a walk cannot be read back as "this probe failure is
+  gone".
+- `MAX_PATH` still bounds the walk, because `zuuned.exe` ships no `longPathAware` entry
+  (see the manifest entry below).  Depth 41 is where the loop used to stop, and it is also
+  where a genuinely 41-level album tree still stops.  Same ceiling, different fix.
+
 ## What is proven, and by which gate
 
 - `tests/win-usability/watch_folder_repair.py` seeds four roots - a `/E:/` scar, a
@@ -332,9 +383,20 @@ account in `BUILDING.md` under *Path encodings on a non-English Windows*.
   from the Win32 documentation.
 - `tests/win-compat` and `tests/win-usability` are source and runtime gates;
   neither opens a USB handle.  The compat gate is currently 184 checks.
-- `build\librarytool.exe paths` is 28 checks over the helpers above, and
+- `build\librarytool.exe paths` is 39 checks over the helpers above, and
   `names`/`customize` still pass on the same build.  All three ran here, against the
-  executables produced by `cmake --build build --clean-first`.
+  executables produced by `cmake --build build --clean-first`.  Eleven of those 39
+  checks are the fourth sweep's walk above, and they build their own junction rather
+  than assume one: `mklink /J` inside a `QTemporaryDir`, which is the only reason the
+  case is testable from an unprivileged account at all.  They assert that the three
+  songs really inside the root arrive exactly once, that the link back into the root is
+  counted and never descended, that a link *out* is followed once and under the link's
+  own path, that the root still certifies complete with a cycle inside it, and — on
+  POSIX — that a symlink to a directory is still not entered, so the guard cannot
+  quietly become "follow everything".  End to end, on disk, the same shape: three
+  copies of one MP3 plus `loop -> music` scanned to `3 tracks added` and one
+  `[scan] ...: 1 folder(s) skipped as already walked` line, where a naive recursion
+  over that tree counts 192 entries.
 - **"The executable was relinked" is not evidence, and that is a finding of this
   sweep.**  The Ninja rules carry `deps = msvc`: Ninja learns a translation unit's
   includes by parsing the `/showIncludes` echo from `cl`, against the literal English
@@ -397,14 +459,17 @@ the defect and pretending otherwise would put an unverified claim in the tree.
   `target_link_options(zuuned PRIVATE /MANIFEST:EMBED
   /MANIFESTINPUT:packaging/win/zuuned.manifest)`, keeping the existing `asInvoker`
   block, then re-dumping the resource to confirm the entry landed.  Deliberately not
-  shipped unverified.
-- The scanner's cycle guard is `QFileInfo::isSymLink()`
-  (`src/library/LibraryScanner.cpp:328`), and Qt does not report a Windows junction
-  as a link there, although the shim's own `lstat()` does classify
-  `IO_REPARSE_TAG_MOUNT_POINT` as `S_IFLNK` (`compat/win/wincompat.c:249`).  Making
-  a junction takes privileges or developer mode and nothing this app indexes is
-  expected to contain one; the asymmetry is recorded rather than guessed at.
-  Untested either way.
+  shipped unverified.  Since the fourth sweep this also bounds folder depth: the
+  walk stops where a path stops being openable, so a library nested deep enough is
+  scanned partially and, correctly, reports itself incomplete.
+- The asymmetry the fourth sweep started on is still true and is now worked around
+  rather than depended on: `QFileInfo::isSymLink()` does not report a Windows junction,
+  although the shim's own `lstat()` classifies `IO_REPARSE_TAG_MOUNT_POINT` as
+  `S_IFLNK` (`compat/win/wincompat.c:249`).  The library walk no longer asks that
+  question at all — it asks who this folder is — but `SpokenMediaService` still does,
+  and so will the next recursive walk written here.  Making a junction needs neither
+  privileges nor developer mode, so "nothing real contains one" was never the
+  assumption it looked like.
 - **`safeComponent()` bounds nothing but spelling.**  A component longer than 255
   characters - legal on a Zune, since MTP has no such limit - still fails `mkpath()`
   on Windows and the save still reports a plain failure.  Truncating a name is a
@@ -425,6 +490,17 @@ the defect and pretending otherwise would put an unverified claim in the tree.
 
 ## Known gaps, on purpose
 
+- One recursive walk is left in the tree: the audiobook folder import at
+  `src/spoken/SpokenMediaService.cpp:1123`, which passes `QDir::NoSymLinks` and gets no
+  protection from it because Qt does not call a junction a link.  What a junction loop
+  there ends in depends on the tree, and only the first two endings are honest: the
+  100 000-entry cap or the 5 000-audio-file cap, both visible refusals, or - if the loop
+  runs deep enough to exhaust `MAX_PATH` first - a listing that simply stops and a
+  preview that is silently partial, which is the shape of the wrong answer the library
+  walk has just stopped giving.  The third ending is reasoned from the measured
+  `MAX_PATH` ceiling, not reproduced here.  It is one folder a user picked a moment ago
+  rather than a watch folder revalidated forever, which is why this one is left; routing
+  it through `LibraryScan::walkFiles()` is the fix, next time spoken import is open.
 - Case-insensitive dedup below the drive letter: see the reasoning above.
 - UNC roots are produced for `file://host/share` on Windows and are untested
   against a real share; the code path is unit-probed, not device-probed.

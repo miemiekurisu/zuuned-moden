@@ -45,7 +45,15 @@
 #include <QTemporaryDir>
 #include <QStandardPaths>
 #include <QFile>
+#include <QFileInfo>
+#include <QDir>
+#include <QHash>
+#include <QProcess>
 #include <sqlite3.h>
+
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 #include <cstdio>
 
@@ -494,6 +502,119 @@ static int runPathsSelfTest() {
        VideoIdentity::safeFilePart(QStringLiteral("NUL.wmv")),
        QStringLiteral("NUL.wmv"));
 #endif
+
+    /* ---- one watch folder, walked exactly once ----
+     * A Windows junction reports itself as an ordinary directory - a plain
+     * FILE_ATTRIBUTE_DIRECTORY with isSymLink() false - so before LibraryScan
+     * carried an identity check of its own, a music folder holding a link back
+     * into itself was walked 41 levels deep before Qt stopped at the
+     * 260-character path limit, filing a dozen phantom copies of every song on
+     * the way.  The link is built here rather than assumed, and the sibling link
+     * matters just as much: it proves the new guard stops the loop, not the
+     * scan. */
+    {
+        QTemporaryDir sandbox;
+        check(sandbox.isValid(), "walk: a temporary tree could be made");
+        const QString box = sandbox.path();
+        const QString music = box + QLatin1String("/music");
+        const QString elsewhere = box + QLatin1String("/elsewhere");
+        bool built = QDir().mkpath(music + QLatin1String("/Artist/Album"))
+                     && QDir().mkpath(music + QLatin1String("/Extra"))
+                     && QDir().mkpath(elsewhere);
+        const QStringList songs = {
+            music + QLatin1String("/Artist/Album/One.mp3"),
+            music + QLatin1String("/Artist/Album/Two.mp3"),
+            music + QLatin1String("/Extra/Three.mp3"),
+            elsewhere + QLatin1String("/Four.mp3"),
+        };
+        for (const QString &song : songs) {
+            QFile file(song);
+            built = built && file.open(QIODevice::WriteOnly) && file.write("x") == 1;
+            file.close();
+        }
+        check(built, "walk: the fixture tree and its four songs exist");
+
+        const QString loop = music + QLatin1String("/loop");
+        const QString escape = music + QLatin1String("/out");
+        // What a walk that follows the link out has to report: the link's own
+        // path, not the target's.  Equal checks, opposite meaning.
+        const QString throughLink = escape + QLatin1String("/Four.mp3");
+#ifdef Q_OS_WIN
+        /* mklink is a cmd.exe built-in and /J makes a junction: unlike /D it
+         * needs no elevation, which is the only reason this is testable from an
+         * ordinary account.  QProcess quotes the two paths itself, which matters
+         * because the temporary directory here sits under a profile whose name
+         * contains a space. */
+        const auto addLink = [](const QString &link, const QString &target) {
+            const QStringList arguments{
+                QStringLiteral("/c"), QStringLiteral("mklink"), QStringLiteral("/J"),
+                QDir::toNativeSeparators(link), QDir::toNativeSeparators(target)};
+            return QProcess::execute(QStringLiteral("cmd.exe"), arguments) == 0;
+        };
+#else
+        const auto addLink = [](const QString &link, const QString &target) {
+            return ::symlink(target.toUtf8().constData(), link.toUtf8().constData()) == 0;
+        };
+#endif
+        const bool linked = addLink(loop, music) && addLink(escape, elsewhere);
+        check(linked, "walk: the link back into the root and the link out were created");
+
+        QHash<QString, int> visits;
+        int handedOver = 0;
+        const auto walked = LibraryScan::walkFiles(
+            music, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
+            [&](const QFileInfo &entry) {
+                visits[entry.filePath()]++;
+                handedOver++;
+            });
+        const auto exactlyOnce = [&visits](const QString &song) {
+            return visits.value(song) == 1;
+        };
+        check(exactlyOnce(songs.at(0)) && exactlyOnce(songs.at(1))
+                  && exactlyOnce(songs.at(2)),
+              "walk: every song really inside the root is offered exactly once");
+        check(walked.complete && !walked.cancelled,
+              "walk: a self-referencing watch folder still reports a complete walk");
+#ifdef Q_OS_WIN
+        check(visits.value(throughLink) == 1 && !visits.contains(songs.at(3)),
+              "walk: a junction onto new files is followed once, under the link path");
+        check(walked.duplicates >= 1,
+              "walk: the junction back into the root is counted, never descended");
+        check(visits.size() == 4 && handedOver == 4,
+              "walk: four songs in, four songs out - not 41 phantom copies");
+#else
+        check(!visits.contains(songs.at(3)),
+              "walk: a POSIX symlink to a directory is still not descended");
+        check(walked.duplicates == 0 && visits.size() == 3 && handedOver == 3,
+              "walk: three songs in, three songs out where there are no junctions");
+#endif
+
+        /* The links come out before anything recursive, deliberately: with a
+         * junction in place a recursive delete also sees the original tree
+         * through the link and takes the real files with it. */
+#ifdef Q_OS_WIN
+        const bool linksOut = QDir().rmdir(loop) && QDir().rmdir(escape);
+#else
+        const bool linksOut = QFile::remove(loop) && QFile::remove(escape);
+#endif
+        check(linksOut, "walk: the fixture links came back out");
+        QDir(box).removeRecursively();
+        check(!QFileInfo::exists(box), "walk: the fixture tree is gone again");
+    }
+
+    /* ---- a root that is not there certifies nothing ---- */
+    {
+        QTemporaryDir retired;
+        const QString retiredPath = retired.path();
+        retired.remove();
+        int handedOver = 0;
+        const auto missing = LibraryScan::walkFiles(
+            retiredPath, QDir::Files | QDir::Readable,
+            [&handedOver](const QFileInfo &) { handedOver++; });
+        check(handedOver == 0 && missing.files == 0 && !missing.complete
+                  && !missing.cancelled,
+              "walk: an unreadable root yields no files and certifies no root");
+    }
 
     printf("paths self-test: %s (%d failures)\n",
            failed == 0 ? "ALL PASS" : "FAILED", failed);

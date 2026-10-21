@@ -1191,3 +1191,30 @@ open, and a process writing it every 120 ms all reproduced nothing. Recorded as 
 environment fault, not a regression. Scope claims are otherwise unchanged: still
 one Pavo Zune HD, still no deletion, no podcast, audiobook, photo or video
 transfer, and nothing listened to on the player.
+
+**2026-10-21 Windows scan fix:** a watch folder can contain itself on Windows and
+`QFileInfo::isSymLink()` will not say so — a `mklink /J` junction is a plain
+`FILE_ATTRIBUTE_DIRECTORY` to Qt, and making one needs neither elevation nor developer
+mode — so every recursive `QDirIterator` scan walked `music/loop -> music` 41 levels deep
+to the `MAX_PATH` ceiling and reported a clean, complete scan on the way, filing the same
+songs at 41 paths. `LibraryScan::walkFiles()` is now the only library walk, for music,
+video and photos: explicit-stack depth-first, each folder keyed on the `(st_dev, st_ino)`
+pair the shim takes from the volume serial and the NTFS file index, links listed but never
+descended, and `complete` false whenever a folder could not be read, so a partial walk can
+neither certify a watch root nor clear a stored probe failure. `librarytool paths` is now
+39 checks, all passing (the 11 new ones build their own `mklink /J` fixture in a
+`QTemporaryDir`: each song exactly once, the loop counted and never entered, a link out
+followed once under the link's own path, POSIX symlinks still not entered), `names` and
+`customize` pass, and on disk a three-song folder with `loop -> music` scans to
+`3 tracks added` where a naive recursion counts 192 entries. Gates on one relinked binary:
+`tests/win-compat` 184 checks / 0 failures / 0 skips, `tests/win-usability`
+launches=17 checks=95 failures=0 skips=0 killed=0 `OVERALL=ok`, and the `--qa-device` round
+trip in both directions — `add added=1`, `forge done: 1 ok, 0 failed`, `sync-summary
+tracks=1 failed=0`, next session 191 -> 192 device tracks, `download-saved ... ok=true`
+with 193,723 audio bytes byte-identical to the source. Harness trap worth keeping: the spec
+contains spaces, so it must arrive as one quoted argv element — passed unquoted,
+`qaDeviceSpec` returns null, nothing runs, and the launch looks ordinary. Not fixed, and
+recorded as a gap: the audiobook import walk at `src/spoken/SpokenMediaService.cpp:1123`,
+and the `MAX_PATH` ceiling that now also bounds folder depth (no `longPathAware` manifest
+entry). Scope claims are otherwise unchanged: one hand-tested Pavo Zune HD, still no
+deletion, and nothing listened to on the player.

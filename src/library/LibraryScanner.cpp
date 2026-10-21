@@ -12,7 +12,7 @@
 #include "VideoNaming.h"
 #include "AudioCopyFingerprint.h"
 
-#include <QDirIterator>
+#include <QDir>
 #include <QFileInfo>
 #include <QFile>
 #include <QRegularExpression>
@@ -23,6 +23,8 @@
 #include <dirent.h>
 #include <cerrno>
 #include <unistd.h>
+#include <set>
+#include <utility>
 
 extern "C" {
 #include "zune.h"
@@ -241,6 +243,106 @@ TrackResult resolveTrack(const WorkItem &work, const QSet<QString> &roots) {
 
 } // namespace
 
+/* One watch folder, walked once, by every media phase.
+ *
+ * Each phase used to ask a recursive QDirIterator to do this, which is right on
+ * a POSIX filesystem and quietly wrong on Windows.  A junction is not a symlink
+ * as QFileInfo sees it -- isSymLink() is false, the filesystem reports
+ * FILE_ATTRIBUTE_DIRECTORY and nothing else -- so a folder that links back into
+ * one of its own ancestors looks exactly like a folder.  Measured on Qt 6.11
+ * against  music/loop -> music: 160 entries, 96 folders, isSymLink() false for
+ * every one of them, 41 levels deep when the walk finally stopped at the
+ * 260-character path limit.  Nothing hung, which is the nasty part.  The scan
+ * finished clean and had just filed the same handful of songs under 41
+ * phantom paths, so the library goes on to show a dozen copies of every album.
+ *
+ * QDirIterator::FollowSymlinks is not the answer.  Qt documents that symlink
+ * loops under it are automatically detected and ignored, and that detection
+ * lives only in that mode -- the default mode never follows a link, so it never
+ * needed to detect anything, and a junction is not a link as far as it cares.
+ * The walk therefore needs an identity of its own for every folder.
+ *
+ * Identity comes from accessibleDirectory(): opendir + fstat, which through
+ * compat/win is a real volume serial number plus a 64-bit file index on
+ * Windows.  Opening a junction resolves it, so a link to an ancestor answers
+ * with the ancestor's identity and cannot pass for somewhere new.  A filesystem
+ * that reports zero in both fields still gets walked; it just gives up the
+ * once-only guarantee it could not offer before this change either.  */
+LibraryScan::WalkOutcome LibraryScan::walkFiles(
+    const QString &root, QDir::Filters filters,
+    const std::function<void(const QFileInfo &)> &visitFile,
+    const std::atomic<bool> *cancel) {
+    WalkOutcome outcome;
+    struct stat rootStat {};
+    if (!accessibleDirectory(root, &rootStat))
+        return outcome;  // unreadable root: nothing walked, nothing certified
+
+    outcome.complete = true;
+    const auto identityOf = [](const struct stat &s) {
+        return std::make_pair(quint64(s.st_dev), quint64(s.st_ino));
+    };
+    // Zero in both fields means this filesystem will not say which folder is
+    // which, so there is nothing to deduplicate against.  Walk anyway.
+    const auto usable = [](const struct stat &s) {
+        return s.st_dev != 0 && s.st_ino != 0;
+    };
+
+    std::set<std::pair<quint64, quint64>> walked;
+    if (usable(rootStat))
+        walked.insert(identityOf(rootStat));
+
+    // An explicit stack rather than recursion: how deep a watch folder goes is
+    // the user's business and must not be able to cost us the process.
+    QVector<QString> pending;
+    pending.append(root);
+
+    /* The type bits of a QDir::Filters value OR together, so adding Dirs to a
+     * caller that asked for Files asks for both.  Every other bit -- Readable,
+     * Hidden, System -- carries through and is applied by Qt exactly as it was
+     * for QDirIterator, which is what keeps each phase's file set unchanged. */
+    const QDir::Filters listing = filters | QDir::Dirs | QDir::NoDotAndDotDot;
+
+    while (!pending.isEmpty()) {
+        if (cancel && cancel->load()) {
+            outcome.cancelled = true;
+            outcome.complete = false;
+            return outcome;
+        }
+        const QFileInfoList entries
+            = QDir(pending.takeLast()).entryInfoList(listing, QDir::NoSort);
+        outcome.directories++;
+        for (const QFileInfo &entry : entries) {
+            if (!entry.isDir()) {
+                outcome.files++;
+                visitFile(entry);
+                continue;
+            }
+            /* A real symlink keeps the treatment QDirIterator gave it without
+             * FollowSymlinks: listed, never entered.  isDir() above already
+             * resolved it, so descending here is the one way to loop on POSIX. */
+            if (entry.isSymLink())
+                continue;
+            struct stat folderStat {};
+            if (!accessibleDirectory(entry.filePath(), &folderStat)) {
+                /* A folder we cannot open is a hole in this walk.  The music
+                 * phase reads complete to decide whether a stored probe
+                 * failure is genuinely gone, so the hole has to reach it. */
+                outcome.complete = false;
+                continue;
+            }
+            const auto folderIdentity = identityOf(folderStat);
+            if (walked.count(folderIdentity) > 0) {
+                outcome.duplicates++;
+                continue;
+            }
+            if (usable(folderStat))
+                walked.insert(folderIdentity);
+            pending.append(entry.filePath());
+        }
+    }
+    return outcome;
+}
+
 // ── Scanner ──
 
 LibraryScanner::LibraryScanner(QObject *parent) : QObject(parent) {}
@@ -314,37 +416,35 @@ void LibraryScanner::scan() {
         for (const QString &root : musicRoots) {
             struct stat initialRoot {};
             if (m_cancel || !accessibleDirectory(root, &initialRoot)) continue;
-            bool complete = true;
-            QDirIterator it(root, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
-                            QDirIterator::Subdirectories);
-            while (it.hasNext()) {
-                if (m_cancel) break;
-                const QString path = it.next();
-                const QFileInfo fi = it.fileInfo();
-                if (fi.isDir()) {
-                    // A partial walk cannot establish that an old failure is
-                    // gone. Retain diagnostics if any traversed directory is
-                    // inaccessible, even when its parent root is readable.
-                    if (!fi.isSymLink() && !accessibleDirectory(path)) complete = false;
-                    continue;
-                }
-                if (!audioExtensions().contains(fi.suffix().toLower()) || seen.contains(path))
-                    continue;
-                seen.insert(path);
-                if (db.isExcluded(path))
-                    continue;
-                WorkItem w;
-                if (!fingerprint(path, w)) continue;
-                const auto known = index.constFind(path);
-                if (known != index.constEnd() && !retryPaths.contains(path) && known->version == musicParserVersion
-                    && known->mtimeNs == w.mtimeNs && known->ctimeNs == w.ctimeNs
-                    && known->filesize == w.filesize)
-                    continue; // unchanged fast-path
-                w.isNew = (known == index.constEnd());
-                musicWork.append(w);
-            }
+            /* The identity guard inside the walk is what stops a junction from
+             * being walked twice; seen stays as the cheap second opinion for a
+             * filesystem that will not report a folder identity at all. */
+            const auto walked = LibraryScan::walkFiles(
+                root, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
+                [&](const QFileInfo &fi) {
+                    const QString path = fi.filePath();
+                    if (!audioExtensions().contains(fi.suffix().toLower()) || seen.contains(path))
+                        return;
+                    seen.insert(path);
+                    if (db.isExcluded(path))
+                        return;
+                    WorkItem w;
+                    if (!fingerprint(path, w)) return;
+                    const auto known = index.constFind(path);
+                    if (known != index.constEnd() && !retryPaths.contains(path) && known->version == musicParserVersion
+                        && known->mtimeNs == w.mtimeNs && known->ctimeNs == w.ctimeNs
+                        && known->filesize == w.filesize)
+                        return; // unchanged fast-path
+                    w.isNew = (known == index.constEnd());
+                    musicWork.append(w);
+                },
+                &m_cancel);
+            if (walked.duplicates > 0)
+                fprintf(stderr,
+                        "[scan] %s: %d folder(s) skipped as already walked\n",
+                        qUtf8Printable(root), walked.duplicates);
             struct stat finalRoot {};
-            if (!m_cancel && complete && accessibleDirectory(root, &finalRoot)
+            if (!m_cancel && walked.complete && accessibleDirectory(root, &finalRoot)
                 && initialRoot.st_dev == finalRoot.st_dev && initialRoot.st_ino == finalRoot.st_ino)
                 completedMusicRoots.insert(root, {quint64(finalRoot.st_dev), quint64(finalRoot.st_ino)});
         }
@@ -357,43 +457,43 @@ void LibraryScanner::scan() {
         const auto index = db.videoPathIndex();
         const auto sizes = db.videoSizeIndex();
         for (const WatchFolder &root : videoRoots) {
-            QDirIterator it(root.path, QDir::Files | QDir::Readable,
-                            QDirIterator::Subdirectories);
-            while (it.hasNext()) {
-                if (m_cancel) break;
-                const QString path = it.next();
-                const QFileInfo fi = it.fileInfo();
-                if (!videoExtensions().contains(fi.suffix().toLower()))
-                    continue;
-                // Plex/Jellyfin bonus-content dirs anywhere under the root
-                const QString rel = path.mid(root.path.size() + 1);
-                const QStringList parts = rel.split(QLatin1Char('/'));
-                bool inSkippedDir = false;
-                for (int i = 0; i < parts.size() - 1; i++)
-                    if (VideoNaming::isSkippedDir(parts[i])) { inSkippedDir = true; break; }
-                if (inSkippedDir)
-                    continue;
-                if (VideoNaming::isSkippedVideoFile(fi.fileName(), fi.size(),
-                                                    root.type, videoMinSizeOverrideMB))
-                    continue;
-                if (db.isExcluded(path))
-                    continue;
-                const qint64 mtime = fi.lastModified().toSecsSinceEpoch();
-                const auto known = index.constFind(path);
-                if (known != index.constEnd() && known->second == mtime)
-                    continue; // unchanged fast-path
-                VideoWork w;
-                w.filepath = path;
-                w.filename = fi.fileName();
-                w.filesize = fi.size();
-                w.mtime = mtime;
-                if (known != index.constEnd()) {
-                    w.existingId = known->first;
-                    w.existingSize = sizes.value(known->first, 0);
-                }
-                w.folderType = root.type;
-                videoWork.append(w);
-            }
+            if (m_cancel) break;
+            LibraryScan::walkFiles(
+                root.path, QDir::Files | QDir::Readable,
+                [&](const QFileInfo &fi) {
+                    if (!videoExtensions().contains(fi.suffix().toLower()))
+                        return;
+                    const QString path = fi.filePath();
+                    // Plex/Jellyfin bonus-content dirs anywhere under the root
+                    const QString rel = path.mid(root.path.size() + 1);
+                    const QStringList parts = rel.split(QLatin1Char('/'));
+                    bool inSkippedDir = false;
+                    for (int part = 0; part < parts.size() - 1; part++)
+                        if (VideoNaming::isSkippedDir(parts[part])) { inSkippedDir = true; break; }
+                    if (inSkippedDir)
+                        return;
+                    if (VideoNaming::isSkippedVideoFile(fi.fileName(), fi.size(),
+                                                        root.type, videoMinSizeOverrideMB))
+                        return;
+                    if (db.isExcluded(path))
+                        return;
+                    const qint64 mtime = fi.lastModified().toSecsSinceEpoch();
+                    const auto known = index.constFind(path);
+                    if (known != index.constEnd() && known->second == mtime)
+                        return; // unchanged fast-path
+                    VideoWork w;
+                    w.filepath = path;
+                    w.filename = fi.fileName();
+                    w.filesize = fi.size();
+                    w.mtime = mtime;
+                    if (known != index.constEnd()) {
+                        w.existingId = known->first;
+                        w.existingSize = sizes.value(known->first, 0);
+                    }
+                    w.folderType = root.type;
+                    videoWork.append(w);
+                },
+                &m_cancel);
         }
     }
 
@@ -402,27 +502,27 @@ void LibraryScanner::scan() {
     {
         const auto index = db.photoPathIndex();
         for (const QString &root : photoRoots) {
-            QDirIterator it(root, QDir::Files | QDir::Readable,
-                            QDirIterator::Subdirectories);
-            while (it.hasNext()) {
-                if (m_cancel) break;
-                const QString path = it.next();
-                const QFileInfo fi = it.fileInfo();
-                if (!photoExtensions().contains(fi.suffix().toLower()))
-                    continue;
-                if (db.isExcluded(path))
-                    continue;
-                const qint64 mtime = fi.lastModified().toSecsSinceEpoch();
-                const auto known = index.constFind(path);
-                if (known != index.constEnd() && known->second == mtime)
-                    continue;
-                LibPhoto p;
-                p.filepath = path;
-                p.filename = fi.fileName();
-                p.filesize = fi.size();
-                p.mtime = mtime;
-                photoWork.append(p);
-            }
+            if (m_cancel) break;
+            LibraryScan::walkFiles(
+                root, QDir::Files | QDir::Readable,
+                [&](const QFileInfo &fi) {
+                    if (!photoExtensions().contains(fi.suffix().toLower()))
+                        return;
+                    const QString path = fi.filePath();
+                    if (db.isExcluded(path))
+                        return;
+                    const qint64 mtime = fi.lastModified().toSecsSinceEpoch();
+                    const auto known = index.constFind(path);
+                    if (known != index.constEnd() && known->second == mtime)
+                        return;
+                    LibPhoto shot;
+                    shot.filepath = path;
+                    shot.filename = fi.fileName();
+                    shot.filesize = fi.size();
+                    shot.mtime = mtime;
+                    photoWork.append(shot);
+                },
+                &m_cancel);
         }
     }
 

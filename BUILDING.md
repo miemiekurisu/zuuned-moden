@@ -180,10 +180,11 @@ The bash suites in `ci/check.sh` need pkg-config and a POSIX shell, so on
 Windows the library core is covered by the native tools instead:
 `build\librarytool.exe names`, `build\librarytool.exe customize` (the latter
 rebuilds a pre-Customize database and runs the real v0/v2 to v9 migration chain,
-including the pre-migration backup) and `build\librarytool.exe paths` - 28 checks
+including the pre-migration backup) and `build\librarytool.exe paths` - 39 checks
 over the filename, path-comparison, playlist-resolution and playlist-decoding rules
-the Windows port depends on, with the expectations branched per platform so the same
-file gates a Linux run without changing a Linux answer. All three pass; none touches a
+the Windows port depends on plus the once-only rule for a watch folder that contains
+a junction, with the expectations branched per platform so the same file gates a
+Linux run without changing a Linux answer. All three pass; none touches a
 device, and all three run inside `tests\win-usability\run.ps1`'s tools phase.
 
 Scanning is covered the same way, with a fixture built from the cases Windows

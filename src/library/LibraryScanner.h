@@ -8,6 +8,11 @@
 
 #include <atomic>
 
+#include <QDir>
+#include <QFileInfo>
+
+#include <functional>
+
 // Folder scanner — port of the mac's performScan: per media type,
 // 3 phases — (1) serial prep: enumerate + stat + exclusion check +
 // mtime-unchanged fast-path + user_edited protection; (2) parallel
@@ -53,3 +58,30 @@ private:
     std::atomic<bool> m_cancel{false};
     std::atomic<bool> m_running{false};
 };
+
+// One watch folder, walked once.  Every media scan here used to be a recursive
+// QDirIterator, which cannot answer the one question a watch folder has to
+// ask: have I already been in this folder?
+namespace LibraryScan {
+
+struct WalkOutcome {
+    bool complete = false;    // every directory under the root could be read
+    bool cancelled = false;   // the caller's flag stopped the walk
+    int directories = 0;      // folders actually listed
+    int files = 0;            // entries handed to the visitor
+    int duplicates = 0;       // folders skipped as already walked
+};
+
+// Hands every entry under `root` that matches `filters` to `visitFile`, depth
+// first, and each one exactly once.  A folder that resolves to one this call
+// has already listed is skipped, which is what catches a Windows junction -
+// QFileInfo::isSymLink() is false for a junction, so the filesystem reports it
+// as an ordinary directory and the only thing that distinguishes it from one is
+// that its identity has been seen before.  Symbolic links keep the treatment
+// QDirIterator gave them without FollowSymlinks: listed, never descended.
+// `complete` stays false if any folder could not be read or the walk was
+// cancelled, so a partial walk can never certify a watch folder.
+WalkOutcome walkFiles(const QString &root, QDir::Filters filters,
+                      const std::function<void(const QFileInfo &)> &visitFile,
+                      const std::atomic<bool> *cancel = nullptr);
+}

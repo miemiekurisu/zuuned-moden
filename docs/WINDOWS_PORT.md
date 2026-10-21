@@ -514,6 +514,50 @@ predates the rebuild it claims to prove.
   desktop and not the application; the practical rule is that one white-frame
   launch is worth a re-run before it is worth a bisect.
 
+## The fourth pass: the scan, and a folder that contains itself (2026-10-21)
+
+A junction is a directory to `QFileInfo` on Windows — `isSymLink()` false, one
+attribute, `FILE_ATTRIBUTE_DIRECTORY` — so the library scanner's cycle guard did not
+see it and the recursive `QDirIterator` walked down `music/loop -> music` 41 levels until
+the path hit 260 characters.  It reported a clean, complete scan on the way, having filed
+the same songs at 41 paths.  `LibraryScan::walkFiles()` replaces all three media walks
+with one explicit-stack walk that keys each folder on the `(st_dev, st_ino)` pair the shim
+takes from the volume serial and the NTFS file index, and a junction onto an ancestor
+answers with the ancestor's identity.  `docs/WINDOWS_COMPAT_AUDIT.md` has the fourth sweep
+in full, including why `FollowSymlinks` and why an entry cap were both rejected.
+
+Everything below was produced afterwards, in order, on one relinked `build\zuuned.exe`,
+with the device attached throughout.
+
+- `tests\win-compat\run.ps1`: `184 checks, 0 failures, 0 skips`.
+- `build\librarytool.exe paths`: 39 checks, `ALL PASS` — the eleven new ones build a
+  `mklink /J` junction inside a `QTemporaryDir` and assert the walk visits each song once.
+  `names` and `customize` still pass on the same build.
+- Real junction, real scan: a music folder of three copies of one MP3 plus `loop ->
+  music`, where `GetFileSystemEntries` recursion counts 192 entries, gave `scan done: 3
+  tracks added, 0 updated, 0 photos` and one `[scan] ...: 1 folder(s) skipped as already
+  walked` line on stderr.
+- `tests\win-usability\run.ps1`: `launches=17 checks=95 failures=0 skips=0 killed=0
+  pid-scan-fallbacks=4`, `OVERALL=ok`.  No launch failed this time, so the clipboard
+  fault recorded above stays an environment story rather than a pattern.
+- The `--qa-device` round trip again, both directions, on the same 193,768-byte sine
+  fixture under a new title and album (`SineQA1021B` / `Windows Roundtrip 1021B`): `add
+  added=1 duplicates=0 onDevice=0 rejected=0 ambiguous=0`, `forge done: 1 ok, 0 failed`,
+  `sync-summary elapsedMs=1638 tracks=1 failed=0`, `upload-settled failed=0 tracks=1`,
+  `[libzune-finalize] 0x9108 result: 0`, `[libusb] closed`.  The next session counted the
+  device at 192 tracks where it had counted 191, then `download-from itemId=16777481
+  readbackDurationMs=8000` and `download-saved name='SineQA1021B.mp3' ok=true`.  Read back
+  with code from outside this repository, the 193,723 audio bytes are identical; the
+  1,177-byte difference is the 1,094-byte ID3v2.3 this app writes ahead of a send plus the
+  128-byte ID3v1 it appends.
+- One harness trap worth writing down, because it makes a false pass: the spec contains
+  spaces, so it has to reach the app as one quoted argv element.  Passed unquoted,
+  `--qa-device` parses three fields instead of five, `qaDeviceSpec` returns null, the
+  timer never starts — and the run looks like an ordinary launch.  That is exactly what
+  the first attempt here did before the log was read.
+
+Still nothing heard on the player, still one Pavo Zune HD, still no deletion.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and
