@@ -1,4 +1,10 @@
-# ZuunedLinux Port Plan
+# Zuuned Modern Port Plan
+
+Plan for this fork: a Windows client port of upstream
+[Zuuned Linux](https://github.com/badgeromen/zuuned-linux), one source tree for
+both platforms. Where a paragraph below names the app after upstream, that is the
+upstream it inherited the feature from, not a different product; the per-capability
+Windows record is [docs/WINDOWS_PORT.md](WINDOWS_PORT.md).
 
 **2026-10-13 Draco podcast correction:** second-generation readback, inventory
 and exact source matching now cover the observed native podcast schema. Draco

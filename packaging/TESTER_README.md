@@ -1,4 +1,10 @@
-# Zuuned Linux - tester guide
+# Zuuned Linux - tester guide (upstream, Linux only)
+
+> Upstream's Linux guide, kept as shipped: the downloads below come from
+> [badgeromen/zuuned-linux](https://github.com/badgeromen/zuuned-linux/releases),
+> not from this fork, which publishes no Linux binaries. To test this fork on
+> Windows, build it (`BUILDING.md`) and start with
+> [packaging/windows/DRIVER_INSTALL.md](windows/DRIVER_INSTALL.md).
 
 Zuuned manages music, videos, photos and playlists on Microsoft Zune players.
 The 0.1.1 download is the original development testing build, migrated without

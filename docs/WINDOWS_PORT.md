@@ -1107,6 +1107,48 @@ door for `launches=18 checks=102 failures=0 skips=0 killed=0 pid-scan-fallbacks=
 changes - still one hand-tested Pavo Zune HD, read-only in this pass, nothing listened to.
 `docs/WINDOWS_COMPAT_AUDIT.md` carries the same sitting as its ninth sweep.
 
+## The fifteenth pass: the last hand-rolled walk, and what this fork calls itself (2026-10-22)
+
+**The item the closing-order list has carried since the fourth pass is closed.**
+`SpokenMediaService::previewBookFolder()` walked a user-picked audiobook folder with its own
+recursive `QDirIterator`, and `QDir::NoSymLinks` - the filter that reads like a guard - does
+not exclude a Windows junction, because `QFileInfo::isSymLink()` is false for one.  A folder
+linking back into one of its own ancestors stayed an ordinary directory to it, and one book
+came out filed under every phantom path the loop invented.  It calls `LibraryScan::walkFiles()`
+now, the walk a watch folder uses, whose per-folder identity (volume serial plus file index)
+refuses a folder it has already listed and which `librarytool walk` holds against a real
+`mklink /J`.  Four behaviours were compared against the iterator instead of assumed
+unchanged: the file set, the two ceilings, the unreadable-folder refusal (now two sentences
+rather than one, and an empty folder still reads as empty) and cancellation.
+`docs/WINDOWS_COMPAT_AUDIT.md` carries the sitting as its tenth sweep, with the list of what a
+second whole-tree read did not find.
+
+**Cancellation had to be wired by hand, and the first cut lost it.**  `walkFiles()` stops on
+the one flag it is handed and the flag this call hands it belongs to the two ceilings, so a
+cancelled reading of the caller's flag had to move into the visitor and stop the walk through
+the shared atomic.  Read only after the walk, as the first cut read it, a Cancel press would
+have waited out a folder of six figures - and the bounded spoken-worker close at shutdown
+waits on that very loop, which is the one place a slow cancel is not merely annoying.
+
+**This fork now says its own name in its own documents.**  `AGENTS.md` and `docs/PORT_PLAN.md`
+called the project `ZuunedLinux`, and `packaging/TESTER_README.md` sent a reader to upstream's
+Linux release downloads - accurate about upstream, wrong about the checkout they were sitting
+in, because this fork publishes no Linux binaries.  Those three and `docs/ANNOUNCEMENT_VIDEO.md`
+now name which product each one describes: this fork (`miemiekurisu/zuuned-modern`, a Windows
+client port of [badgeromen/zuuned-linux](https://github.com/badgeromen/zuuned-linux)) or the
+upstream a feature came from.  `README.md` already said Zuuned Modern.  Runtime identity is
+left alone on purpose - `Zuuned`, `zuuned.exe`, `%APPDATA%\Zuuned`, `ZUUNED_PROFILE_DIR` -
+because a rename orphans every profile and library this fork already has on a real machine,
+for the sake of a label.  Two statements in `AGENTS.md` the fifth pass had already invalidated
+(no `<longPathAware>` entry; UTF-16 m3u undecoded) are qualified to point at that pass instead
+of being copied forward as open.
+
+Gates on a `cmake --build build --clean-first` relink: `tests\win-compat`
+`201 checks, 0 failures, 0 skips` and `tests\win-usability`
+`launches=18 checks=104 failures=0 skips=0 killed=0`, `OVERALL=ok`, including two new `tools`
+pins that keep a second recursive walk out of `src/`.  No Windows capability is added and no
+device claim changes - still one hand-tested Pavo Zune HD, read-only, nothing listened to.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and
@@ -1199,8 +1241,9 @@ changes - still one hand-tested Pavo Zune HD, read-only in this pass, nothing li
    behind the bounded spoken close is exercised.  Measure NVDEC against software on a
    real 1080p item before quoting a speed-up for Windows.
 5. One photo and one spoken item across the wire, so the two photo shell-outs the eighth pass
-   fixed and the `zune_grab_photo_thumb()` fallback stop being software-only claims.  While
-   spoken transfer is open anyway, route the import walk at
-   `src/spoken/SpokenMediaService.cpp:1144` through `LibraryScan::walkFiles()`: it is the
-   last recursive walk in the tree, and `QDir::NoSymLinks` does not exclude a junction.
+   fixed and the `zune_grab_photo_thumb()` fallback stop being software-only claims.  The
+   spoken import walk this item carried is routed through `LibraryScan::walkFiles()` as
+   of the fifteenth pass, so what is left here is the wire.
+   `LibraryScan::walkFiles()` as of the fifteenth pass, so what is left here is the wire.
+   The import itself still has no phase, gated or hand.
 6. Only then talk about Windows packaging or a Windows release channel.

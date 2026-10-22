@@ -1,4 +1,4 @@
-# AGENTS.md — AI Assistant Guide for ZuunedLinux
+# AGENTS.md — AI Assistant Guide for Zuuned Modern
 
 **Local build handoff (user decision, 2026-10-13):** after a completed
 user-facing local build, restart only Zuuned with the fresh executable, preserving
@@ -284,8 +284,11 @@ cache-is-its-own-source refusal is built on. The three fixes are compile-verifie
 only: no hand test yet, and `zuuned.exe` has not been relinked since.
 `docs/WINDOWS_COMPAT_AUDIT.md` records each one and what the sweep deliberately left
 alone - four uncalled libzune shell sites, and no `<longPathAware>` in the executable
-manifest, which keeps the Qt-side paths under 260 characters. Device evidence is
-unchanged and still one hand-tested Pavo Zune HD.
+manifest, which keeps the Qt-side paths under 260 characters. The last clause is this
+sweep's last word rather than the tree's: later the same day every executable gained the
+entry (`packaging/windows/zuuned.manifest`, applied to six targets by `zuuned_long_paths()`
+in `CMakeLists.txt`), so read it as what was found then and not as what the tree holds.
+Device evidence is unchanged and still one hand-tested Pavo Zune HD.
 
 **Windows third sweep, and everything re-run on the relinked build, 2026-10-21:** the
 sweep above was re-read rather than re-run, which found three defects inside it. An m3u
@@ -313,11 +316,13 @@ localized `/showIncludes` output, so every object records `#deps 0` and an incre
 build silently recompiles nothing after a header edit while still relinking and looking
 busy. Check with `ninja -t deps <obj>`; rebuild `--clean-first` before quoting any Windows
 gate counter. Details in `BUILDING.md`. Deliberate gaps, all in
-`docs/WINDOWS_COMPAT_AUDIT.md`: UTF-16 m3u is not decoded,
+`docs/WINDOWS_COMPAT_AUDIT.md`:
 playlist *export* names keep their own narrower rule because sharing `safeComponent()`
-would rename existing Linux exports, `safeComponent()` bounds spelling but not length, and
-there is still no `<longPathAware>` entry. POSIX behaviour is unchanged by construction
-and still unverified on this machine. Device evidence is unchanged: one hand-tested Pavo
+would rename existing Linux exports, and `safeComponent()` bounds spelling but not length.
+Two items that were on that list closed in the same day's paragraph below -
+`PlaylistText::decode()` honours a UTF-16 BOM in either byte order, and every executable
+now declares `longPathAware` - so quote that paragraph and not this one.  POSIX behaviour
+is unchanged by construction and still unverified on this machine. Device evidence is unchanged: one hand-tested Pavo
 Zune HD, and no device claim was added.
 
 **2026-10-22 GUID moniker, and the counters that depend on the desktop:** an album on the
@@ -471,6 +476,47 @@ checks. Gates on the relinked binary: `paths` 73 (the eighth sweep's "74" was a 
 `launches=18 checks=102 failures=0 skips=0 killed=0`, re-run at the same counters on the relink
 that carries the fourth door - its `pid-scan-fallbacks` read 1 once and 0 once, a tally. No capability added and no device claim
 changed - one hand-tested Pavo Zune HD, read-only here, nothing listened to.
+
+**2026-10-22 Windows spoken walk, and the fork's own name:** a third full-tree Windows
+compatibility read found one defect, and it was the one the last three passes kept listing
+without picking up - `SpokenMediaService::previewBookFolder()` still walked a user-picked
+audiobook folder with its own recursive `QDirIterator` and `QDir::NoSymLinks`, which is the
+filter that reads like a guard and does nothing about a junction because `QFileInfo` does not
+call one a link, so a folder linking back into an ancestor was an ordinary directory and one
+book came out filed under every phantom path the loop invented. It calls
+`LibraryScan::walkFiles()` now - the watch-folder walk, with a real per-folder identity and
+the `mklink /J` fixture in `librarytool walk` behind it - and four behaviours were compared
+rather than assumed: the file set (`walkFiles()` lists with `filters | Dirs | NoDotAndDotDot`
+and visits only non-directories, so a folder named `track.mp3` never becomes a chapter, and
+the visitor keeps the `isSymLink()` test that was the one thing `NoSymLinks` achieved), the
+5,000-file ceiling word for word, the 100,000 ceiling now counting visited entries, and the
+unreadable-folder refusal split into a root sentence and a subfolder sentence read off
+`complete`/`directories` instead of `QDir`'s metadata. Cancellation is the lesson worth
+keeping: `walkFiles()` stops on the one flag it is handed and this call hands it the ceilings'
+atomic, so the visitor has to read the caller's flag itself - the first cut checked it after
+the walk, which would have made a Cancel press wait out a six-figure folder while the bounded
+spoken-worker close at shutdown waits on that same loop. No spoken phase is gated on Windows,
+so the usability `tools` phase pins structure instead of pretending to have walked a tree: no
+`.cpp` or `.h` under `src/` may contain `QDirIterator::Subdirectories`, and
+`src/spoken/SpokenMediaService.cpp` must call `LibraryScan::walkFiles(`. What the same read
+cleared, so it is not read a fourth time: no second recursive walk anywhere; three `QProcess`
+sites, none reachable here except as a fixture (`gio` behind a `/run/user/<uid>/gvfs` regex,
+the udev one-click behind `udevRulesApply()`, `cmd.exe /c mklink /J` inside `librarytool
+walk`); artwork and thumbnail cache keys are digests; every atomic write is a `QSaveFile`;
+`ZUUNED_TMPDIR` maps to `zuuned_win_tmpdir()`, so the transcode layer's `/tmp/` is spelled
+correctly. And the fork's own documents were still talking about somebody else: this file and
+`docs/PORT_PLAN.md` called the project ZuunedLinux and `packaging/TESTER_README.md` pointed at
+upstream's Linux downloads, so those three plus `docs/ANNOUNCEMENT_VIDEO.md` now say whether
+they describe this fork (`miemiekurisu/zuuned-modern`, the Windows client port) or the upstream
+a feature came from - while runtime identity stays `Zuuned`, `zuuned.exe`, `%APPDATA%\Zuuned`
+and `ZUUNED_PROFILE_DIR`, because renaming those orphans real profiles for a label. Two
+statements this file had already outgrown (no `<longPathAware>` entry, UTF-16 m3u undecoded)
+are qualified to point at the pass that closed them instead of being copied forward. Gates on
+a `cmake --build build --clean-first` relink: `tests\win-compat` 201 checks, 0 failures, 0
+skips; `tests\win-usability` `launches=18 checks=104 failures=0 skips=0 killed=0`,
+`OVERALL=ok`, both new pins passing, `pid-scan-fallbacks=2` a tally. No Windows capability is
+added and no device claim changes - one hand-tested Pavo Zune HD, read-only, nothing listened
+to.
 
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow

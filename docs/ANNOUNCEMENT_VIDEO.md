@@ -1,5 +1,10 @@
 # Zuuned Linux announcement video
 
+> Upstream's Linux launch script, kept as inherited - the narration is upstream's
+> voice and its platform. This fork is the Windows client port
+> (`miemiekurisu/zuuned-modern`); its own story is
+> [docs/WINDOWS_PORT.md](WINDOWS_PORT.md).
+
 ## A 60 to 90 second launch video
 
 Lead with the real device working. Show the app and Zune together where possible.

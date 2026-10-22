@@ -1013,6 +1013,95 @@ read-only re-sighting of the same hand-tested Pavo Zune HD inside the music-libr
 gate that was already closed.  Deletion, the spoken and photo/video categories, every model
 but this Pavo, audible playback and anything anyone has listened to all stay open.
 
+## Tenth sweep: the last hand-rolled walk, and a re-read that found one (2026-10-22)
+
+**One defect, and it is the one the last three sweeps pointed at without picking it up.**
+`SpokenMediaService::previewBookFolder()` was the last recursive directory walk in the
+source tree: a `QDirIterator` over `QDir::AllEntries | QDir::NoDotAndDotDot |
+QDir::NoSymLinks` with `Subdirectories`.  `NoSymLinks` is the filter that looks like
+protection and is not - `QFileInfo::isSymLink()` is false for a Windows junction, so a
+folder linking back into one of its own ancestors is an ordinary directory, the walk
+descends, and one book comes out filed under every phantom path the loop invented.  It
+calls `LibraryScan::walkFiles()` (`src/library/LibraryScanner.h:84`) now, which is what a
+watch folder uses: an explicit stack instead of recursion, an identity per folder (volume
+serial plus file index, real ones through `compat/win`), and a refusal to enter a folder it
+has already listed.  `librarytool walk` holds that against a real `mklink /J`
+(`src/library/librarytool.cpp:778`), so the import is inside a gate it used to stand
+outside, and the pattern below is the only place left in the tree that names it.
+
+**Four behaviours were compared one at a time rather than assumed preserved.**
+
+- The file set is the iterator's.  `walkFiles()` lists with `filters | QDir::Dirs |
+  QDir::NoDotAndDotDot` (`src/library/LibraryScanner.cpp:308`) and calls the visitor only
+  for entries that are not directories, so a folder called `track.mp3` stays a place to
+  look and never becomes a chapter.  The visitor keeps its own `isSymLink()` test, which is
+  the one thing `NoSymLinks` was actually achieving.
+- The 5,000-audio-file refusal is unchanged word for word.  The 100,000 refusal now counts
+  entries the visitor saw instead of entries of every kind, so a tree of nothing but
+  folders is no longer capped - with a real identity per folder the depth is the
+  filesystem's own, which is what makes that number a backstop here rather than the
+  protection.
+- The unreadable-folder refusal tells two cases apart instead of covering both with one
+  sentence: an unreadable root says `Choose a readable local audiobook folder`, an
+  unreadable subfolder says the old sentence.  It reads `complete` and `directories` off
+  the walk rather than asking `QDir` whether a folder `isReadable()`, which answers from
+  metadata, while the walk has already opened that folder to `fstat` it.  An empty folder
+  still says `No supported audiobook files found in this folder`, and nothing outside this
+  source file keys off either string - no test, no QML file.
+- Cancellation keeps its per-entry granularity, and only because it was wired by hand.
+  `walkFiles()` stops on the one flag it is handed, and that flag belongs to the two
+  ceilings, so the visitor asks the caller's flag itself and stops the walk through the
+  shared one.  The first cut read cancellation only after the walk, which imposed a wait the
+  old iterator never did and which the bounded spoken-worker close at shutdown waits on.
+
+**Neither Windows gate can drive that folder chooser, so the gate pins the structure instead
+of pretending to have walked a tree.**  Two static checks joined the `tools` phase of
+`tests/win-usability`: no `.cpp` or `.h` under `src/` may contain
+`QDirIterator::Subdirectories`, and `src/spoken/SpokenMediaService.cpp` must contain the
+`LibraryScan::walkFiles(` call.  They cost nothing, and each fails by naming the file.
+
+**A second whole read of the tree, and the list of what it did not find.**  One change out
+of a full re-read is a result, and it belongs here as plainly as the change does.
+
+- No second recursive walk: outside the pin itself the pattern appears nowhere in the tree,
+  and the other `LibraryScan::walkFiles()` callers are the music, video and photo scan
+  phases that already went through it.
+- Three `QProcess` sites under `src/`, none reachable on Windows except as a fixture.  `gio`
+  (`src/LibraryService.cpp:752`) starts only for a watch folder matching
+  `^/run/user/<uid>/gvfs/smb-share:...`, which no Windows path can match; the udev one-click
+  returns at `src/DeviceService.cpp:1025` before it builds a process, because
+  `udevRulesApply()` is false here; and `cmd.exe /c mklink /J`
+  (`src/library/librarytool.cpp:787`) exists to make the junction this sweep leans on.
+- Artwork and thumbnail cache keys are digests (`AlbumArtService::cacheKey`,
+  `ArtistImageService::cacheKey`, the `MusicIdentityClient` key), so no device or tag text
+  reaches a filename and no illegal character can.
+- Every write that has to be atomic goes through `QSaveFile`, and the one bare
+  `QFile::rename()` is guarded by an existence test in the same statement.
+- No Linux-only environment read is left standing: the one that mattered (`USER`) went in
+  the tenth pass, and `ZUUNED_TMPDIR` maps onto `zuuned_win_tmpdir()`
+  (`compat/win/posix_shim.h:465`), so the transcode layer's `/tmp/` is spelled correctly
+  rather than optimistically.
+
+**What this fork calls itself, in its own documents.**  Not a path or an encoding, but a
+correctness defect the same read turned up: `AGENTS.md` and `docs/PORT_PLAN.md` still named
+the project `ZuunedLinux`, and `packaging/TESTER_README.md` sent a reader to upstream's
+Linux downloads.  Those three and `docs/ANNOUNCEMENT_VIDEO.md` now say which product they
+describe - this fork (`miemiekurisu/zuuned-modern`, the Windows client port) or the upstream
+it inherited the feature from.  Runtime identity is untouched on purpose: `Zuuned`,
+`zuuned.exe`, `%APPDATA%\Zuuned` and `ZUUNED_PROFILE_DIR` stay, because renaming them would
+orphan every profile and library this fork already has on a real machine for the sake of a
+label.  Two claims in `AGENTS.md` that the same day's fifth pass had already invalidated -
+no `<longPathAware>` entry, UTF-16 m3u undecoded - are qualified to point at that pass
+instead of being repeated as open.
+
+Gates on the relinked binary (`cmake --build build --clean-first`): `tests\win-compat`
+`201 checks, 0 failures, 0 skips` and `tests\win-usability`
+`launches=18 checks=104 failures=0 skips=0 killed=0`, `OVERALL=ok`, with both new pins
+passing; `pid-scan-fallbacks=2` is a tally, not a constant.  No Windows capability is added
+and no device claim changes - still one hand-tested Pavo Zune HD, read-only, nothing
+listened to.  The harness opened no device handle, and as on every run of it the instrumented
+launches browsed the attached player read-only.
+
 ## What is proven, and by which gate
 
 - `tests/win-usability/watch_folder_repair.py` seeds four roots - a `/E:/` scar, a
@@ -1189,8 +1278,8 @@ pretending otherwise would put an unverified claim in the tree.
   rather than depended on: `QFileInfo::isSymLink()` does not report a Windows junction,
   although the shim's own `lstat()` classifies `IO_REPARSE_TAG_MOUNT_POINT` as
   `S_IFLNK` (`compat/win/wincompat.c:249`).  The library walk no longer asks that
-  question at all — it asks who this folder is — but `SpokenMediaService` still does,
-  and so will the next recursive walk written here.  Making a junction needs neither
+  question at all — it asks who this folder is — and the tenth sweep took the same question out of the last
+  hand-rolled walk in `src/`, so nothing under `src/` asks it any more.  Making a junction needs neither
   privileges nor developer mode, so "nothing real contains one" was never the
   assumption it looked like.
 - **`safeComponent()` bounds nothing but spelling.**  A component longer than 255
@@ -1201,17 +1290,12 @@ pretending otherwise would put an unverified claim in the tree.
 
 ## Known gaps, on purpose
 
-- One recursive walk is left in the tree: the audiobook folder import at
-  `src/spoken/SpokenMediaService.cpp:1144`, which passes `QDir::NoSymLinks` and gets no
-  protection from it because Qt does not call a junction a link.  What a junction loop
-  there ends in depends on the tree, and only the first two endings are honest: the
-  100 000-entry cap or the 5 000-audio-file cap, both visible refusals, or - if the loop
-  runs deep enough to exhaust `MAX_PATH` first - a listing that simply stops and a
-  preview that is silently partial, which is the shape of the wrong answer the library
-  walk has just stopped giving.  The third ending is reasoned from the measured
-  `MAX_PATH` ceiling, not reproduced here.  It is one folder a user picked a moment ago
-  rather than a watch folder revalidated forever, which is why this one is left; routing
-  it through `LibraryScan::walkFiles()` is the fix, next time spoken import is open.
+- The audiobook folder import no longer owns a walk: `previewBookFolder()` goes through
+  `LibraryScan::walkFiles()` the way a watch folder does, so a junction there ends in a
+  folder the walk refuses to enter rather than a phantom path.  What is left of this item
+  is a gap in evidence and not a hole in the rule: no Windows phase imports an audiobook
+  folder, so the routing stands on two static checks and the `mklink /J` fixture in
+  `librarytool walk`, not on an import that ran.  See the tenth sweep.
 - The spoken worker's close is bounded, and what is left of it is on purpose: the last
   resort in `Zuuned::drainThread()` has never fired here, and no Windows gate plays a
   podcast or an audiobook, so neither `[spoken] last position not saved` nor the resume
