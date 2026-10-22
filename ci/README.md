@@ -31,6 +31,11 @@ server version, artifact API support or upload limit is assumed.
 
 ## Release preparation
 
+> Upstream's Linux release procedure, kept as written. The fork, Zuuned
+> Modern, publishes no binaries: its gate is `tests/win-compat/run.ps1` plus
+> `tests/win-usability/run.ps1` and [docs/WINDOWS_PORT.md](../docs/WINDOWS_PORT.md),
+> and `ci/check.sh` itself stays Linux-only.
+
 1. Commit reviewed changes and run the software gates on that exact revision.
 2. In the private maintainer layout, build using the Debian container instructions
    in `packaging/containers/README.md`. The snapshot exporter requires a libzune
@@ -43,6 +48,7 @@ server version, artifact API support or upload limit is assumed.
    results in `docs/releases/`; never attach a user's database or settings.
 4. Complete the remaining host/device gates in `docs/TESTER_RELEASE.md` and
    label any deliberately outstanding gates in the tester notes.
+
 5. After explicit push/publication approval, create a **prerelease** on
    [GitHub Releases](https://github.com/badgeromen/zuuned-linux/releases).
    Attach the AppImage, checksum, notices, accurate source/provenance links

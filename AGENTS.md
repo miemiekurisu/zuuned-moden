@@ -518,6 +518,52 @@ skips; `tests\win-usability` `launches=18 checks=104 failures=0 skips=0 killed=0
 added and no device claim changes - one hand-tested Pavo Zune HD, read-only, nothing listened
 to.
 
+**2026-10-22 Windows eleventh sweep - a second executable, and a GUID that was never an
+album name:** `tools/artwork-preview` is the only process in the tree that has to name a
+Zuuned profile from the outside, and it did so with Qt's generic writable location plus a
+literal `/Zuuned/Zuuned` - correct on Linux by XDG luck, wrong on Windows in two directions
+at once, because `GenericDataLocation` is `C:\ProgramData`, where Zuuned has never written
+a file (`Test-Path C:\ProgramData\Zuuned` is `False`), and `GenericCacheLocation` is the
+shell's local app-data folder, one level *above* the `<LocalAppData>\Zuuned\Zuuned\cache`
+that holds `art`, `artistart`, `stills` and `vidthumbs`. It could not have used
+`QStandardPaths::AppDataLocation` either: that answers for the calling process, and the lab
+runs as `ZuunedPreview` / "Artwork Print Lab" so that its settings and pipeline cache stay
+out of the application's. `Zuuned::ProfilePaths::applicationDataLocation()` and
+`applicationCacheLocation()` now name both folders, `ZUUNED_PROFILE_DIR` winning on either
+platform and neither of them calling `mkpath()`, because a tool looking for someone else's
+library has no business creating an empty one. Measured against one build of the tool with
+no explicit roots: the old defaults exit `1` with `No cached artwork found`, the new ones
+exit `0` and export four sheets, one named `ARIA The NATURAL VOCAL SONG COLLECTION /
+Unknown Artist`. The usability gate's `tools` phase pins the rule rather than the artwork,
+including a sweep-by-construction check that no source file under `src/` or `tools/` spells
+a profile folder out of a string; its three new pins are why it now counts 107. Asked the
+same day why the ARIA album on the player carries a GUID where a name belongs while other
+albums do not, the scan answers without anybody clicking into a tile: the moniker is on 27
+of 189 artist fields and 130 of 189 genre fields and on **0 album and 0 title fields**, the
+album pivot prints 15 of 15 real names with ARIA's by-line `Unknown Artist`, the player's
+own album object carries the real name as text, and the print lab keys the same album out of
+the cache as `... / Unknown Artist`. The GUID is the player's placeholder for an artist or
+genre it was never given, so an album whose rip carried an `AlbumArtist` reads normally and
+one whose rows did not does not - `Extra terrestrial Biological Entities` is the pair that
+shows both, object `EGOIST` against rows holding the moniker - and
+`MusicIdentity::isGuidMoniker`/`deviceArtist`/`deviceAlbum`/`deviceGenre` with their
+`qml/MusicIdentity.js` mirror is what keeps it out of every name the application renders,
+caches, writes to a folder or would sync onward. No album name in this tree's data has ever
+held a GUID; if one appears in an album tile on a build carrying the rule, that is a new
+defect and needs the string that was seen. Everything was re-run on the relinked build
+(`cmake --build build --clean-first`): `tests\win-compat` reports 201 checks, 0 failures
+and 0 skips, and `tests\win-usability` reports launches=18 checks=107 failures=0 skips=0
+killed=0 with `OVERALL=ok`, and the preview lab compiles and links on Windows as its own CMake project.
+Naming is aligned with the fork: `docs/README.md` carries the Zuuned Modern banner and points
+at `docs/WINDOWS_PORT.md`, `docs/releases/README.md` and `packaging/TESTER_INSTALL.md` say
+they are upstream's Linux notes kept as shipped, `ci/README.md` says its procedure is
+upstream's and `ci/check.sh` stays Linux-only, and `CLAUDE.md` - 818 lines of the upstream
+Linux guide frozen at an earlier revision, whose only three unique lines were its old
+`ZuunedLinux` title and a superseded `usbreset 045e:0710`-only recovery - is a 58-line
+pointer to `AGENTS.md` and `docs/WINDOWS_PORT.md`, because a duplicated guide is how a
+superseded instruction survives a fork. No Windows capability is added and no device claim
+changes - still one hand-tested Pavo Zune HD, read-only, nothing listened to.
+
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow
 windows. Resizing an existing queue opens the island unless a builder is active;

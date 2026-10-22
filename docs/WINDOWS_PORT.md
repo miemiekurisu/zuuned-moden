@@ -1149,6 +1149,68 @@ Gates on a `cmake --build build --clean-first` relink: `tests\win-compat`
 pins that keep a second recursive walk out of `src/`.  No Windows capability is added and no
 device claim changes - still one hand-tested Pavo Zune HD, read-only, nothing listened to.
 
+## The sixteenth pass: a second executable, a name that is not a name, and what this fork is called (2026-10-22)
+
+Everything was re-run on a relinked binary: ``cmake --build build --clean-first`` over the
+whole tree, then the two gates. ``tests\win-compat`` reports 201 checks, 0 failures and 0
+skips; ``tests\win-usability`` reports launches=18 checks=107 failures=0 skips=0
+killed=0 pid-scan-fallbacks=0, with ``OVERALL=ok``. The three checks the usability gate gained since
+the fifteenth pass are the profile-path pins described in
+``docs/WINDOWS_COMPAT_AUDIT.md``; they are source pins, so they gate a rule the harness
+cannot otherwise reach, and the tool they describe was built and run by hand.
+
+A sighting was then answered from the read rather than from a guess. Asked why the ARIA
+album on the attached player carries a GUID where a name belongs while other albums do
+not, a scan of that player answers it in four lines, from an instrumented launch into an
+isolated profile over the same 189 tracks:
+
+- the GUID moniker sits on **27 of 189 artist fields and 130 of 189 genre fields, and on
+  0 album fields and 0 title fields**. Blank padding arrives with it: the same 27 and 130.
+- the album pivot the screen draws prints **15 of 15 real names**, and ARIA's tile reads
+  ``"ARIA The NATURAL VOCAL SONG COLLECTION" by "Unknown Artist" (13)``.
+- the player's own album object ``100663309`` carries its real name as plain text,
+  ``name="ARIA The NATURAL VOCAL SONG COLLECTION"``.
+- the artwork print lab, which keys off the cache and the local database rather than off
+  ZMDB, exports a sheet named ``ARIA The NATURAL VOCAL SONG COLLECTION / Unknown Artist``.
+
+So the GUID is the player's, not this application's: a Zune HD that never learned an
+artist or a genre stores a GUID moniker in that field and displays it, and the albums that
+read normally are the rips whose tags carried one. ``Extra terrestrial Biological
+Entities`` is the case that shows both halves of one album at once - its album object says
+``EGOIST`` while its track rows carry the moniker - which is exactly why a GUID can be on
+screen in one view of an album and a name in the next. ``MusicIdentity::isGuidMoniker`` and
+``deviceArtist``/``deviceAlbum``/``deviceGenre``, with their mirror in
+``qml/MusicIdentity.js``, turn every one of those into ``Unknown Artist``, ``Unknown Album``
+and ``Unknown Genre`` wherever the application renders a name, keys an artwork cache, names
+a pull folder or would write an artist back to the next player. Nothing in this tree's data
+has ever held a GUID in an album name.
+
+The limit on that paragraph is worth keeping: it is a read of one player, and a GUID
+appearing in an album tile of *this* application on a build that carries the rule would be
+a different defect, one to be chased with the string that was actually seen.
+
+What this fork is called is now said consistently. ``README.md``, ``BUILDING.md``,
+``AGENTS.md`` and ``docs/PORT_PLAN.md`` already read Zuuned Modern; four documents that
+still read as upstream's now say which product they describe. ``docs/README.md`` opens with
+the fork banner and points at ``docs/WINDOWS_PORT.md`` for current Windows status;
+``docs/releases/README.md`` and ``packaging/TESTER_INSTALL.md`` are labelled as upstream's
+Linux notes and AppImage instructions, kept as shipped; ``ci/README.md`` says its release
+procedure is upstream's, that the fork publishes no binaries, that its gate is the two
+Windows scripts, and that ``ci/check.sh`` itself stays Linux-only.
+
+``CLAUDE.md`` was the worst of the lot and is 58 lines now. It held 818 lines of the
+upstream Linux guide frozen at an earlier revision, and diffed against ``AGENTS.md`` it had
+exactly three lines that were not already there: its old ``ZuunedLinux`` title, and a
+recovery note claiming ``usbreset 045e:0710`` was the way back from a wedged OpenSession -
+Linux-only, and superseded by the measured Windows account of a reset that reports success
+and does nothing. A duplicated guide is how a superseded instruction survives a fork, so
+the file is a pointer now: ``AGENTS.md`` is the log, ``docs/WINDOWS_PORT.md`` is the status,
+and the history it carried is in ``git log -- CLAUDE.md``.
+
+No Windows capability is added and no device claim changes - still one hand-tested Pavo
+Zune HD, read-only, nothing listened to. Deletion, the podcast, audiobook, photo and video
+categories, every model but this Pavo, audible audio and packaging stay open.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and

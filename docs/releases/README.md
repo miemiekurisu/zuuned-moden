@@ -1,5 +1,10 @@
 # Zuuned Linux
 
+> Upstream release notes, kept as shipped: the binaries these pages describe come
+> from [badgeromen/zuuned-linux](https://github.com/badgeromen/zuuned-linux/releases).
+> This fork, Zuuned Modern, is a Windows client port and publishes no Linux build -
+> see [the documentation guide](../README.md).
+
 **Bring your Zune back into your daily rotation.**
 
 ![Welcome to Zuuned: your Zune, at home on Linux](../readme-screenshots/welcome.png)

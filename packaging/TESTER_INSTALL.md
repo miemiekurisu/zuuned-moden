@@ -1,5 +1,11 @@
 # Zuuned — tester install
 
+> Upstream's Linux installation guide, kept as shipped: it installs an AppImage
+> from [badgeromen/zuuned-linux](https://github.com/badgeromen/zuuned-linux/releases).
+> This fork, Zuuned Modern, is a Windows client port; for it see
+> [packaging/windows/DRIVER_INSTALL.md](windows/DRIVER_INSTALL.md) and
+> [BUILDING.md](../BUILDING.md).
+
 Use the exact candidate linked in the release announcement. The short tester
 filename identifies the version and architecture; the matching build JSON and
 `--version` output identify its exact app/libzune revisions.

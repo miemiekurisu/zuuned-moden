@@ -1,8 +1,15 @@
 # Documentation guide
 
-Updated for the 0.2.0 release candidate on October 14, 2026. Application source
-and downloads live at [badgeromen/zuuned-linux](https://github.com/badgeromen/zuuned-linux);
-shared protocol development lives at [badgeromen/libzune](https://github.com/badgeromen/libzune).
+Updated for the 0.2.0 release candidate on October 14, 2026.
+
+> **This tree is Zuuned Modern**, a Windows client port of upstream
+> [badgeromen/zuuned-linux](https://github.com/badgeromen/zuuned-linux). The fork's
+> source is this repository and it publishes no Linux downloads; the Linux sources,
+> AppImages and release notes linked below are upstream's, kept as shipped. Current
+> Windows status is [WINDOWS_PORT.md](WINDOWS_PORT.md).
+
+Shared protocol development lives at
+[badgeromen/libzune](https://github.com/badgeromen/libzune).
 This application snapshot includes libzune as ordinary source files.
 
 ## Start here
