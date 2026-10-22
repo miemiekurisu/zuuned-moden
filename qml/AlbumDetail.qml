@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Qt5Compat.GraphicalEffects
+import "MusicIdentity.js" as MusicIdentity
 
 // UX-3 "vinyl shelf" (A3, approved): the sleeve sits tilted with the
 // record sliding out behind it — further on hover, SPINNING while this
@@ -60,11 +61,18 @@ Item {
         SyncEngine.addTracks(page.fullTracks.map(t => page._syncItemOf(t)))
     }
 
+    // Through the mirror.  `albumArtist` arrives from an album tile and is ruled
+    // there already; only the fallback to the first row's own fields is raw, and
+    // this value is not decoration - it is the headline text of this page and the
+    // name of the artist page its byline opens, so an unruled GUID here becomes a
+    // tile name again one level down.  MusicIdentity.known() yields empty for a
+    // moniker, which is what an untagged row already answers.
     readonly property string primaryArtist:
-        fullTracks.length > 0 ? fullTracks[0].artist : ""
+        fullTracks.length > 0 ? MusicIdentity.known(fullTracks[0].artist) : ""
     readonly property string primaryAlbumArtist:
         albumArtist || (fullTracks.length > 0
-            ? (fullTracks[0].albumartist || fullTracks[0].artist) : "")
+            ? (MusicIdentity.known(fullTracks[0].albumartist)
+               || MusicIdentity.known(fullTracks[0].artist)) : "")
 
     readonly property string totalDuration: {
         let secs = 0

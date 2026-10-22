@@ -123,7 +123,10 @@ Item {
     function computeArtists(rows) {
         const map = {}
         for (const t of rows) {
-            const name = t.artist.length > 0 ? t.artist : "Unknown Artist"
+            // Through the mirror, so a name field that carries a GUID moniker
+            // cannot become a tile name here either - the same rule the C++
+            // device read applies, at the last mile before the screen.
+            const name = MusicIdentity.artistName(t)
             if (!map[name])
                 map[name] = { name: name, count: 0, artItemId: t.itemId }
             map[name].count++
@@ -1584,7 +1587,8 @@ Item {
                     if (kind === "album" && d.kind === "album"
                         && MusicIdentity.key(d) === MusicIdentity.key({
                             name: before.album || before.title,
-                            artist: before.artist || "Unknown Artist" }))
+                            artist: MusicIdentity.known(before.artist)
+                                      || "Unknown Artist" }))
                         return Object.assign({ kind: "album" }, MusicIdentity.fromTrack(
                             root.allTracks.find(t => t.libraryId === root.customizeAnchorId)
                             || {album: title, albumartist: identityFields.albumartist.trim()}))

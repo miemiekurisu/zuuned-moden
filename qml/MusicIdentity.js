@@ -2,17 +2,46 @@
 
 // The library groups albums by album artist + title. Device snapshots
 // lack albumartist, so their track artist is the available owner.
+//
+// A Zune that never learned a name does not leave the field empty: it stores a
+// GUID moniker and shows that on its own screen, so the same string arrives here
+// through a device row, through an import folder a pull was filed under, and
+// through any local file a tagless rip left behind. This file is the last mile -
+// MusicPage, ArtistDetail and GenreDetail all group through it for BOTH sources -
+// so it repeats the one C++ predicate (MusicIdentity::isGuidMoniker in
+// src/library/MusicIdentity.h) rather than trusting its callers, because a group
+// that keeps the moniker turns it into a tile name on screen. Braces are optional
+// and surrounding blanks are not part of the answer, exactly as there.
+const guidMoniker = /^(?:\{)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}(?:\})?$/
+function isMoniker(text) {
+    return guidMoniker.test(String(text === undefined || text === null ? "" : text).trim())
+}
+
+// A piece of text as a name, or empty when it is a moniker. Empty is the signal the
+// callers below already handle with their own Unknown Artist / Unknown Album.
+function known(text) {
+    const value = String(text === undefined || text === null ? "" : text).trim()
+    return isMoniker(value) ? "" : value
+}
+
+// The artist a row belongs to. Album artist wins where the source has one.
 function owner(track) {
-    return track.albumartist || track.artist || "Unknown Artist"
+    return known(track.albumartist) || known(track.artist) || "Unknown Artist"
+}
+
+// The Artists pivot groups by the row's own artist, not by an albumartist hint.
+function artistName(track) {
+    return known(track.artist) || "Unknown Artist"
 }
 
 function fromTrack(track) {
-    return { name: track.album || "Unknown Album", artist: owner(track) }
+    return { name: known(track.album) || "Unknown Album", artist: owner(track) }
 }
 
 function fromAlbum(album) {
-    return { name: album.name || "Unknown Album",
-             artist: album.artArtist || album.artist || album.subtitle || "Unknown Artist" }
+    return { name: known(album.name) || "Unknown Album",
+             artist: known(album.artArtist) || known(album.artist)
+                     || known(album.subtitle) || "Unknown Artist" }
 }
 
 function key(album) {

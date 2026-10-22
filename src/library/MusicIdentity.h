@@ -36,6 +36,12 @@ inline QString knownAlbum(const QString &value) {
 // the artist a later sync writes back to the next player.  Read as unknown it
 // joins every tagless file the library already carries.  Braces are optional
 // because a moniker arrives both ways depending on which field wrote it.
+//
+// One rule, two languages: qml/MusicIdentity.js repeats this predicate for the
+// grouping the QML pivots do themselves, on both local and device rows, and no
+// gate reaches either side of the pair from the other.  Change the shape here and
+// change it there in the same commit, or the screen and the database disagree -
+// which is the defect the 2026-10-22 ninth sweep had to go and find.
 inline bool isGuidMoniker(const QString &value) {
     static const QRegularExpression moniker(
         QStringLiteral("^(?:\\{)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}"
