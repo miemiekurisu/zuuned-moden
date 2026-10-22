@@ -45,11 +45,33 @@ inline bool isGuidMoniker(const QString &value) {
 // One device artist/album string as the application should name it.  The unknown
 // spellings are the ones LibraryScanner, AlbumArtService and the pivots already
 // agree on, so nothing downstream has to learn a new word.
+//
+// These are also the one place device text becomes a name, so they own the
+// whitespace.  ZMDB does not hand over a bare string: on the port's Zune HD the
+// moniker arrives with leading blanks, and a caller that skipped the trim would
+// get an artist whose artwork cache key, its comparison against the locally
+// indexed album of the same name, and the folder a pull lands in all differ from
+// the same name without the padding.  LibraryScanner trims what it reads from a
+// tag file for exactly this reason; a device field needs the same courtesy from
+// here, and isGuidMoniker() trims because it has to answer before this does.
 inline QString deviceArtist(const QString &value) {
-    return isGuidMoniker(value) ? QStringLiteral("Unknown Artist") : value;
+    const QString name = value.trimmed();
+    return isGuidMoniker(name) ? QStringLiteral("Unknown Artist") : name;
 }
 inline QString deviceAlbum(const QString &value) {
-    return isGuidMoniker(value) ? QStringLiteral("Unknown Album") : value;
+    const QString name = value.trimmed();
+    return isGuidMoniker(name) ? QStringLiteral("Unknown Album") : name;
+}
+// Whether a piece of text may be used as a name at all.  A moniker is a
+// placeholder wherever it is found, and it also reaches a scan from disk: a pull
+// written while the device fields were still read raw landed in
+// <imports>/<GUID>/<album>/file.mp3, and the Root/Artist/Album folder inference
+// in LibraryScanner promoted that folder straight back into tracks.artist, so a
+// library on disk carries the moniker as the artist of a file with no tag.
+// Yielding no candidate lets the ordinary Unknown Artist / Unknown Album fallback
+// answer - on a scan, and in the repair of rows a scan will never revisit.
+inline QString usableName(const QString &value) {
+    return isGuidMoniker(value) ? QString() : value;
 }
 struct Track {
     QString artist, album, title;

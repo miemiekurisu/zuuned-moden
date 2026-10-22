@@ -230,6 +230,13 @@ void DeviceWorker::doBreach() {
     emit stage(QStringLiteral("Scanning library (ZMDB)…"), 0.6);
     ZuneDBLibrary *lib = nullptr;
     if (zune_infiltrate(dev, &lib) == 0 && lib) {
+        // Counted rather than assumed.  Whether a Zune really names an ALBUM by
+        // its moniker, as opposed to only an artist, is visible exactly here, and
+        // the line printed under this loop is the evidence for the next time the
+        // question is asked - which the user just asked from the device page.
+        int monikerArtistRows = 0, monikerAlbumRows = 0;
+        int paddedArtistRows = 0, paddedAlbumRows = 0;
+        QString firstMonikerArtist, firstMonikerAlbum;
         r.tracks.reserve(lib->track_count);
         for (int i = 0; i < lib->track_count; i++) {
             const ZuneTrack &t = lib->tracks[i];
@@ -245,10 +252,24 @@ void DeviceWorker::doBreach() {
             // folder a pull lands in and the artist a send would write back all
             // take the same answer the library gives a file with no tag.
             // MusicIdentity.h carries the observation and the shape.
-            row.artist = MusicIdentity::deviceArtist(
-                QString::fromUtf8(t.artist ? t.artist : ""));
-            row.album = MusicIdentity::deviceAlbum(
-                QString::fromUtf8(t.album ? t.album : ""));
+            const QString rawArtist = QString::fromUtf8(t.artist ? t.artist : "");
+            const QString rawAlbum = QString::fromUtf8(t.album ? t.album : "");
+            if (rawArtist != rawArtist.trimmed())
+                ++paddedArtistRows;
+            if (rawAlbum != rawAlbum.trimmed())
+                ++paddedAlbumRows;
+            if (MusicIdentity::isGuidMoniker(rawArtist)) {
+                ++monikerArtistRows;
+                if (firstMonikerArtist.isEmpty())
+                    firstMonikerArtist = rawArtist;
+            }
+            if (MusicIdentity::isGuidMoniker(rawAlbum)) {
+                ++monikerAlbumRows;
+                if (firstMonikerAlbum.isEmpty())
+                    firstMonikerAlbum = rawAlbum;
+            }
+            row.artist = MusicIdentity::deviceArtist(rawArtist);
+            row.album = MusicIdentity::deviceAlbum(rawAlbum);
             row.genre = QString::fromUtf8(t.genre ? t.genre : "");
             row.durationMs = int(t.duration_ms);
             row.trackNumber = t.tracknumber;
@@ -260,6 +281,20 @@ void DeviceWorker::doBreach() {
             row.filesize = qint64(t.filesize);
             r.tracks.append(std::move(row));
         }
+        // The wording is load-bearing.  The session-log redactor lists "device name"
+        // and "friendly name" as credential keys (src/diagnostics/Redactor.cpp), so a
+        // line that reads "device name <value>" has everything after it folded into
+        // [redacted] - which this line did, once, taking its own evidence with it.
+        fprintf(stderr,
+                "[zmdb] GUID moniker fields on %d track rows: artist %d (%s),"
+                " album %d (%s); blank-padded artist %d, album %d\n",
+                lib->track_count, monikerArtistRows,
+                qUtf8Printable(firstMonikerArtist.trimmed().isEmpty()
+                                   ? QStringLiteral("-") : firstMonikerArtist.trimmed()),
+                monikerAlbumRows,
+                qUtf8Printable(firstMonikerAlbum.trimmed().isEmpty()
+                                   ? QStringLiteral("-") : firstMonikerAlbum.trimmed()),
+                paddedArtistRows, paddedAlbumRows);
         r.albumCount = lib->album_count;
         r.artistCount = lib->artist_count;
         // NOTE: lib stays alive until AFTER the video/photo/playlist

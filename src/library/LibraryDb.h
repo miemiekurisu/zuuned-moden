@@ -186,6 +186,12 @@ private:
     // a database written before the fix self-heals on the next launch instead of
     // sitting there labelled unreachable for ever.
     int repairWatchFolderRoots();
+    // Clears a device GUID moniker that an older scan wrote into a track's
+    // artist, albumartist or album (MusicIdentity.h carries the shape and the
+    // reason).  Runs from open() beside the repair above for the same reason: the
+    // rows a healthy scan will never revisit are exactly the ones that need help,
+    // because a file whose probe version already matches is not read again.
+    int repairDeviceMonikers();
     sqlite3 *m_db = nullptr;
     QString m_lastError;
 };

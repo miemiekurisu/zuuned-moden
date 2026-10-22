@@ -1,5 +1,6 @@
 #include "LibraryDb.h"
 #include "LibraryPaths.h"
+#include "MusicIdentity.h"
 #include "../ProfilePaths.h"
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -398,6 +399,7 @@ bool LibraryDb::open(const QString &path) {
     exec("PRAGMA journal_mode=WAL;");
     exec("PRAGMA foreign_keys=ON;");
     repairWatchFolderRoots();
+    repairDeviceMonikers();
     return true;
 }
 
@@ -453,6 +455,68 @@ int LibraryDb::repairWatchFolderRoots() {
             fprintf(stderr, "[librarydb] repaired watch folder %s to %s\n",
                     qUtf8Printable(row.second), qUtf8Printable(clean));
         }
+        ++repaired;
+    }
+    return repaired;
+}
+
+/* A GUID moniker is not a name, and until MusicIdentity::usableName() existed a
+ * scan could copy one out of a Zune-authored folder tree: a track pulled off the
+ * player while its device fields were still read raw landed in
+ * <imports>/<GUID>/<album>/file, and the Root/Artist/Album folder inference made
+ * that folder the artist of a file with no tag.  Those files stay on disk and a
+ * row whose probe version already matches is never re-read, so the moniker would
+ * be the artist for ever.  What this writes is precisely what a fresh scan of the
+ * same file writes now - Unknown Artist for a missing performer, the album artist
+ * filled from it, Unknown Album for a missing album - and a field that never held
+ * a moniker keeps the spelling it has.  A row the user edited by hand is left
+ * alone: there the stored text is theirs, moniker included. */
+int LibraryDb::repairDeviceMonikers() {
+    if (!m_db)
+        return 0;
+    struct Row {
+        qint64 id;
+        QString artist, albumartist, album;
+    };
+    QVector<Row> rows;
+    {
+        Stmt s(m_db, "SELECT id, artist, albumartist, album FROM tracks"
+                     " WHERE IFNULL(user_edited,0)=0");
+        if (!s.ok())
+            return 0;
+        while (s.step() == SQLITE_ROW)
+            rows.append({s.colInt64(0), s.colText(1), s.colText(2), s.colText(3)});
+    }
+    int repaired = 0;
+    for (const Row &row : std::as_const(rows)) {
+        const QString cleanArtist = MusicIdentity::usableName(row.artist);
+        const QString cleanAlbumArtist = MusicIdentity::usableName(row.albumartist);
+        const QString cleanAlbum = MusicIdentity::usableName(row.album);
+        if (cleanArtist == row.artist && cleanAlbumArtist == row.albumartist
+                && cleanAlbum == row.album)
+            continue;
+        const QString artist = cleanArtist == row.artist
+            ? row.artist
+            : (cleanArtist.isEmpty() ? QStringLiteral("Unknown Artist") : cleanArtist);
+        const QString albumArtist = cleanAlbumArtist == row.albumartist
+            ? row.albumartist
+            : (cleanAlbumArtist.isEmpty() ? artist : cleanAlbumArtist);
+        const QString album = cleanAlbum == row.album
+            ? row.album
+            : (cleanAlbum.isEmpty() ? QStringLiteral("Unknown Album") : cleanAlbum);
+        Stmt up(m_db, "UPDATE tracks SET artist=?, albumartist=?, album=? WHERE id=?");
+        if (!up.ok())
+            continue;
+        up.bindText(1, artist);
+        up.bindText(2, albumArtist);
+        up.bindText(3, album);
+        up.bindInt64(4, row.id);
+        if (up.step() != SQLITE_DONE)
+            continue;
+        fprintf(stderr,
+                "[librarydb] repaired device moniker on track %lld: %s / %s is now %s / %s\n",
+                static_cast<long long>(row.id), qUtf8Printable(row.artist),
+                qUtf8Printable(row.album), qUtf8Printable(artist), qUtf8Printable(album));
         ++repaired;
     }
     return repaired;

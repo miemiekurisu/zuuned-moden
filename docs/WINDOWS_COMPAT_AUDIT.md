@@ -635,12 +635,90 @@ two desktop-dependent cases of the next section, four ribbon checks asking a 150
 screen for a window it cannot host and two profile checks accusing the run of the new
 `_qt_QGfxShaderBuilder` file, none of them this change.
 
-**Not re-run on the device.**  What was measured here is the two pulled files and
-the log line; what is unverified is the display itself - no Zune has been opened
-since the change, and with two development instances holding the player it was not
-going to be opened for a browse.  So no Windows device claim is added by this
-section: the album subtitle the user saw is still the evidence, and the fix for it
-is compile-and-gate evidence only.
+**Re-run on the device afterwards, and it changed the answer twice.**  The previous
+draft of this section stopped there and called the display fix compile-and-gate
+evidence.  The next sitting opened the player again, counted what was actually on it,
+and found both a confirmation and a refutation - see the seventh sweep below.
+
+## Seventh sweep: the moniker came back in through the front door (2026-10-22)
+
+One question, asked from the same device page: why does the ARIA album carry a GUID
+where the albums beside it carry a name, if the moniker is the artist?  The honest
+answer was that nobody had counted the device.
+
+**Counted now, on the player.**  The ZMDB scan loop in `src/DeviceWorker.cpp` tallies
+the raw fields before it maps them and prints one line:
+
+    [zmdb] GUID moniker fields on 189 track rows: artist 27 ({09316835-3188-481c-a359-0f8d2a937ac8}), album 0 (-); blank-padded artist 27, album 0
+
+Twenty-seven of 189 rows name the **artist** by moniker; **not one row names an album
+by one**.  "An album called `{09316835-...}`" has therefore never been true on this
+player - the text under an album row is its subtitle, which is an artist, exactly as
+the section above said.  And the 27 moniker rows are precisely the 27 blank-padded
+rows: where the source file had no author, the Zune software stored a GUID and padded
+it with spaces, so padding and placeholder are one phenomenon on the artist field.
+That is why trimming now lives in `deviceArtist()`/`deviceAlbum()` rather than in
+whatever caller remembers it - a name that differs from itself by blanks is a
+different artwork cache key, a different comparison against the locally indexed album
+of the same name, and a different folder for a pull to land in.
+
+**The local library was poisoned, by this application.**  `library.db` carried
+`{09316835-...}` as `tracks.artist` on two rows, which refutes the claim above that
+`library.db` was never poisoned.  What happened is worth naming precisely because it
+is a hole in the rule and not in a tag: the pull wrote
+`Music\Zuuned Imports\{09316835-...}\<album>\<file>`, the watch folder then scanned
+what the pull had just written, and `extractFolderMetadata()` implements
+`Root/Artist/Album/file` - so a file with no Author attribute had its grandparent
+folder promoted to `artist` and `albumartist`.  Sanitising only the device-facing side
+left the disk-facing side free to reintroduce the same string as a name.
+
+A rescan cannot undo it.  A file whose stored probe version already equals
+`musicParserVersion` is never probed again, so those two rows are permanent, and
+raising `musicParserVersion` is not available anyway - `tests/music-import/backend.cpp`
+pins `probeVersion == 1` on the Linux line.  So the fix sits in two places.
+`MusicIdentity::usableName()` is the same predicate read from the other end: not "what
+should the UI show" but "may this text be a name at all", which is the question a scan
+asking for a *candidate* has to ask.  It now guards every candidate in
+`resolveTrack()` - the `artist`, `albumartist` and `album` tags, both folder
+inferences, and the `Artist - Title` filename fallback - so a Zune-authored path
+answers "no candidate" and the ordinary Unknown Artist / Unknown Album fallback
+answers instead.  And `LibraryDb::repairDeviceMonikers()` runs from `open()` beside
+`repairWatchFolderRoots()` for the very reason that neighbour exists: the rows a
+healthy scan will never revisit are exactly the rows that need help.  It rewrites only
+a field that really held a moniker, mirrors the scanner's own fallbacks rather than
+inventing its own (`Unknown Artist`, album artist filled from it, `Unknown Album`), and
+skips any row with `user_edited` set - there, the text is the user's, moniker included.
+
+Measured on the real profile rather than argued: the first launch of the rebuilt app
+printed `repaired device moniker on track 13: {09316835-...} / ARIA The NATURAL VOCAL
+SONG COLLECTION is now Unknown Artist / ...` and the same for track 14, and every
+launch since prints neither line, which is the idempotence claim.  Read back out of
+`library.db`, row 13 is `Unknown Artist / Unknown Artist` and row 14 is
+`Unknown Artist / EGOIST` - the album artist that was real kept its spelling, which is
+the distance between a repair and a sledgehammer - and no `{` remains anywhere in
+`tracks`.
+
+**A logging trap that ate its own evidence.**  The first wording of the audit line was
+`[zmdb] device name <value> rows: ...`, and what it printed was
+`[zmdb] device name [redacted] rows: ...`, because `src/diagnostics/Redactor.cpp`
+lists `(?:device[-_ ]?|friendly[-_ ]?)name` among its credential keys and folds
+everything after such a word.  The line is `GUID moniker fields` now, with the reason
+in a comment at the call: a diagnostic that redacts its own payload is worse than no
+diagnostic, because it reads like proof.  The old line is still in the log directory,
+which is the only reason the trap is reproducible.
+
+Gates against the relinked build: `librarytool paths` `ALL PASS (0 failures)` at 67
+checks - fifteen of them the moniker rule, none branched `Q_OS_WIN`, because the
+placeholder belongs to the player and not to a platform - and `tests\win-compat`
+`201 checks, 0 failures, 0 skips`.  `tests\win-usability` was deliberately not
+re-run for this change: the app was in the user's hands on the real profile, and
+neither gate that reaches this code is the GUI harness.  What this sweep adds to the
+Windows record is a re-read of the device and a read of the library, both inside the
+music-library-read gate that was already closed; **it adds no new capability.**
+Deletion, the podcast, audiobook, photo and video categories, every model but this
+Pavo, and anything anyone has listened to all stay open, and the GUID-named import
+folders the old pull left on disk stay where they are - they are the user's files, and
+they now read as Unknown Artist.
 
 ## What is proven, and by which gate
 
@@ -710,9 +788,9 @@ is compile-and-gate evidence only.
   screen the size that phase asks for cannot exist at any request: the app clamps to its
   own 1100x776 logical minimum, which is 1650x1164 in the device pixels `winshot --move`
   speaks.  Four ribbon checks fail on such a desktop and nothing in the ribbon is wrong.
-- `build\librarytool.exe paths` is 62 checks over the helpers above, and
+- `build\librarytool.exe paths` is 67 checks over the helpers above, and
   `names`/`customize` still pass on the same build.  All three ran here, against the
-  executables produced by `cmake --build build --clean-first`.  Eleven of those 62
+  executables produced by `cmake --build build --clean-first`.  Eleven of those 67
   checks are the fourth sweep's walk above, and they build their own junction rather
   than assume one: `mklink /J` inside a `QTemporaryDir`, which is the only reason the
   case is testable from an unprivileged account at all.  They assert that the three

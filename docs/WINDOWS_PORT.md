@@ -943,6 +943,60 @@ makes them desktop rather than flake.
 **No Zune was opened after this change.**  The evidence for the moniker is the screenshot
 description the user gave, the two pulled files, and the log line; the fix for it is
 compile-and-gate evidence only, and no Windows device claim is added by this pass.
+Superseded the same day by the twelfth pass, which opened the player again.
+
+## The twelfth pass: the moniker came back in through the front door (2026-10-22)
+
+**The eleventh pass is superseded at its last line.**  That pass ended without opening
+the player.  It has been opened since, twice, on the build carrying that change, and the
+browse still answers `189 tracks, 15 albums, 11 artists`.  What follows lives inside
+the music-library-read gate that closed at the hardware checkpoint; this page gains no
+new Windows capability here, and nothing is carried over from Linux.
+
+Counting beat reasoning.  The ZMDB scan now tallies the raw device fields before it
+maps them and prints the tally, which answers the question the user asked off the
+device page - why the ARIA album shows a GUID where the albums beside it show names:
+
+    [zmdb] GUID moniker fields on 189 track rows: artist 27 ({09316835-3188-481c-a359-0f8d2a937ac8}), album 0 (-); blank-padded artist 27, album 0
+
+Twenty-seven of the player's 189 track rows name their artist by GUID moniker;
+not one row names an album by one.  So
+the text the user read as an album name is an album row's subtitle, which is an artist,
+and the eleventh pass's diagnosis is confirmed rather than merely plausible.  The count
+settles a second thing: those 27 rows are exactly the 27 rows whose artist arrives
+blank-padded, so placeholder and padding are one phenomenon, and trimming a device name
+belongs in `deviceArtist()`/`deviceAlbum()` rather than in whichever caller remembers
+it.  Untrimmed, one artist is two artwork cache keys, two comparisons against the
+locally indexed album of the same name, and two import folders.
+
+What the count turned up is that the **local library was poisoned**, by this
+application, which is what the eleventh pass said could not happen.  The mechanism is
+the port's own and it is worth stating as a rule rather than an anecdote: a pull written
+before the device fields were sanitised put the files at
+`Music\Zuuned Imports\{09316835-...}\<album>\<file>`; the watch folder then scanned
+what the pull had just written; and `LibraryScanner`'s `Root/Artist/Album/file`
+inference promoted that GUID folder to `artist` and `albumartist` for a file with no
+Author tag.  A string the device boundary refused came back as a name through the disk
+boundary.  Because a row whose stored probe version already matches is never read again,
+no rescan reaches it and `musicParserVersion` cannot move - `tests/music-import`
+pins it at 1 on the Linux line.  `MusicIdentity::usableName()` therefore refuses a
+moniker as a name for every candidate a scan takes - the three tags, both folder
+inferences, the `Artist - Title` filename fallback - and
+`LibraryDb::repairDeviceMonikers()` repairs what a scan cannot reach, from `open()`,
+mirroring the scanner's own Unknown Artist / Unknown Album fallbacks and leaving any
+`user_edited` row alone.  Measured on the real profile: two rows rewritten on the first
+launch, `EGOIST` preserved on the row whose album artist was real, no `{` left in
+`tracks`, and no repair line on any launch after that.
+
+Gates on the relinked build: `librarytool paths` `ALL PASS (0 failures)` at 67 checks,
+`tests\win-compat` `201 checks, 0 failures, 0 skips`.  `tests\win-usability` was not
+re-run for this change - the app was in the user's hands on the real profile, and the
+GUI harness is not what reaches this code - so its last recorded counter still belongs
+to the eleventh pass.  `docs/WINDOWS_COMPAT_AUDIT.md` carries the same sitting as its
+seventh sweep, including the session-log redactor that folded the first version of that
+audit line into `[redacted]`.  The list below is unchanged by this pass: deletion, the
+podcast, audiobook, photo and video categories, every model but this Pavo, and anything
+anyone has listened to are still open.
 
 ## What is not proven here
 

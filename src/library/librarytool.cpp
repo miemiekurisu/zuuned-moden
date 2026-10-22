@@ -603,6 +603,34 @@ static int runPathsSelfTest() {
               .isEmpty()
           && MusicIdentity::knownArtist(QStringLiteral("Unknown Artist")).isEmpty(),
           "identity: a moniker artist and a tagless local file are one artist");
+    /* usableName() is the same predicate from the other side: not "what should
+     * the UI show" but "may this text be a name at all", which is what a scan
+     * asking for a candidate has to ask. */
+    eq("usableName: a moniker is no name at all",
+       MusicIdentity::usableName(
+           QStringLiteral("{09316835-3188-481c-a359-0f8d2a937ac8}")),
+       QString());
+    eq("usableName: a real name passes through untouched",
+       MusicIdentity::usableName(QStringLiteral("EGOIST")),
+       QStringLiteral("EGOIST"));
+    /* Measured on the port's Zune HD, not guessed: ZMDB hands over the moniker
+     * with leading blanks, so a device name is only usable once trimmed. */
+    eq("deviceArtist: the blanks a Zune stores around a name are not part of it",
+       MusicIdentity::deviceArtist(QStringLiteral("   EGOIST  ")),
+       QStringLiteral("EGOIST"));
+    eq("deviceAlbum: a padded moniker is still recognised as one",
+       MusicIdentity::deviceAlbum(
+           QStringLiteral("                {09316835-3188-481c-a359-0f8d2a937ac8}")),
+       QStringLiteral("Unknown Album"));
+    /* The defect this exists for.  <imports>/<GUID>/<album>/file is a path this
+     * app wrote while device fields were still read raw, and the folder inference
+     * read that folder back as the artist of a file with no tag - so the answer
+     * a Zune-authored path offers for "who is the artist" has to be no answer. */
+    check(MusicIdentity::usableName(
+              QStringLiteral("{09316835-3188-481c-a359-0f8d2a937ac8}")).isEmpty()
+              && !MusicIdentity::usableName(
+                  QStringLiteral("ARIA The NATURAL VOCAL SONG COLLECTION")).isEmpty(),
+          "usableName: a Zune-authored import folder offers no artist candidate");
 
     /* ---- one path past MAX_PATH ----
      * 260 characters is not a limit Windows still enforces, it is a limit a

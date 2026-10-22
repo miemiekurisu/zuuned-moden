@@ -11,8 +11,8 @@ initialization is required. Use the bundled revision for this application; do no
 replace it with a newer standalone library without testing the integration.
 
 ```bash
-git clone https://github.com/badgeromen/zuuned-linux.git
-cd zuuned-linux
+git clone https://github.com/miemiekurisu/zuuned-modern.git
+cd zuuned-modern
 ```
 
 For Zune authentication, follow [BUILD_WITH_MTPZ.md](docs/BUILD_WITH_MTPZ.md).
@@ -54,10 +54,12 @@ and hardware checks on that machine, but it is not the distributable AppImage.
 
 ## Build on Windows
 
-The Windows port compiles and runs natively with MSVC, and its two software gates
-pass, but it has **not been tested against a real Zune device on Windows
-yet**. Every libusb path, the WinUSB driver binding and all transfers are still
-unverified on this platform. Treat the outputs as development builds.
+The Windows port compiles and runs natively with MSVC. Its two software gates
+pass and it has been driven against a real Zune HD, but which specific device
+capabilities have Windows evidence is recorded capability by capability in
+[the port status page](docs/WINDOWS_PORT.md) - read that before quoting any
+hardware claim, because the list of what is still Linux-only is long. Outputs are
+development builds: there is no Windows installer.
 
 Qt 6.8 or newer is required. The reference machine uses the Qt 6.11.0
 `msvc2022_64` kit together with the CMake and Ninja that ship in `Qt\Tools`.

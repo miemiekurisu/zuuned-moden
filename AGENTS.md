@@ -329,8 +329,11 @@ why one album and not the others - the ARIA file carries album/title/genre/disc/
 Author attribute at all, the EGOIST file only AlbumArtist, the third a real author - so the
 Zune software stored a GUID moniker in the ZMDB artist record wherever the source file had
 no artist, exactly as `libzune/src/album.c` already documents for an orphaned album object
-that "displays as its GUID moniker". `library.db` was never poisoned: pulls reach the
-library through the watch-folder scan, so the local artist came from the (empty) tag.
+that "displays as its GUID moniker". `library.db` was reported clean on the theory that pulls reach the
+library through the watch-folder scan so the local artist came from the (empty) tag,
+and that was falsified the same day: the pull itself wrote
+`<imports>/<GUID>/<album>/<file>`, and the scan's folder inference promoted that folder
+back into the artist - the paragraph below records it.
 `MusicIdentity::isGuidMoniker()` is now the one predicate - 8-4-4-4-12 hex, braces optional,
 anchored - and `deviceArtist()`/`deviceAlbum()` answer the `Unknown Artist`/`Unknown Album`
 the rest of the app already uses, applied to the ZMDB scan rows and the album-object artist
@@ -359,7 +362,48 @@ the cache - and the newer STL headers answer `error C2338 ... STL1001: expected 
 newer`; read the toolset out of `CMakeCXXCompiler.cmake`. On one `--clean-first` rebuild
 (329/329) carrying the change: `paths` 62 `ALL PASS`, `tests/win-compat` 201 checks / 0
 failures / 0 skips. **No Zune was opened after the change**, so the display fix is
-compile-and-gate evidence and this paragraph adds no Windows device claim.
+compile-and-gate evidence - a statement the paragraph below supersedes by
+opening the player twice.
+
+**2026-10-22 the moniker came back in through the disk, and a device count settled the
+album question:** the user asked why the ARIA album on the Windows device page shows a
+GUID where the albums beside it show names, and the answer came from counting instead of
+reasoning - the ZMDB scan in `src/DeviceWorker.cpp` now tallies the raw fields before it
+maps them and logs `GUID moniker fields on 189 track rows: artist 27
+({09316835-...}), album 0 (-); blank-padded artist 27, album 0`. On this Pavo a moniker
+is an **artist-field** phenomenon and no album has ever been named by one, so the string
+on screen is an album row's subtitle, which is an artist. The same count refuted the
+paragraph above: `library.db` did hold the moniker as `tracks.artist` on two rows,
+because a pre-sanitisation pull wrote `<imports>/<GUID>/<album>/<file>`, the watch folder
+scanned what the pull had just written, and `LibraryScanner`'s `Root/Artist/Album/file`
+inference promoted the GUID folder to `artist` and `albumartist` for a file with no
+Author tag - a string the device boundary refused re-entered as a name through the disk
+boundary. A row whose stored probe version already matches is never read again and
+`musicParserVersion` is pinned at 1 by `tests/music-import/backend.cpp`, so no rescan can
+undo it: `MusicIdentity::usableName()` is the same predicate read from the other end -
+"may this text be a name at all", not "what should the UI show" - and now guards every
+candidate `resolveTrack()` takes (the three tags, both folder inferences, the
+`Artist - Title` filename fallback), while `LibraryDb::repairDeviceMonikers()` runs from
+`open()` beside `repairWatchFolderRoots()` for the same reason that neighbour exists: the
+rows a healthy scan will never revisit are exactly the ones that need help. It rewrites
+only a field that really held a moniker, mirrors the scanner's own fallbacks
+(`Unknown Artist`, album artist filled from it, `Unknown Album`), skips any `user_edited`
+row, was measured fixing tracks 13 and 14 on the real profile while preserving the row
+whose album artist was really `EGOIST`, and prints nothing on a second launch.
+`deviceArtist()`/`deviceAlbum()` trim first now, because the 27 moniker rows are exactly
+the 27 blank-padded rows and an untrimmed name is two artwork cache keys, two album
+comparisons and two import folders. One trap for whoever writes the next diagnostic: the
+session-log redactor lists `device name` and `friendly name` as credential keys
+(`src/diagnostics/Redactor.cpp`), so a line worded `device name <value>` folds its own
+evidence into `[redacted]` - the tally line is `GUID moniker fields` now.
+`librarytool paths` is 67 checks, fifteen of them this rule and none branched
+`Q_OS_WIN`, and `tests\win-compat` is 201 checks / 0 failures / 0 skips against the
+relinked build; `tests\win-usability` was deliberately not re-run because the app was in
+the user's hands on the real profile. **No new Windows capability is claimed:** the
+device work is a re-read inside the already-closed music-library-read gate, and deletion,
+the podcast, audiobook, photo and video categories, every model but this Pavo and
+anything anyone has listened to all stay open. The GUID-named import folders the old pull
+left on disk are the user's files and stay there, now read as Unknown Artist.
 
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow

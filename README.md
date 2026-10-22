@@ -1,222 +1,147 @@
 > **Public source snapshot:** read [PUBLIC_SOURCE.md](PUBLIC_SOURCE.md) for credential requirements and differences from private builds.
 
-# Zuuned Linux
+# Zuuned Modern
 
-**Bring your Zune back into the rebellion.**
+**Bring your Zune back into the rebellion - on Windows.**
 
-[zuuned.com](https://zuuned.com) · [Downloads](https://github.com/badgeromen/zuuned-linux/releases) · [libzune](https://github.com/badgeromen/libzune)
+Zuuned Modern is a **Windows client port** of [Zuuned Linux](https://github.com/badgeromen/zuuned-linux),
+the community app for managing Microsoft Zune players. It is the same Qt 6 / QML and
+C++ application and the same [libzune](https://github.com/badgeromen/libzune) PTP/MTP/MTPZ
+protocol stack, built and run natively on Windows with MSVC - no WSL, no MinGW, no
+Cygwin, no virtual machine.
 
-![Welcome to Zuuned: your Zune, at home on Linux](docs/readme-screenshots/welcome.png)
+One source tree serves both platforms. The Windows work is additive: a
+`compat/win/` layer that keeps the POSIX surface libzune and the transcode C layer are
+written against, a Windows device-presence path, and native path and encoding handling
+throughout. The Linux line is upstream's, and this repository exists to carry the port
+until upstream wants it.
 
-Zuuned is a native Linux app for managing Microsoft Zune players and enjoying
-your local media collection. Browse music, movies, photos, podcasts and audiobooks, build playlists,
-customize artwork and metadata, and transfer media to your Zune over USB.
+![The music library with album artwork and a connected player](docs/readme-screenshots/music-library.png)
 
-![Zuuned's music library with album artwork and a connected Zune HD](docs/readme-screenshots/music-library.png)
+*The interface is shared with upstream Zuuned Linux; the capture above is from the
+upstream app.*
 
-## What you can do
+[Status of the port](docs/WINDOWS_PORT.md) - **read that page before trusting any
+hardware claim in this repository.** It records, per capability, what has been done on a
+Windows machine against a real player and what has only ever been done on Linux.
 
-- **Manage your Zune:** browse its library, queue media for transfer and see
-  connection and storage information.
-- **Enjoy your music:** browse artists and albums, play locally, and create
-  playlists and mixtapes.
-- **Organize videos:** browse movies, TV shows and anime with poster artwork,
-  play local videos and convert supported media for transfer.
-- **Follow podcasts:** subscribe by RSS, download episodes, star shows and choose
-  how many episodes to queue automatically. Optionally remove completed device
-  episodes on sync, with per-episode keep protection.
-- **Bring your books:** import audiobook files or folders, organize virtual
-  Libraries, resume local playback and queue whole books. Chaptered sources are
-  prepared as ordered device parts while the original files stay intact.
-- **Make it yours:** edit local metadata and artwork, and choose your preferred
-  appearance.
-- **Organize photos:** browse folders and create custom albums with nested
-  subalbums.
+## What has actually been done on Windows
 
-Local playback, customization and photo organization work without a connected
-Zune. Device transfers require one. No Windows virtual machine or custom kernel
-driver is required; first-time USB permission setup may need an administrator
-password.
+Hand-tested against one Pavo-generation Zune HD on the development machine:
 
-## A look inside
+- **Driver binding** - the player bound to WinUSB, read back as `CM_PROB_NONE` with an
+  interface GUID ([`packaging/windows/DRIVER_INSTALL.md`](packaging/windows/DRIVER_INSTALL.md)).
+- **Enumeration and hotplug** - unplug and replug produced the same read twice.
+- **Reading the device** - `GetDeviceInfo`, the ZMDB scan, the device page browsed with
+  album thumbnails fetched off the player.
+- **Authenticated transfers, both ways, through the ordinary controls** - music sent to
+  the player and a track pulled back into the local library, with byte readback.
+- **Local library on a Windows disk** - watch folders, native `E:\...` path display,
+  non-ASCII file names, album artwork.
 
-### Your video library
+**Not yet proven on Windows**, and not inherited from Linux either: deletion and purge,
+the podcast, audiobook, photo and video transfer categories, every Zune model but that
+one Pavo, audible playback (the automated gate opens WASAPI muted, so nothing has been
+listened to by a test), and packaging - there is no Windows installer yet, so today the
+port is a build-from-source project.
 
-![Movies displayed in Zuuned's poster browser](docs/readme-screenshots/video-library.png)
+## Getting a Zune seen by Windows
 
-### Your photos
+libusb cannot see a Zune that has no driver bound, and Windows ships none for one. An
+unbound player sits at PnP *problem 28* and appears nowhere. Binding is a one-time manual
+step per machine and **nothing in Zuuned installs a driver**:
 
-![Photo-folder gallery with the connected device panel](docs/readme-screenshots/photo-library.png)
+1. Plug the player in and run [`packaging/windows/check-driver.ps1`](packaging/windows/check-driver.ps1)
+   to see what Windows thinks it has.
+2. If it is unbound, follow
+   [`packaging/windows/DRIVER_INSTALL.md`](packaging/windows/DRIVER_INSTALL.md) - the short
+   version is *use Zadig and pick the device id that script prints*. Do not hand-write an
+   INF, and do not install the Zune software.
+3. Replug. The app then says plainly whether it can use what is plugged in.
 
-### Your collection, your call
+## Build on Windows
 
-![The Make it yours editor for album identity and artwork](docs/readme-screenshots/customize.png)
+The full, current recipe is
+[the Windows section of BUILDING.md](BUILDING.md#build-on-windows). Short version:
 
-These are captures of the running Linux app. The collection artwork and
-wallpaper shown belong to the example library and are not supplied media.
+- Visual Studio 2022 (`msvc2022_64`), CMake, Ninja
+- Qt 6.11 for MSVC 2022 64-bit
+- a vcpkg tree, or a `ZUUNED_WIN_DEPS` tree, for libusb, libgcrypt, SQLite, mpv, FFmpeg
+  and LAME
+- load the MSVC environment (`vcvars64.bat`) before configuring - loading none, or the
+  one belonging to a different Visual Studio, fails as a flood of bogus `std::thread`
+  diagnostics or an `STL1001` static assert rather than as a linker error
 
-## Download and report issues
-
-Application source and Linux releases live together at
-[badgeromen/zuuned-linux](https://github.com/badgeromen/zuuned-linux).
-**[Download Zuuned Linux 0.2.0](https://github.com/badgeromen/zuuned-linux/releases/tag/v0.2.0)**
-for 64-bit Linux with glibc 2.41 or newer, X11/XWayland and OpenGL. Choose
-`x86_64` for Intel/AMD PCs or experimental `aarch64` for ARM64 desktops, and
-verify the matching checksum. ARM requires a 64-bit Debian 13/Trixie-compatible
-system; this is not a 32-bit or Debian 12/Bookworm build. [Older releases](https://github.com/badgeromen/zuuned-linux/releases)
-remain available. Source archives are for building, not ready-to-run installers.
-Use each release's checksum and compatibility notes. A migrated download keeps
-its original version and binary contents; it does not automatically include
-changes in the current source tree.
-
-Follow the [tester guide](packaging/TESTER_README.md) for launch and USB setup.
-For a problem, open **Settings → Health → export debug report**, review the saved
-text and attach it to an [issue](https://github.com/badgeromen/zuuned-linux/issues).
-Include the build version, Linux distribution/desktop, Zune model and reproduction
-steps. Reports never upload automatically. If startup fails, see the tester guide
-for terminal capture and logs under `~/.local/state/Zuuned/Zuuned/logs/`.
-
-## Project status
-
-Zuuned is a native Qt 6 / QML and C++ application with local music/video playback,
-artwork discovery, customization and USB media management. Its protocol library
-is [libzune](https://github.com/badgeromen/libzune), a native C PTP/MTP/MTPZ stack.
-No Windows virtual machine or custom Linux kernel driver is required.
-
-The [0.2.0 release notes](docs/releases/RELEASE_0.2.0.md) cover the new spoken
-media features and Zune 80/120 corrections. Second-generation podcast readback
-and audiobook inventory now use the observed device metadata. Empty podcast
-inventories no longer trigger a listening-state warning during cleanup.
-Small audiobook transfer/readback tests cover Classic, HD and Zune 80/120;
-firmware resume, long-book playback and completed-podcast automatic deletion
-still need separate device acceptance. See the release notes for model limits.
-
-This is an early testing project. Software regression coverage and historical
-hardware results do not certify every new package or device combination. See
-[release verification gates](docs/TESTER_RELEASE.md) for the remaining checks
-and the [documentation index](docs/README.md) for current guides versus historical
-test records.
-
-## Build
-
-Compiling the public source for Zune device support? Follow
-[Building with Zune authentication](docs/BUILD_WITH_MTPZ.md) to obtain the MTPZ
-data file and populate `libzune/src/mtpz_keys.h` before building. Official
-downloads already include authentication.
-
-For the native build and the existing maintainer AppImage workflow, see
-[BUILDING.md](BUILDING.md). The public snapshot includes libzune, verified against the exact library
-revision and tree recorded in `PUBLIC_LIBZUNE.json` for AppImage packaging.
-The commands below are the short path
-for running a development build on the current machine.
-
-Qt **6.8 or newer** is required. Qt 6.11.2 is the current tested development
-version; 6.8 is the API floor, not a claim that every older distro has passed.
-The Linux player requires OpenGL. The AppImages target x86_64 and experimental aarch64 desktops
-using X11 or XWayland; its release notes specify the tested distro/glibc floor.
-
-Arch dependencies:
-
-```bash
-sudo pacman -S --needed base-devel git cmake ninja pkgconf \
-  qt6-base qt6-declarative qt6-5compat libusb libgcrypt sqlite mpv ffmpeg lame
+```powershell
+git clone https://github.com/miemiekurisu/zuuned-modern.git
+cd zuuned-modern
+cmake -B build -G Ninja
+cmake --build build --clean-first
+build\zuuned.exe
 ```
 
-Debian 13/Trixie is the proposed clean-build baseline (verification status is in
-the release gates). Development and runtime QML packages are separate:
+`--clean-first` is not a stylistic preference on this platform: on a localized Windows
+install Ninja records zero header dependencies, so an incremental build after a header
+edit quietly relinks stale objects. `BUILDING.md` explains, with the upstream issue
+numbers.
 
-```bash
-sudo apt install build-essential git cmake ninja-build pkg-config \
-  qt6-base-dev qt6-declarative-dev qt6-5compat-dev libqt6opengl6-dev \
-  qt6-xdgdesktopportal-platformtheme \
-  qml6-module-qtqml qml6-module-qtqml-models qml6-module-qtqml-workerscript \
-  qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtquick-layouts \
-  qml6-module-qtquick-controls qml6-module-qtquick-templates \
-  qml6-module-qtquick-dialogs qml6-module-qt5compat-graphicaleffects \
-  libusb-1.0-0-dev libgcrypt20-dev libsqlite3-dev libmpv-dev \
-  libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
-  libswresample-dev libmp3lame-dev ffmpeg
+Two software gates ship with the tree and neither one touches a player:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-compat\run.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 ```
 
-Ubuntu LTS releases with older system Qt need a newer Qt toolchain; the commands
-above are not an Ubuntu 22.04/24.04 compatibility promise. Configuration checks
-the QML imports too, so missing GraphicalEffects fails before the first launch.
+They cover the POSIX-compatibility layer and launch every page, every settings tab and
+the command-line probes against isolated profiles. A green run of both says nothing at all
+about a Zune - that is deliberate, and is why the hardware evidence lives on
+[docs/WINDOWS_PORT.md](docs/WINDOWS_PORT.md) instead.
 
-File and folder selection uses the desktop's file chooser and theme through
-`xdg-desktop-portal`. The desktop session must provide the portal service and a
-FileChooser backend (such as its GTK or KDE backend). The AppImage bundles the
-matching Qt portal plugin; it does not bundle or replace the desktop's chooser.
+## Building on Linux
 
-```bash
-git clone https://github.com/badgeromen/zuuned-linux.git
-cd zuuned-linux
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-./build/zuuned
-```
+The upstream instructions still apply and are unchanged by the port: see
+[BUILDING.md](BUILDING.md), [docs/BUILD_WITH_MTPZ.md](docs/BUILD_WITH_MTPZ.md) for Zune
+authentication data, and the upstream
+[badgeromen/zuuned-linux](https://github.com/badgeromen/zuuned-linux) repository for
+released Linux packages, the AppImage workflow and the udev rule. This repository builds
+Linux too, but it publishes no Linux binaries.
 
+## Reporting a problem
 
-## For testers
-
-1. Follow [tester install instructions](packaging/TESTER_INSTALL.md) for the
-   versioned AppImage and checksum. The old 0.1.1 executable predates this public
-   source snapshot. The Arch `packaging/PKGBUILD` requires a repository-layout
-   update before it can be used with this public tree.
-2. Install the USB rule below once, then replug. The app also offers a
-   self-contained installer; it does not require a source checkout.
-3. Pick your music/video/photo folders in onboarding. TMDB/Fanart have bundled
-   fallback keys; optional personal keys in Settings override them. Provider
-   outages do not block local playback or manual identity/artwork edits.
-4. Connect the Zune, queue a small fixture, then sync. Media dragging and new
-   transfer-queue additions require connection; local playback, metadata and
-   playlist editing work offline. The saved transfer queue survives disconnects.
-
-Report the AppImage filename/SHA256, Zune model and reproduction steps. Attach
-a reviewed **Settings → Health → export debug report** file for build/system
-details and recent local logs; see [diagnostics](docs/DIAGNOSTICS.md).
-If interrupted during transfer, let the next-start recovery warning
-identify a possibly incomplete object; do not play that object before cleanup.
-
-## Device access (one-time setup)
-
-```bash
-sudo install -m 644 packaging/68-zuuned.rules /etc/udev/rules.d/68-zuuned.rules
-sudo install -m 644 packaging/68-zuuned.rules /etc/udev/rules.d/72-zuuned.rules
-sudo udevadm control --reload-rules
-# replug the Zune
-```
-
-This uses systemd-udev and an active desktop session. Two ordered copies of one
-canonical rule suppress libmtp probing at `68-`, reapply MTP/gphoto exclusions at
-`72-`, and tag access before systemd's `73-seat-late` grant. Existing
-`45-zune.rules`/`99-zune.rules` do not replace this updated pair.
+Open **Settings -> Health -> export debug report**, read the saved text, and attach it to
+an issue here. Say which platform and build, the Zune model, and the steps. Logs are under
+`%LOCALAPPDATA%\Zuuned\Zuuned\State\logs\` on Windows and
+`~/.local/state/Zuuned/Zuuned/logs/` on Linux; settings are an ini file under
+`%APPDATA%\Zuuned` on Windows. Reports never upload themselves. See
+[docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md).
 
 ## Layout
 
 ```
-src/          C++; DeviceService (libzune bridge), app entry
-qml/          UI; Theme.qml design tokens (ported from the macOS app)
-libzune/      included source; shared C protocol library
-packaging/    USB rule, Arch PKGBUILD, AppImage builder and inventory gate
+src/            C++; DeviceService (libzune bridge), app entry
+qml/            UI; Theme.qml design tokens
+compat/win/     the Windows POSIX surface, built once as zuuned_wincompat
+libzune/        included source; shared C protocol library
+packaging/      Linux USB rule, PKGBUILD and AppImage builder
+packaging/windows/  WinUSB driver guide and check-driver.ps1
+tests/win-compat/    Windows compatibility gate (no device)
+tests/win-usability/ Windows launch and UI gate (no device)
+docs/WINDOWS_PORT.md what is and is not proven on Windows
 ```
 
-## Testing without the app
+## What you can do with Zuuned
 
-libzune ships its own CLI harness; see `libzune/README.md`:
-
-```bash
-cd libzune && make zunetool
-./zunetool info      # breach + device info
-./zunetool torture <file>  # wire-protocol stress test
-```
+Browse a Zune's library and transfer media to it over USB; enjoy a local music library
+with artists, albums, playlists and playback; organize videos, podcasts and audiobooks;
+edit metadata and artwork; build photo albums. Local playback and organization work with
+no player connected. The Windows port currently carries the music path end to end and
+the rest of the categories are unproven there - see the status page.
 
 ## License
 
-Original Zuuned application code is licensed under **GPL-3.0-or-later**.
-See [LICENSE](LICENSE) and [licensing scope](COPYING.md). Third-party components
-retain their own licenses and attribution. Binary releases must include the
-applicable notices and directions to their matching source. Linux source and
-releases share this repository; libzune has its own repository.
+Original Zuuned application code is licensed under **GPL-3.0-or-later**. See
+[LICENSE](LICENSE) and [licensing scope](COPYING.md). Third-party components retain their
+own licenses and attribution. libzune has its own repository.
 
-Zuuned is an independent community project, not affiliated with or endorsed by
-Microsoft. Zune is a trademark of Microsoft Corporation.
+Zuuned is an independent community project, not affiliated with or endorsed by Microsoft.
+Zune is a trademark of Microsoft Corporation.

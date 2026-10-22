@@ -11,6 +11,7 @@
 #include "LibraryDb.h"
 #include "VideoNaming.h"
 #include "AudioCopyFingerprint.h"
+#include "MusicIdentity.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -186,9 +187,11 @@ TrackResult resolveTrack(const WorkItem &work, const QSet<QString> &roots) {
     ZuneMetadata meta {};
     if (zune_probe(work.filepath.toUtf8().constData(), &meta) == 0) {
         if (meta.title) t.title = QString::fromUtf8(meta.title).trimmed();
-        if (meta.artist) t.artist = QString::fromUtf8(meta.artist).trimmed();
-        if (meta.albumartist) t.albumartist = QString::fromUtf8(meta.albumartist).trimmed();
-        if (meta.album) t.album = QString::fromUtf8(meta.album).trimmed();
+        // A tag can carry the Zune moniker too - a file tagged from a device dump
+        // does - and a moniker is not a name (MusicIdentity.h).
+        if (meta.artist) t.artist = MusicIdentity::usableName(QString::fromUtf8(meta.artist).trimmed());
+        if (meta.albumartist) t.albumartist = MusicIdentity::usableName(QString::fromUtf8(meta.albumartist).trimmed());
+        if (meta.album) t.album = MusicIdentity::usableName(QString::fromUtf8(meta.album).trimmed());
         if (meta.genre) t.genre = QString::fromUtf8(meta.genre).trimmed();
         t.trackNumber = meta.tracknumber;
         t.discNumber = meta.discnumber;
@@ -207,9 +210,11 @@ TrackResult resolveTrack(const WorkItem &work, const QSet<QString> &roots) {
     // A reliable tagged performer outranks an unverified folder owner.
     if (t.albumartist.isEmpty() && !t.artist.isEmpty()) t.albumartist = t.artist;
     const auto folder = extractFolderMetadata(work.filepath, roots);
-    if (t.artist.isEmpty()) t.artist = folder.artist;
-    if (t.albumartist.isEmpty()) t.albumartist = folder.artist;
-    if (t.album.isEmpty()) t.album = folder.album;
+    // Folder names are the one candidate a Zune-authored path can poison: the
+    // imports folder a pull created used to be the raw device artist.
+    if (t.artist.isEmpty()) t.artist = MusicIdentity::usableName(folder.artist);
+    if (t.albumartist.isEmpty()) t.albumartist = MusicIdentity::usableName(folder.artist);
+    if (t.album.isEmpty()) t.album = MusicIdentity::usableName(folder.album);
     if (t.discNumber <= 0) t.discNumber = folder.disc;
 
     // Filename "Artist - Title" fallback
@@ -217,7 +222,7 @@ TrackResult resolveTrack(const WorkItem &work, const QSet<QString> &roots) {
     if (t.artist.isEmpty() || t.title.isEmpty()) {
         const auto [fnArtist, fnTitle] = parseFilenameArtistTitle(nameNoExt);
         if (t.title.isEmpty()) t.title = fnTitle.isEmpty() ? nameNoExt : fnTitle;
-        if (t.artist.isEmpty()) t.artist = fnArtist;
+        if (t.artist.isEmpty()) t.artist = MusicIdentity::usableName(fnArtist);
     }
 
     if (t.title.isEmpty()) t.title = nameNoExt;
