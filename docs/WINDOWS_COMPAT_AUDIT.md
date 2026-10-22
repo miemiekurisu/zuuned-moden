@@ -549,6 +549,99 @@ asymmetric diagnostics recorded under the tenth pass of `docs/WINDOWS_PORT.md`.
   branch at `:112`.  A Windows report therefore says less, by omission, and the Known
   gaps entry says as much.
 
+## A Zune whose album is named "{09316835-...}": the GUID moniker (2026-10-22)
+
+Reported from the Windows device page: the ARIA album's line carried a GUID where a
+name belongs, and the albums around it did not - "so some places still have
+problems".  It is not the album.  The pull log for the same album writes
+`~/Music/Zuuned Imports/{09316835-3188-481c-a359-0f8d2a937ac8}/ARIA The NATURAL
+VOCAL SONG COLLECTION/...`, and `saveTrackToLibrary()` builds
+`<imports>/<artist>/<album>/<file>`, so the moniker is the **artist** and the album
+string is intact; the album row's subtitle is an artist, and that is the string on
+screen.
+
+`ffprobe` on the files pulled off the player says why one album and not the others.
+All three are ASF/WMA under an `.mp3` name the device supplied; the ARIA file
+carries `album`, `title`, `genre`, `disc` and `WM/Year` and **no Author attribute at
+all**, the EGOIST file carries only `AlbumArtist`, and the Sakai Noriko file carries
+a real author.  Where the source file had no artist the Zune software stored a GUID
+moniker in the ZMDB artist record instead of leaving it empty, and the player
+displays that.  Three independent cross-checks: `libzune/src/album.c:113` already
+documents the sibling case, an orphaned nameless album object that "displays as its
+GUID moniker"; the reference ZMDB parser this repository cites renders the artist
+record's varint field `0x14` 16-byte GUID in braces, in exactly this shape; and the
+literal string names artist pages on Last.fm across unrelated albums, so it is a
+placeholder other people's libraries carry too, not an artefact of this one.  `rg`
+for GUID-formatting code in `src` and `include` finds nothing unrelated to this
+question: nothing here makes the string.
+
+A scar on the disk says the value arrives padded as well as nameless.  `Music\Zuuned
+Imports` still holds *two* folders for this artist:
+`                {09316835-3188-481c-a359-0f8d2a937ac8}` - sixteen leading spaces, and
+empty - created 2026-10-21 00:08, and the clean `{09316835-…}`, created 21:38 the same
+day, holding both ARIA files.  The first predates `8564616` at 07:30, the commit that
+made `saveTrackToLibrary()` name its folders through `LibraryPaths::safeComponent()`,
+which trims; the second is what that trim produces.  `isGuidMoniker()` therefore trims
+before matching because the device pads, not for tidiness, and the padded form is one
+of the gated cases.
+Read as a name, that string goes further than the one row it was seen on.  It is a
+filesystem component a pull creates and therefore the name of a folder the user has
+to explain; it is the albumartist hint `m_trackImportBatch` hands the import; it is
+the artist the completed batch primes an online artist-image lookup with; and, the
+quiet one, it is the **artwork cache key** `importDeviceArt()` stores the cover
+fetched off the device under - while the album indexed from those same files
+locally has no artist tag, so it asks for its art under `Unknown Artist`.  Two keys
+for one album, which is how a device cover that was downloaded perfectly ends up as
+no thumbnail at all in the local library.  It is also what a later sync writes back
+to the next player.
+
+- `MusicIdentity::isGuidMoniker()` is the one predicate: 8-4-4-4-12 hex, braces
+  optional because the value arrives both ways, anchored so text that merely
+  contains one stays text.
+- `MusicIdentity::deviceArtist()` / `deviceAlbum()` answer the app's own
+  `Unknown Artist` / `Unknown Album`, the words LibraryScanner, AlbumArtService and
+  both pivots already agree on, so no downstream code learns a new vocabulary and no
+  QML binding changes.
+- Two places apply it: the ZMDB scan rows in `src/DeviceWorker.cpp:248` (which feed
+  the track rows, the artists/albums pivots, the sort, the artwork identity and the
+  arguments a pull passes back) and the album object artist at
+  `src/DeviceWorker.cpp:492`, which is the albumartist hint.  `saveTrackToLibrary()`
+  resolves its two arguments too, so a row that reaches it from anywhere else cannot
+  name a folder after a moniker.
+- Deliberately **not** touched: the identity comparison in
+  `doPurgeInterruptedObject()` (`src/DeviceWorker.cpp:576`), where the raw device
+  value is what a persisted recovery record has to match, so sanitising one side
+  would break a deletion guard; the albumartist canonicalisation in
+  `src/sync/SyncEngine.cpp:126`, which votes among *local* metadata and would be a
+  behaviour change to a path the user is actively testing; spoken, video and
+  playlist names, where no moniker has been observed; and the `0x44`
+  `.art`/`.alb` name fallback and leading-artifact stripping the reference parser
+  performs, which stay unimplemented until a device shows a need for them.
+- Nothing repairs artwork already cached under a moniker key.  It is an orphaned
+  cache file, not a wrong answer, and the next fetch writes the right key.
+
+Gated by ten cases in `librarytool paths` - the observed value, the unbraced form,
+case and surrounding space, a real artist, an album title, the empty string, text
+that only contains one, a GUID one digit short, and the two name substitutions.  The
+last case is the point of the change rather than a restatement of it: a moniker
+artist and a tagless local file must answer the same artist, because that is the
+difference between a device cover landing where the local album can find it and
+landing where nothing ever will.  The rule is about the player, not the platform, so
+the cases are not branched and Linux gates them identically.  On the `--clean-first`
+rebuild that carries this change `librarytool paths` answers `ALL PASS (0 failures)` at 62
+checks, `tests\win-compat` answers `201 checks, 0 failures, 0 skips`, and
+`tests\win-usability` answers `launches=18 checks=99 failures=6` - six failures that are the
+two desktop-dependent cases of the next section, four ribbon checks asking a 150 per cent
+screen for a window it cannot host and two profile checks accusing the run of the new
+`_qt_QGfxShaderBuilder` file, none of them this change.
+
+**Not re-run on the device.**  What was measured here is the two pulled files and
+the log line; what is unverified is the display itself - no Zune has been opened
+since the change, and with two development instances holding the player it was not
+going to be opened for a browse.  So no Windows device claim is added by this
+section: the album subtitle the user saw is still the evidence, and the fix for it
+is compile-and-gate evidence only.
+
 ## What is proven, and by which gate
 
 - `tests/win-usability/watch_folder_repair.py` seeds four roots - a `/E:/` scar, a
@@ -576,6 +669,26 @@ asymmetric diagnostics recorded under the tenth pass of `docs/WINDOWS_PORT.md`.
   same gate returned `launches=17 checks=95 failures=0 skips=0`, `OVERALL=ok`.  Read that
   failure as designed rather than as flaky: it is the check in the suite that would notice a
   launch escaping its profile, and it noticed.
+  The pair failed again on 2026-10-22 for a cause that is real but is not this
+  application's: one new file,
+  `AppData\Local\Zuuned\Zuuned\cache\_qt_QGfxShaderBuilder_6.11.0\1088d1721e08fe3ecb3414ce01b8226540ad6d3e.qsb`.
+  It is not the pipeline cache `src/main.cpp` redirects into the profile.  It belongs to
+  the `QGfxShaderBuilder` singleton inside `qtgraphicaleffectsprivateplugin` - Qt5Compat
+  GraphicalEffects, whose `FastBlur` `qml/EnvironmentBackground.qml:60` uses as a layer
+  effect - and that singleton asks `QStandardPaths::CacheLocation` for itself.  Its one
+  environment variable, read out of the plugin's strings, is
+  `QT_GFXSHADERBUILDER_REFRESH_CACHE`, which forces a rebuild rather than a redirect, so
+  there is nothing for `src/main.cpp` to set the way it sets the two
+  `QSG_RHI_PIPELINE_CACHE_*` paths.  A third Qt-internal cache therefore sits outside
+  `ZUUNED_PROFILE_DIR`, and it stays invisible until some variant has to be compiled for
+  the first time: the folder holds 29 files today, 28 of them created on 2026-10-21 and
+  one at 08:36:47 on 2026-10-22, and a file that already exists is never rewritten - which
+  is why every earlier run of this gate saw nothing.  Read the passing sibling
+  check honestly too - `no process this gate started wrote into the real profile` matches
+  the process id inside a file *name*, so on a content-hash-named cache file it cannot
+  clear the gate's own launches.  Recorded and left alone: keeping it in the profile costs
+  either the GraphicalEffects import or the profile indirection, and what it costs a user
+  is a warm shader cache, never data.
 - The `compact` phase sizes the window through `winshot --move`, which speaks device
   pixels, while the ribbon breakpoints are logical pixels.  On a desktop where the
   window happens to open on a 150 per cent display the same request lands below the
@@ -590,9 +703,16 @@ asymmetric diagnostics recorded under the tenth pass of `docs/WINDOWS_PORT.md`.
   instrumented window on a 100 per cent display, and the phase stops depending on
   which screen Qt chose.  Until then a compact-phase failure is a question about the
   desktop, not about the ribbon.
-- `build\librarytool.exe paths` is 52 checks over the helpers above, and
+  Measured again on 2026-10-22 with the arithmetic written out instead of inferred: this
+  desktop answers `\\.\DISPLAY6` primary at logical 2560x1440 - 100 per cent, where a
+  roomy window fits - and `\\.\DISPLAY1` at logical 1707x960, which is a 2560x1440 panel
+  at 150 per cent.  A roomy window needs 1100 logical pixels of height, so on the scaled
+  screen the size that phase asks for cannot exist at any request: the app clamps to its
+  own 1100x776 logical minimum, which is 1650x1164 in the device pixels `winshot --move`
+  speaks.  Four ribbon checks fail on such a desktop and nothing in the ribbon is wrong.
+- `build\librarytool.exe paths` is 62 checks over the helpers above, and
   `names`/`customize` still pass on the same build.  All three ran here, against the
-  executables produced by `cmake --build build --clean-first`.  Eleven of those 52
+  executables produced by `cmake --build build --clean-first`.  Eleven of those 62
   checks are the fourth sweep's walk above, and they build their own junction rather
   than assume one: `mklink /J` inside a `QTemporaryDir`, which is the only reason the
   case is testable from an unprivileged account at all.  They assert that the three

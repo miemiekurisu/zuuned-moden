@@ -100,6 +100,15 @@ Load the MSVC x64 environment into the shell first (call `vcvars64.bat` from
 `VC\Auxiliary\Build`, or dot-source a helper that imports the variables it
 sets), then:
 
+`vcvars64.bat` has to come from the same Visual Studio the build directory was
+configured with. CMake pins the compiler's absolute path in the cache, so
+`build\CMakeFiles\<version>\CMakeCXXCompiler.cmake` is the authority (here
+`Microsoft Visual Studio\2022\Community\...\14.44.35207`, `cl` 19.44); calling a
+newer `vcvars64.bat` instead leaves `cl` where it was and moves only `INCLUDE`,
+and the newer standard library headers then refuse the older compiler as
+`error C2338 ... STL1001: expected MSVC 19.50 or newer` - a wall of
+standard-header noise that reads like a source bug and is really the wrong shell.
+
 ```powershell
 cmake -B build -G Ninja `
   -DCMAKE_BUILD_TYPE=RelWithDebInfo `
@@ -202,7 +211,7 @@ The bash suites in `ci/check.sh` need pkg-config and a POSIX shell, so on
 Windows the library core is covered by the native tools instead:
 `build\librarytool.exe names`, `build\librarytool.exe customize` (the latter
 rebuilds a pre-Customize database and runs the real v0/v2 to v9 migration chain,
-including the pre-migration backup) and `build\librarytool.exe paths` - 52 checks
+including the pre-migration backup) and `build\librarytool.exe paths` - 62 checks
 over the filename, path-comparison, playlist-resolution and playlist-decoding rules
 the Windows port depends on plus the once-only rule for a watch folder that contains
 a junction, the reserved-stem and trailing-dot rule a playlist export needs, m3u written

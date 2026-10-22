@@ -34,6 +34,7 @@
 #include "LibraryDb.h"
 #include "LibraryPaths.h"
 #include "LibraryScanner.h"
+#include "MusicIdentity.h"
 #include "PlaylistText.h"
 #include "VideoIdentity.h"
 #include "VideoMatcher.h"
@@ -553,6 +554,55 @@ static int runPathsSelfTest() {
        VideoIdentity::safeFilePart(QStringLiteral("NUL.wmv")),
        QStringLiteral("NUL.wmv"));
 #endif
+
+    /* ---- a device name that is really a moniker ----
+     * A Zune that never learned an artist does not leave the field empty, it
+     * stores a GUID and displays that: one album on the player used for the
+     * Windows port reports its artist as
+     * {09316835-3188-481c-a359-0f8d2a937ac8} because its files carry no Author
+     * attribute, while the album beside it, ripped with an AlbumArtist, reads
+     * "EGOIST".  Read as a name that string becomes a folder, a library artist,
+     * an artwork cache key and the artist a send writes back.  The rule is about
+     * the player, not the platform, so the same cases gate on both sides. */
+    check(MusicIdentity::isGuidMoniker(
+              QStringLiteral("{09316835-3188-481c-a359-0f8d2a937ac8}")),
+          "isGuidMoniker: the artist a real Zune HD reports is a moniker");
+    check(MusicIdentity::isGuidMoniker(
+              QStringLiteral("09316835-3188-481c-a359-0f8d2a937ac8")),
+          "isGuidMoniker: the same value without its braces is still a moniker");
+    check(MusicIdentity::isGuidMoniker(
+              QStringLiteral("  {09316835-3188-481C-A359-0F8D2A937AC8} ")),
+          "isGuidMoniker: case and surrounding spaces change nothing");
+    check(!MusicIdentity::isGuidMoniker(QStringLiteral("Daft Punk"))
+              && !MusicIdentity::isGuidMoniker(
+                  QStringLiteral("ARIA The NATURAL VOCAL SONG COLLECTION"))
+              && !MusicIdentity::isGuidMoniker(QString()),
+          "isGuidMoniker: a real name, an album title and an absent name are not monikers");
+    check(!MusicIdentity::isGuidMoniker(
+              QStringLiteral("09316835-3188-481c-a359-0f8d2a937ac8 remix")),
+          "isGuidMoniker: text that only contains a moniker is still text");
+    check(!MusicIdentity::isGuidMoniker(
+              QStringLiteral("09316835-3188-481c-a359-0f8d2a937ac")),
+          "isGuidMoniker: one character short of a GUID is a name nobody would choose");
+    eq("deviceArtist: a moniker becomes the unknown the library already uses",
+       MusicIdentity::deviceArtist(
+           QStringLiteral("{09316835-3188-481c-a359-0f8d2a937ac8}")),
+       QStringLiteral("Unknown Artist"));
+    eq("deviceAlbum: a moniker album follows the same convention",
+       MusicIdentity::deviceAlbum(
+           QStringLiteral("{09316835-3188-481c-a359-0f8d2a937ac8}")),
+       QStringLiteral("Unknown Album"));
+    eq("deviceArtist: a tagged album keeps the artist it really has",
+       MusicIdentity::deviceArtist(QStringLiteral("EGOIST")),
+       QStringLiteral("EGOIST"));
+    /* The whole point: the device row and the tagless file it was pulled from
+     * must answer the same artist, or the album cover fetched off the player is
+     * cached under a key the local album can never ask for. */
+    check(MusicIdentity::knownArtist(MusicIdentity::deviceArtist(
+              QStringLiteral("{09316835-3188-481c-a359-0f8d2a937ac8}")))
+              .isEmpty()
+          && MusicIdentity::knownArtist(QStringLiteral("Unknown Artist")).isEmpty(),
+          "identity: a moniker artist and a tagless local file are one artist");
 
     /* ---- one path past MAX_PATH ----
      * 260 characters is not a limit Windows still enforces, it is a limit a

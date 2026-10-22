@@ -2,6 +2,7 @@
 
 #include <QHash>
 #include <QSet>
+#include <QRegularExpression>
 #include <QString>
 #include <QVariantMap>
 #include <QVector>
@@ -17,6 +18,38 @@ inline QString knownArtist(const QString &value) {
 inline QString knownAlbum(const QString &value) {
     const auto text = normalize(value);
     return text == QLatin1String("unknown album") ? QString() : text;
+}
+
+// A Zune that never learned a name does not leave the field empty - it stores a
+// GUID moniker and displays that.  On the Pavo Zune HD used for the Windows port
+// one album's artist is {09316835-3188-481c-a359-0f8d2a937ac8} while the album
+// beside it, ripped with a tag, reads "EGOIST": ffprobe on the pulled files shows
+// the first carries album/title/genre/year and no Author attribute at all, and
+// the second carries only AlbumArtist.  So the placeholder is the player's, not
+// this app's - libzune already documents the sibling case in src/album.c, where an
+// orphaned album object "displays as its GUID moniker", and the reference ZMDB
+// parser renders the artist record's GUID field in exactly this shape.
+//
+// Read as a name that string becomes an album subtitle, an import folder, an
+// artwork cache key that can never match the locally indexed album (whose artist
+// is unknown, so it keys on "Unknown Artist"), an online artist-image lookup, and
+// the artist a later sync writes back to the next player.  Read as unknown it
+// joins every tagless file the library already carries.  Braces are optional
+// because a moniker arrives both ways depending on which field wrote it.
+inline bool isGuidMoniker(const QString &value) {
+    static const QRegularExpression moniker(
+        QStringLiteral("^(?:\\{)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}"
+                       "[0-9a-fA-F]{12}(?:\\})?$"));
+    return moniker.match(value.trimmed()).hasMatch();
+}
+// One device artist/album string as the application should name it.  The unknown
+// spellings are the ones LibraryScanner, AlbumArtService and the pivots already
+// agree on, so nothing downstream has to learn a new word.
+inline QString deviceArtist(const QString &value) {
+    return isGuidMoniker(value) ? QStringLiteral("Unknown Artist") : value;
+}
+inline QString deviceAlbum(const QString &value) {
+    return isGuidMoniker(value) ? QStringLiteral("Unknown Album") : value;
 }
 struct Track {
     QString artist, album, title;

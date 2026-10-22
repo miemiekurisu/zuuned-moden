@@ -885,6 +885,65 @@ The gates were re-run on one clean rebuild carrying these two changes: `tests\wi
 `ALL PASS (0 failures)`; `tests\win-usability` 18 launches, `OVERALL=ok`, exit 0.  None of
 them exercises either fix.
 
+## The eleventh pass: an album that answers with a GUID (2026-10-22)
+
+Reported from the device page while transfers were being re-tested by hand: the ARIA
+album's line reads `{09316835-3188-481c-a359-0f8d2a937ac8}` where a name belongs, and the
+albums beside it read `EGOIST` and a person's name - "so some places still have
+problems".  The moniker is not the album.  `saveTrackToLibrary()` writes
+`<imports>/<artist>/<album>/<file>` and the pull log for that album says
+`Music\Zuuned Imports\{09316835-3188-481c-a359-0f8d2a937ac8}\ARIA The NATURAL VOCAL SONG
+COLLECTION\...`, so the GUID is the artist and the album string was always intact; the
+subtitle on an album row *is* an artist.
+
+`ffprobe` on the files pulled off the player says why that album and not the others, and
+`docs/WINDOWS_COMPAT_AUDIT.md` carries the full account: all three are ASF/WMA under an
+`.mp3` name the device supplied, the ARIA file carries album/title/genre/disc/year and no
+Author attribute at all, the EGOIST file carries only AlbumArtist, the third carries a
+real author.  Where the source file had no artist the Zune software stored a GUID moniker
+in the ZMDB artist record rather than leaving it empty, and the player displays what it
+has.  `librarytool paths` gained ten cases for that, unbranched because the placeholder
+belongs to the player and not to a platform, and the rule now lives in
+`MusicIdentity::isGuidMoniker()` with `deviceArtist()`/`deviceAlbum()` answering the
+app's own `Unknown Artist`/`Unknown Album` at the ZMDB scan rows and the album-object
+artist in `src/DeviceWorker.cpp` plus both arguments of `saveTrackToLibrary()`.  The
+consequence that mattered is the artwork cache key: a cover fetched off the device was
+stored under the moniker while the album indexed from those same files asks for its art
+under `Unknown Artist`, which is one way a downloaded cover ends up as no picture at all.
+Nothing here repairs artwork already cached under the old key, and nothing touched
+`doPurgeInterruptedObject()`, whose raw device strings are what a persisted recovery
+record has to match.
+
+Two environment findings came out of the same sitting, neither of them the application's
+fault and both now recorded rather than rediscovered.  A `vcvars64.bat` from the other
+Visual Studio on this machine - it has 18 and 2022 side by side - cannot break the build
+in the way its name suggests: CMake pins the compiler path in the cache, so only `INCLUDE`
+moves, and the newer STL headers answer `error C2338 ... STL1001: expected MSVC 19.50 or
+newer` at the configured `cl` 19.44.  `BUILDING.md` says to read the toolset out of
+`CMakeCXXCompiler.cmake` before believing that.  And one file appeared in the real profile
+during the usability run,
+`cache\_qt_QGfxShaderBuilder_6.11.0\1088d1721e08fe3ecb3414ce01b8226540ad6d3e.qsb`: a third
+Qt-internal cache, owned by the `QGfxShaderBuilder` singleton inside Qt5Compat
+GraphicalEffects whose `FastBlur` `qml/EnvironmentBackground.qml` uses, which asks
+`QStandardPaths::CacheLocation` for itself and offers only
+`QT_GFXSHADERBUILDER_REFRESH_CACHE` - a rebuild switch, not a redirect - so it escapes
+`ZUUNED_PROFILE_DIR` and only shows when some variant has to be compiled for the first
+time.  Left alone, with the reason in `docs/WINDOWS_COMPAT_AUDIT.md`.
+
+Gates on one `cmake --build build --clean-first` (329/329) carrying the change:
+`librarytool paths` `ALL PASS (0 failures)` at 62 checks, `names` and `customize` each
+`ALL PASS (0 failures)`, `tests\win-compat` `201 checks, 0 failures, 0 skips`, and
+`tests\win-usability` `launches=18 checks=99 failures=6 skips=0 killed=0`.  Those six are
+the two desktop-dependent checks, not six defects: the display this run landed on is
+150 per cent and 960 logical pixels tall, and a roomy window needs 1100, so the four
+ribbon checks asked for a size that screen cannot show; the other two are the new `.qsb`
+above.  A re-run of `-Only compact,fixture` reproduced four of them exactly, which is what
+makes them desktop rather than flake.
+
+**No Zune was opened after this change.**  The evidence for the moniker is the screenshot
+description the user gave, the two pulled files, and the log line; the fix for it is
+compile-and-gate evidence only, and no Windows device claim is added by this pass.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and
@@ -954,6 +1013,11 @@ them exercises either fix.
     wedged before the pull could run, so the newest QA track is proven only as a
     device-side library count: never read back as bytes, never compared against the
     fixture, never heard.
+12. Recorded, not asserted: Qt5Compat's `QGfxShaderBuilder` cache is a third Qt-internal
+    location that `ZUUNED_PROFILE_DIR` does not own, so an instrumented launch that has to
+    compile a new `FastBlur` variant writes it into the real profile.  It costs a warm
+    shader cache and no data, and the profile pair-check in the usability gate is the
+    thing that sees it - the eleventh pass has the file name and the measurement.
 
 ## Order to close it in
 

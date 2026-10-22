@@ -320,6 +320,47 @@ there is still no `<longPathAware>` entry. POSIX behaviour is unchanged by const
 and still unverified on this machine. Device evidence is unchanged: one hand-tested Pavo
 Zune HD, and no device claim was added.
 
+**2026-10-22 GUID moniker, and the counters that depend on the desktop:** an album on the
+Windows device page read `{09316835-3188-481c-a359-0f8d2a937ac8}` where a name belongs while
+the albums beside it read normally. It is the *artist*: `saveTrackToLibrary()` writes
+`<imports>/<artist>/<album>/<file>` and the pull log for that album puts the GUID in the
+artist slot, and an album row's subtitle is an artist. `ffprobe` on the pulled files says
+why one album and not the others - the ARIA file carries album/title/genre/disc/year and no
+Author attribute at all, the EGOIST file only AlbumArtist, the third a real author - so the
+Zune software stored a GUID moniker in the ZMDB artist record wherever the source file had
+no artist, exactly as `libzune/src/album.c` already documents for an orphaned album object
+that "displays as its GUID moniker". `library.db` was never poisoned: pulls reach the
+library through the watch-folder scan, so the local artist came from the (empty) tag.
+`MusicIdentity::isGuidMoniker()` is now the one predicate - 8-4-4-4-12 hex, braces optional,
+anchored - and `deviceArtist()`/`deviceAlbum()` answer the `Unknown Artist`/`Unknown Album`
+the rest of the app already uses, applied to the ZMDB scan rows and the album-object artist
+in `src/DeviceWorker.cpp` and to both arguments of `saveTrackToLibrary()`. The quiet damage
+was the artwork cache key: a cover fetched off the device was stored under the moniker while
+the album indexed from those same files asks under `Unknown Artist`, which is how a
+downloaded cover becomes no picture locally. `Music\Zuuned Imports` still holds a
+16-leading-space folder for the same artist next to the trimmed one, dated before `8564616`
+routed import folders through `LibraryPaths::safeComponent()`, so the device pads as well as
+leaving the field nameless and the predicate trims because of that measurement. Untouched on
+purpose: the raw device strings in `doPurgeInterruptedObject()`, which a persisted recovery
+record has to match, and the albumartist vote in `src/sync/SyncEngine.cpp`. Ten new
+unbranched cases in `librarytool paths` (52 to 62) because the placeholder belongs to the
+player, not to a platform. Two counters in this sitting depend on the desktop and not on the
+code, and both are now written down instead of rediscovered: `tests/win-usability` answers
+`launches=18 checks=99 failures=6`, four of them ribbon checks asking a 150 per cent screen
+(960 logical pixels tall) for the 1100 logical pixels a roomy window needs, and two of them
+one new `cache\_qt_QGfxShaderBuilder_6.11.0\*.qsb` in the real profile - a third Qt-internal
+cache, owned by the Qt5Compat `QGfxShaderBuilder` whose `FastBlur`
+`qml/EnvironmentBackground.qml` uses, that asks `QStandardPaths::CacheLocation` for itself
+and offers only `QT_GFXSHADERBUILDER_REFRESH_CACHE`, a rebuild switch rather than a redirect,
+so `ZUUNED_PROFILE_DIR` cannot own it. The sibling check that passes matches a process id in
+a file *name* and therefore cannot clear a launch on a hash-named file. On this machine a
+`vcvars64.bat` from the wrong Visual Studio moves only `INCLUDE` - CMake pins the compiler in
+the cache - and the newer STL headers answer `error C2338 ... STL1001: expected MSVC 19.50 or
+newer`; read the toolset out of `CMakeCXXCompiler.cmake`. On one `--clean-first` rebuild
+(329/329) carrying the change: `paths` 62 `ALL PASS`, `tests/win-compat` 201 checks / 0
+failures / 0 skips. **No Zune was opened after the change**, so the display fix is
+compile-and-gate evidence and this paragraph adds no Windows device claim.
+
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow
 windows. Resizing an existing queue opens the island unless a builder is active;

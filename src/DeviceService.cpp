@@ -6,6 +6,7 @@
 #include "UsbWatcher.h"
 #include "UdevSetup.h"
 #include "library/LibraryPaths.h"
+#include "library/MusicIdentity.h"
 #include "library/VideoIdentity.h"
 #include "sync/RecoveryIdentity.h"
 
@@ -841,8 +842,15 @@ void DeviceService::saveTrackToLibrary(quint32 itemId, const QString &filename,
                                        const QString &album) {
     if (!m_connected || itemId == 0)
         return;
+    // The browse rows already answer "Unknown Artist" for a device that stored a
+    // GUID moniker (DeviceWorker's scan); this is the same rule at the door, so a
+    // row that arrived from somewhere else cannot put {09316835-3188-481c-…} in
+    // the importer's folder tree, in the albumartist hint a pull hands the local
+    // library, or in the artist-image lookup that hint primes.
+    const QString knownArtist = MusicIdentity::deviceArtist(artist);
+    const QString knownAlbum = MusicIdentity::deviceAlbum(album);
     QString dir = musicImportsDir();
-    for (const QString &part : {artist, album}) {
+    for (const QString &part : {knownArtist, knownAlbum}) {
         if (part.isEmpty())
             continue;
         dir += QLatin1Char('/')
@@ -859,8 +867,8 @@ void DeviceService::saveTrackToLibrary(quint32 itemId, const QString &filename,
     const QString destPath = TrackImportPath::available(
         dir + QLatin1Char('/') + fname, m_pendingTrackDestinations);
     m_pendingTrackDestinations.insert(TrackImportPath::key(destPath));
-    m_trackImportBatch.started(itemId, artist, album,
-                               m_trackToAlbumArtist.value(itemId, artist));
+    m_trackImportBatch.started(itemId, knownArtist, knownAlbum,
+                               m_trackToAlbumArtist.value(itemId, knownArtist));
     emit workerExtractTrack(itemId, destPath);
 }
 

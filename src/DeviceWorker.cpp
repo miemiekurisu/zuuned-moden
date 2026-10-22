@@ -1,6 +1,7 @@
 #include "DeviceWorker.h"
 #include "sync/RecoveryIdentity.h"
 #include "library/VideoIdentity.h"
+#include "library/MusicIdentity.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -235,8 +236,19 @@ void DeviceWorker::doBreach() {
             TrackRow row;
             row.itemId = t.item_id;
             row.title = QString::fromUtf8(t.title ? t.title : "");
-            row.artist = QString::fromUtf8(t.artist ? t.artist : "");
-            row.album = QString::fromUtf8(t.album ? t.album : "");
+            // A Zune that never learned an artist or album name stores a GUID
+            // moniker in that field, so the row for a tagless rip is named
+            // {09316835-3188-481c-a359-0f8d2a937ac8} on screen while the album
+            // beside it reads "EGOIST".  From here on that text is treated as
+            // the unknown the app already has - the artists/albums pivots, the
+            // artwork cache key an imported device cover is stored under, the
+            // folder a pull lands in and the artist a send would write back all
+            // take the same answer the library gives a file with no tag.
+            // MusicIdentity.h carries the observation and the shape.
+            row.artist = MusicIdentity::deviceArtist(
+                QString::fromUtf8(t.artist ? t.artist : ""));
+            row.album = MusicIdentity::deviceAlbum(
+                QString::fromUtf8(t.album ? t.album : ""));
             row.genre = QString::fromUtf8(t.genre ? t.genre : "");
             row.durationMs = int(t.duration_ms);
             row.trackNumber = t.tracknumber;
@@ -474,8 +486,11 @@ void DeviceWorker::doBreach() {
         int albumObjCount = 0;
         if (ZuneAlbumObject *objs = zune_get_albums(dev, &albumObjCount)) {
             for (int i = 0; i < albumObjCount; i++) {
-                const QString albumArtist = QString::fromUtf8(
-                    objs[i].artist ? objs[i].artist : "");
+                // The album object's artist is the albumartist hint a pull hands
+                // the import batch, so the moniker is dropped here too rather
+                // than reaching library metadata and artist-image lookups.
+                const QString albumArtist = MusicIdentity::deviceArtist(
+                    QString::fromUtf8(objs[i].artist ? objs[i].artist : ""));
                 for (uint32_t t = 0; t < objs[i].track_count; t++) {
                     r.trackToAlbumArt.insert(objs[i].track_ids[t],
                                              objs[i].album_id);
