@@ -235,15 +235,23 @@ void DeviceWorker::doBreach() {
         // the line printed under this loop is the evidence for the next time the
         // question is asked - which the user just asked from the device page.
         int monikerArtistRows = 0, monikerAlbumRows = 0, monikerGenreRows = 0;
+        int monikerTitleRows = 0;
         int paddedArtistRows = 0, paddedAlbumRows = 0, paddedGenreRows = 0;
         QString firstMonikerArtist, firstMonikerAlbum, firstMonikerGenre;
+        QString firstMonikerTitle;
         QSet<QString> rawArtistNames, rawAlbumNames, rawGenreNames;
         r.tracks.reserve(lib->track_count);
         for (int i = 0; i < lib->track_count; i++) {
             const ZuneTrack &t = lib->tracks[i];
             TrackRow row;
             row.itemId = t.item_id;
-            row.title = QString::fromUtf8(t.title ? t.title : "");
+            const QString rawTitle = QString::fromUtf8(t.title ? t.title : "");
+            if (MusicIdentity::isGuidMoniker(rawTitle)) {
+                ++monikerTitleRows;
+                if (firstMonikerTitle.isEmpty())
+                    firstMonikerTitle = rawTitle;
+            }
+            row.title = rawTitle;
             // A Zune that never learned an artist or album name stores a GUID
             // moniker in that field, so the row for a tagless rip is named
             // {09316835-3188-481c-a359-0f8d2a937ac8} on screen while the album
@@ -299,7 +307,7 @@ void DeviceWorker::doBreach() {
         // [redacted] - which this line did, once, taking its own evidence with it.
         fprintf(stderr,
                 "[zmdb] GUID moniker fields on %d track rows: artist %d (%s),"
-                " album %d (%s), genre %d (%s);"
+                " album %d (%s), genre %d (%s), title %d (%s);"
                 " blank-padded artist %d, album %d, genre %d\n",
                 lib->track_count, monikerArtistRows,
                 qUtf8Printable(firstMonikerArtist.trimmed().isEmpty()
@@ -310,6 +318,9 @@ void DeviceWorker::doBreach() {
                 monikerGenreRows,
                 qUtf8Printable(firstMonikerGenre.trimmed().isEmpty()
                                    ? QStringLiteral("-") : firstMonikerGenre.trimmed()),
+                monikerTitleRows,
+                qUtf8Printable(firstMonikerTitle.trimmed().isEmpty()
+                                   ? QStringLiteral("-") : firstMonikerTitle.trimmed()),
                 paddedArtistRows, paddedAlbumRows, paddedGenreRows);
         // What the player actually calls its albums and artists. The count above
         // only answers "did the one known placeholder shape appear", which cannot
@@ -404,6 +415,29 @@ void DeviceWorker::doBreach() {
                 g.toMap().value(QStringLiteral("count")).toString());
         fprintf(stderr, "[zmdb] genre tiles after the moniker rule (%d): %s\n",
                 int(r.genres.size()), qUtf8Printable(genreTiles.join(QStringLiteral(", "))));
+        // And the other two pivots, because "the album tile shows a uuid" is a
+        // report about a label, not about a column in ZMDB. What the screen draws
+        // is the grouped list, so the grouped list is what gets printed: an album
+        // tile carries its owner as a subtitle, and an owner rendered from a
+        // moniker is exactly the complaint. Bounded like the album objects above,
+        // since this line exists to answer one sighting, not to dump a library.
+        QStringList artistTiles, albumTiles;
+        for (const QVariant &a : std::as_const(r.artists))
+            artistTiles << QStringLiteral("%1 (%2)").arg(
+                a.toMap().value(QStringLiteral("name")).toString(),
+                a.toMap().value(QStringLiteral("count")).toString());
+        for (int i = 0; i < r.albums.size() && i < 24; i++) {
+            const QVariantMap a = r.albums.at(i).toMap();
+            albumTiles << QStringLiteral("\"%1\" by \"%2\" (%3)").arg(
+                a.value(QStringLiteral("name")).toString(),
+                a.value(QStringLiteral("subtitle")).toString(),
+                a.value(QStringLiteral("count")).toString());
+        }
+        fprintf(stderr, "[zmdb] artist tiles after the moniker rule (%d): %s\n",
+                int(r.artists.size()), qUtf8Printable(artistTiles.join(QStringLiteral(", "))));
+        fprintf(stderr, "[zmdb] album tiles after the moniker rule (%d of %d): %s\n",
+                albumTiles.size(), int(r.albums.size()),
+                qUtf8Printable(albumTiles.join(QStringLiteral(", "))));
 
         // Device videos / pictures / playlists for the browse pages.
         auto metagenreLabel = [](uint16_t mg) -> QString {
