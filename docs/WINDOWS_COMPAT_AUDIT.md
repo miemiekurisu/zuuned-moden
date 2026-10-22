@@ -784,8 +784,9 @@ fields - `%s / %s / %s is now %s / %s / %s` - so the next time this is asked the
 exists before the question.
 
 Gates, on a `--clean-first` rebuild (`MusicIdentity.h` is header-only and Ninja records
-`#deps 0` on this host): `build\librarytool.exe paths` answers `ALL PASS (0 failures)` at 74
-checks, six of them the genre rule - the padded observed value, the unbraced form, `アニメ`
+`#deps 0` on this host): `build\librarytool.exe paths` answers `ALL PASS (0 failures)` at 73
+checks (74 as first written here, re-counted against the current
+binary), six of them the genre rule - the padded observed value, the unbraced form, `アニメ`
 untouched, `"   JPop  "` trimmed, the device's own `Unknown Genre` kept, and moniker genre
 reading the same off the player as off a tag.  `tests\win-compat` answers
 `201 checks, 0 failures, 0 skips`.  `tests\win-usability` was again deliberately not re-run:
@@ -797,18 +798,220 @@ capability.**  Device facts are unchanged - one hand-tested Pavo Zune HD - and d
 spoken and photo/video categories, every model but this Pavo and anything anyone has listened
 to all stay open.
 
-**Left open, with the line that shows it.**  The artwork complaint is not this bug and is now
-reproducing in the current log every time a detail page is opened:
+**Left open, with the line that shows it - and retracted by the ninth sweep.**  The artwork
+complaint is not this bug and reproduced in the current log every time a detail page was
+opened:
 
     2026-10-22T02:40:27.899Z [qt.warning] QIODevice::read (QNetworkReplyHttpImpl): device not open
     2026-10-22T02:40:27.899Z [customize-http] HTTP 0, Qt error 4 (https://api.deezer.com/artist/325381)
 
-HTTP status 0 with `HostNotFoundError` and a reply that reports its own device as closed is a
-request that never started, not a provider that answered "no art" - the direct lead is the
-proxy/provisional-connection path in the provider workers, and it is where the open
-"no thumbnails" complaint should be picked up.  Separately noticed and untouched: a 0-byte
-`AppData\Local\Zuuned\Zuuned\State\library.db` beside the live profile's real database, which
-is a question about which location was asked for, not about this fix.
+What this paragraph went on to conclude - that error 4 is `HostNotFoundError` and the lead
+is "a request that never started" - is wrong, and the ninth sweep corrects it with the
+measurements: error 4 is `QNetworkReply::TimeoutError`, the request started, and this machine
+has its proxy switched off.  Still open and still unexamined, because it is a different
+question: a 0-byte `AppData\Local\Zuuned\Zuuned\State\library.db` beside the live profile's
+real database, which is about which location was asked for, not about this fix.
+
+## Ninth sweep: the last mile spoke a second language (2026-10-22)
+
+**The question came back a third time, and this time the answer was in the app.**  On the
+current build the device page shows no moniker anywhere - the capture below is the proof -
+so the uuid seen under ARIA is a sighting of an older binary or of the local Music page.
+The conclusion the user drew from it stands regardless: some place still had no rule.
+Three places did, and none of them was in C++ - which is how a rule closed in the C++
+device read earlier the same day could still leave a uuid on a screen after it.
+
+**What the player stores, re-measured read-only before touching anything.**  Isolated
+`ZUUNED_PROFILE_DIR`, `build\zuuned.exe --page deviceMusic --qa-probe`,
+`ZUUNED_MPV_AO=null`, exit 0:
+
+    [zunedb] scanned: 189 tracks, 0 videos, 0 photos, 15 albums, 11 artists, 0 playlists, 0 photo albums
+    [zmdb] GUID moniker fields on 189 track rows: artist 27 ({09316835-3188-481c-a359-0f8d2a937ac8}), album 0 (-), genre 130 ({09316835-...}), title 0 (-); blank-padded artist 27, album 0, genre 130
+    [zmdb] artist tiles after the moniker rule (8): Anri (10), J. S. Bach (27), QA Windows (4), Unknown Artist (27), Walter Gieseking (17), 葉月ゆら (9), 许茹芸, (82), 酒井法子 (13)
+    [zmdb] album tiles after the moniker rule (15 of 15): "1995-2001 光华真纪录 - 单身日记" by "许茹芸," (15), "ARIA The NATURAL VOCAL SONG COLLECTION" by "Unknown Artist" (13), "Bi・Ki・Ni" by "Anri" (10), "Extra terrestrial Biological Entities" by "Unknown Artist" (12), "MENDELSSOHN: SONGS WITHOUT WORDS" by "Walter Gieseking" (17), "Messe in h-Moll, BWV 232" by "J. S. Bach" (27), "QA Windows" by "Unknown Artist" (1), "Watercolour" by "酒井法子" (13), "Windows Round Trip" by "QA Windows" (1), "Windows Round Trip 660" by "QA Windows" (1), "Windows Round Trip 777" by "QA Windows" (1), "Windows Round Trip 888" by "QA Windows" (1), "【M3-41】虚構の楽園" by "葉月ゆら" (9), "测试音乐" by "Unknown Artist" (1), "真爱无敌精选 (2015)" by "许茹芸," (67)
+
+`title 0` is the counter this sweep added, because a report can be about a title as easily
+as about an album and until now nobody could have answered that one either way.  The two
+new tile lines exist for the same reason: "the album tile shows a uuid" is a statement
+about a *label*, and the label is a grouped list built from several rows, so counting
+columns could never settle it.  Every one of the 15 album tiles on this player carries its
+real name, and ARIA's subtitle reads `Unknown Artist` - the rule firing where it should.
+What this capture does is bound the sighting, not reproduce it; it is honest about being
+unable to do the second.
+
+**Door one: `qml/MusicIdentity.js` was a second implementation of the rule and had none of
+it.**  It is not a binding, it is the same decision re-written in JavaScript, and it is the
+last mile for `MusicPage`, `ArtistDetail` and `GenreDetail` on **both** sources - local
+library rows and device rows all group through `fromTrack` / `fromAlbum` / `owner`.  The
+C++ predicate written in `src/library/MusicIdentity.h` never reached it: `owner()` returned
+`track.albumartist || track.artist` verbatim, so a moniker arriving through an import
+folder a pull had been filed under, or through a local file a tagless rip left behind,
+became a tile name - the complaint - while the C++ device read printed `Unknown Artist`
+for the same row on the same screen.  It now carries `guidMoniker`, the same pattern character for character as the
+concatenated C++ literal in `MusicIdentity::isGuidMoniker` (braces optional, surrounding
+blanks not part of the answer), and one `known()` helper that yields the text or empty and lets the callers' own
+`Unknown Artist` / `Unknown Album` do what they already did with empty.  Device rows cannot
+carry a moniker into it - `DeviceWorker` already replaced them at the source - so this
+door was open on the library side, which is precisely where a pull filed under the
+folder name the seventh sweep documented lands.
+
+**Door two: the Artists pivot never went through the identity module at all.**
+`qml/MusicPage.qml` `computeArtists()` grouped off raw `t.artist`, so a correct mirror
+would still have left an artist tile named with a GUID.  It calls `MusicIdentity.artistName()`
+now.
+
+**Door three: the album page painted its own headline from an unruled field.**  Grepping
+the whole `qml/` tree for the other name fields found this one: `AlbumDetail`'s
+`primaryArtist` / `primaryAlbumArtist` fall back to the first row's own fields, and that
+value is both the page's headline text and the name of the artist page its byline opens -
+so a moniker here is a tile name one level down.  Both go through `known()` now.  What was
+deliberately left raw is the SyncEngine payload (`syncItemOf`, the playlist drag and add shapes): that object
+is the identity a send writes, not a label, and the rules that govern it are the scanner
+and `repairDeviceMonikers()`, not the painter.
+
+**Door four, found by reading the callers of the mirror rather than the mirror.**  The
+customize re-key in `qml/MusicPage.qml` compares a navigation-stack entry against a key it
+builds itself, and it built that key from `before.artist || "Unknown Artist"` while the entry
+it was comparing against had been built *through* the mirror.  Its one caller
+(`customizeAlbum`) already hands it `MusicIdentity.owner(first)`, so no moniker reaches it
+today - which is precisely the kind of door worth closing regardless, because a key
+comparison that disagrees does not fail, it silently re-keys nothing.  It rules the value it
+was given now instead of trusting who gave it.  Sweeping the tree for the rest found nothing
+else standing: `key()`, `matches()` and `groupAlbums()` all build through `fromTrack`, and
+the artwork lookups stay raw on purpose because `LibraryService.artKey` is keyed on what the
+database stores, not on what the screen says.
+
+**How a `.js` file got verified when neither Windows gate reaches one.**  `tests\win-compat`
+compiles C++ and `tests\win-usability` drives a window, and the grouping the mirror owns
+happens in neither's line of sight, so the mirror was checked by parsing and asking: strip
+the `.pragma library` line, evaluate the module, and put the observed device values through
+it.  Every answer it has to give reproduces - `{09316835-3188-481c-a359-0f8d2a937ac8}` and its
+blank-padded and unbraced forms all yield empty, `  ARIA  ` yields `ARIA`, an undefined
+field yields empty rather than throwing, and `fromAlbum({name: "ARIA", artArtist: "{09316835-..."})`
+yields `{"name":"ARIA","artist":"Unknown Artist"}`, which is the line the device capture
+printed.  That is a check performed once by hand and recorded here, not a gate: the
+consequence of having two copies of one rule is that nothing fails when they drift, so
+`MusicIdentity.h` now says so above the predicate both are meant to agree with.
+
+**The other half of that verification, and the half that could be a gate.**  Parsing and
+evaluating the module proves what it answers; it does not prove that a caller in QML can see
+it.  `qmllint` from the same Qt 6.11 answers that, and it does resolve a relative
+`import "MusicIdentity.js"`: given a call to an export that is not there it prints
+`Member "noSuchFunction" not found on type "MusicIdentity" [missing-property]`, checked
+against a planted fault so that the silence on the real files means something.  Across the 96
+`.qml` files in `qml/` no `missing-property` warning names `MusicIdentity` and there is no
+`Error:` line - the one line that matches that string is qmllint echoing a source line which
+contains `connectionError:`.  It is not adopted as a tree-wide gate, because 3246
+`missing-property` warnings name `Theme` (2897 of them) and other singletons whose compiled
+QML module qmllint cannot see from a source directory: a gate on that category would fail on
+files nobody touched.  The recipe until that changes is to lint what touches the mirror and
+grep for the mirror's name.
+
+**A harness fault, and the third of its kind in this file: the usability gate was
+scale-blind.**  Re-running the compact phase for this fix failed four checks against an
+application that had not been changed.  `Main.qml`'s breakpoints are logical pixels
+(`ribbonRetired: width < 1280 || height < Theme.headroomCompactBelow`) and `winshot`'s
+`MoveWindow` speaks physical ones, so the fixed 1400x1220 request the drive had always made
+asks two different questions on two different desktops: at 100% it clears the ribbon, and at
+150% it lands on 933x813 logical and can never reach it.  The first repair attempt made it
+worse in an instructive way: a PowerShell `Add-Type` helper calling `GetDpiForWindow`
+answers **96 to a DPI-unaware caller whatever the desktop is doing**, so it reported a 150%
+screen as 100% and the drive went on blaming the app.  The scale now comes from `winshot`,
+which declares itself per-monitor aware before it asks (`winshot --dpi <hwnd>`, resolved
+through `GetProcAddress` because the function needs an SDK level this file does not
+otherwise request), the tall stages are computed from that scale, and the minimum-size check
+- which had been comparing a *physical* client rectangle against Main.qml's *logical*
+1100x700 floor, and so passed vacuously at 150% - compares logical.  Third lesson of the
+same shape as the cached `Process.MainWindowHandle` and the `Process.Kill()` exit code: the
+harness measured its own assumption and reported it as the application's behaviour.
+
+**Two more faults of the same shape, both from the throwaway drive written to re-check this
+fix, and both blamed on the application.**  It waited on `zuuned --qa-exit-ms 9000`, a flag no
+file in this repository mentions - the application ignores an unknown argument and carries on,
+so a healthy app read as a 45-second hang and the drive killed it.  It then grepped for
+`[qa-probe]`, which is the name of the flag, while the line the QML prints begins `[qa] `, and
+concluded nothing had been reported.  And it launched with `Start-Process -WindowStyle Hidden`,
+after which `winshot --pid` answers `no visible window for pid 65944`,
+`Process.MainWindowHandle` is 0, and neither `CloseMainWindow()` nor `taskkill` without `/F`
+has a window to ask - so that app genuinely would not come down politely, because there was
+nothing there to be polite to.  The gate does none of these three things and answers the
+question in one measured line: `this close took 0.5s from the window close to the exit code`.
+A drive written from memory of a harness reproduces the harness's assumptions.
+
+**One consequence of that measurement, recorded and not fixed.**  At 150% a 2560x1440
+desktop is 1706x960 logical, and 960 is below `headroomCompactBelow` (1100), so
+`spaceScarce` is true in *every* window that fits on the screen and the top ribbon cannot be
+reached at all at that scale - the gate only passes its ribbon stages because `MoveWindow`
+does not clamp a taller-than-monitor window that the user could never have made.  Whether a
+chrome that needs 1100 logical pixels of height is right for a 150% 1440p laptop is a design
+decision, not a defect, so it is raised here rather than tuned in a sweep.
+
+**Left open, with the line that shows it - and a retraction.**  The artwork complaint is not
+this bug, and the diagnosis this file carried for it was wrong in its one technical claim:
+
+    2026-10-22T02:40:27.899Z [customize-http] HTTP 0, Qt error 4 (https://api.deezer.com/artist/325381)
+
+**Qt error 4 is `QNetworkReply::TimeoutError`, not `HostNotFoundError`** (`QtNetwork/qnetwork
+reply.h`); `HostNotFoundError` is 3.  A request that never resolved a name and a request
+that got no answer are different faults and the log as written could not tell them apart,
+which is why the guess went wrong.  Four curls on the same machine say what is actually
+happening:
+
+    curl https://api.deezer.com/artist/1006              connect fails, 21.07 s
+    curl https://www.google.com/generate_204            connect fails, 21.06 s
+    curl https://api.github.com                         200, 0.39 s
+    curl -x http://192.168.2.100:8117 the two failures  200 and 204, under 1 s
+
+The obvious reading - a Windows application that had never been told about the one proxy
+this network has - was then measured rather than assumed, and died: `ProxyEnable` is 0
+(`ProxyServer` still names `192.168.2.100:8117`), and a fresh Qt 6.11 process reports
+`usesSystemConfiguration=1` and answers `NoProxy` from the platform default, so **Qt already
+follows the Windows shell and going direct is correct**.  This is a machine with its proxy
+switched off, not a broken client.  What was genuinely missing was the route in the log:
+`HTTP 0, Qt error 4` reads identically direct or proxied, so `src/library/NetworkAccess.h`
+now prints which route a request took - `[network] Windows proxy settings: HTTPS goes
+direct` once at startup, and `via <route>` on every failed `[customize-http]` line - plus
+`ZUUNED_PROXY=[scheme://][user[:pass]@]host:port` for a tester who wants provider art
+without switching the whole desktop.  Unset, nothing is installed and Qt's answer stands on
+both platforms.  Both halves of that plumbing are live in the run quoted below, and they
+carry apart the two faults that used to read the same:
+
+    [customize-http] HTTP 503, Qt error 403 via direct (https://musicbrainz.org/ws/2/release-group/)
+    [customize-http] HTTP 0, Qt error 5 via direct (https://musicbrainz.org/ws/2/artist/)
+
+One provider answered "unavailable" and one request this process gave up on, and each line
+names the route that was asked to carry it.
+A proxy-consulting factory was deliberately *not* written; the probe above is in the header
+so nobody implements it again on the strength of a comment.
+
+Gates, all re-measured on the relinked binary: `build\librarytool.exe paths` answers
+`ALL PASS (0 failures)` at 73 checks, `build\librarytool.exe net` answers
+`ALL PASS (0 failures)` at 27 checks, `tests\win-compat` answers `201 checks, 0 failures,
+0 skips`, and `tests\win-usability` answers `launches=18 checks=102 failures=0 skips=0
+killed=0 pid-scan-fallbacks=1` with `OVERALL=ok` - the fallback counted one of the eighteen
+launches whose window had to be resolved through `winshot --pid` after the process property
+came back empty - and the compact phase printing
+`note window scale 1.5`, `note narrow asked 900x640 client 1650x1050 logical 1100x700` and
+`note state sequence: compact-retired -> roomy-ribbon -> compact-retired -> roomy-ribbon`.
+The QML is qrc-embedded, so the JS and QML fixes need a relink and not a recompile of
+anything else.
+
+**Door four landed after those numbers, so the half that can see it was measured again.**  A
+QML change needs the relink and nothing else, and the relink is what `tests\win-usability`
+was then run against: `launches=18 checks=102 failures=0 skips=0 killed=0
+pid-scan-fallbacks=0`, `OVERALL=ok`, its tools phase still passing `names`, `customize`,
+`paths` and `net`.  `paths` at 73 and `net` at 27 were asked again against the same binary and
+both answer `ALL PASS (0 failures)`; `tests\win-compat`'s 201 checks stand from the build that
+preceded it, because no C++ file has changed since and no C++ gate can reach the line that
+did.  One of these numbers is a tally and not a constant: `pid-scan-fallbacks` read 1 on the
+first run of the pair and 0 on the second, which is what an opportunistic fallback looks like
+when nothing forces it - it is recorded so a later change cannot make the fallback the only
+path that works, not so that any one run can promise a value.
+
+**This pass adds no Windows capability and no device claim.**  The device evidence is one
+read-only re-sighting of the same hand-tested Pavo Zune HD inside the music-library-read
+gate that was already closed.  Deletion, the spoken and photo/video categories, every model
+but this Pavo, audible playback and anything anyone has listened to all stay open.
 
 ## What is proven, and by which gate
 

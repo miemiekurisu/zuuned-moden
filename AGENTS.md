@@ -434,6 +434,44 @@ hand-tested Pavo Zune HD, read-only this time. Left open with its evidence:
 `QIODevice::read (QNetworkReplyHttpImpl): device not open` in the live log is the lead for
 the unresolved artwork complaint - a request that never started, not a provider with no art.
 
+**2026-10-22 Windows fourth moniker pass - the last mile spoke a second language:** the
+uuid-under-ARIA report came back a third time, and this time the fault was in the
+application though not on the device. A read-only re-sighting now prints the labels the
+screen draws, not just the columns it was handed (`[zmdb] artist tiles ...`,
+`[zmdb] album tiles ...`, and a `title` counter added to the field census: artist 27, album
+0, genre 130, title 0 of 189 rows), and all 15 album tiles on this player carry their real
+names - so `qml/MusicIdentity.js`, which is not a binding but the same rule re-written in
+JavaScript and the last mile for MusicPage, ArtistDetail and GenreDetail on both sources, was
+grouping with no moniker rule at all; `MusicPage`'s `computeArtists()` never asked the
+identity module either, `AlbumDetail`'s headline and byline fell back to a raw row field that
+is also the name of the artist page the byline opens, and the customize re-key compared a
+drill-down key built from a raw artist against one the mirror had already ruled. SyncEngine
+payloads stay raw on purpose: an identity a send writes is not a label. Neither gate reaches a
+`.js`, so the module's answers were checked by evaluating it and its QML callers by `qmllint`,
+which does resolve the relative import and does name a missing export - not a tree-wide gate,
+because 3246 of its `missing-property` warnings name `Theme`. The compact usability phase then failed
+four checks against an unchanged app because the harness was scale-blind - `Main.qml`'s
+breakpoints are logical pixels, `winshot`'s `MoveWindow` takes physical ones, and
+`GetDpiForWindow` answers 96 to a DPI-unaware PowerShell caller, so the first repair read a
+150% desktop as 100% and blamed the application for a window it could not physically have
+made. Scale now comes from `winshot --dpi` and the minimum-size check compares logical pixels,
+which also made one thing visible: at 150% a 2560x1440 desktop is 960 logical pixels tall,
+below `headroomCompactBelow` (1100), so the top ribbon is unreachable in any window that fits
+that screen - raised as a design question, deliberately not tuned inside a sweep. And a
+retraction: `Qt error 4` is `QNetworkReply::TimeoutError`, not `HostNotFoundError`; measured
+curls reach GitHub in 0.39 s and time out on Deezer and Google, both of which answer in under
+1 s through `192.168.2.100:8117`, but `ProxyEnable` is 0 and a fresh Qt 6.11 process reports
+`usesSystemConfiguration=1`, so Qt already follows the Windows shell and going direct is
+correct - this machine has its proxy switched off, not a broken client. What was missing was
+the route in the log: `src/library/NetworkAccess.h` prints `[network] ... HTTPS goes direct`
+once at startup and `via <route>` on every failed `[customize-http]` line, with a
+`ZUUNED_PROXY` override that installs nothing when unset, pinned by 27 `librarytool net`
+checks. Gates on the relinked binary: `paths` 73 (the eighth sweep's "74" was a miscount),
+`net` 27, `tests\win-compat` 201 checks, `tests\win-usability`
+`launches=18 checks=102 failures=0 skips=0 killed=0`, re-run at the same counters on the relink
+that carries the fourth door - its `pid-scan-fallbacks` read 1 once and 0 once, a tally. No capability added and no device claim
+changed - one hand-tested Pavo Zune HD, read-only here, nothing listened to.
+
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow
 windows. Resizing an existing queue opens the island unless a builder is active;

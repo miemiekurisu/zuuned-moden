@@ -1029,8 +1029,8 @@ next pull.  A side effect worth naming: `DeviceService::pickMoodColor()` keys th
 page's accent off the highest-count genre, so on this player it had been keying off that
 GUID and falling through to a random colour on every single connection.
 
-Gates on the `--clean-first` rebuild: `librarytool paths` `ALL PASS (0 failures)` at 74
-checks (six of them the genre rule), `tests\win-compat` `201 checks, 0 failures, 0 skips`.
+Gates on the `--clean-first` rebuild: `librarytool paths` `ALL PASS (0 failures)` at 73
+checks (74 as first written, re-counted; six of them the genre rule), `tests\win-compat` `201 checks, 0 failures, 0 skips`.
 `tests\win-usability` again not re-run: as in the twelfth pass the app was in the
 user's hands on the real profile, and while such an instance is open the gate's two
 profile-isolation checks fail by design (`docs/WINDOWS_COMPAT_AUDIT.md`).  `docs/WINDOWS_COMPAT_AUDIT.md` carries this as its
@@ -1038,8 +1038,74 @@ eighth sweep.  No Windows capability is added and no device claim is changed - s
 hand-tested Pavo Zune HD, still nothing listened to, and deletion, the spoken and
 photo/video categories and every other model stay open.  One lead left on purpose for the
 open artwork complaint: `[customize-http] HTTP 0, Qt error 4 (https://api.deezer.com/...)`
-with `QIODevice::read (QNetworkReplyHttpImpl): device not open`, in the current log, which
-is a request that never started rather than a provider with no art.
+with `QIODevice::read (QNetworkReplyHttpImpl): device not open`, in the current log - the
+fourteenth pass picks this up and corrects it: the request did start, and error 4 is a
+timeout on a machine whose proxy is switched off.
+
+## The fourteenth pass: the last mile spoke a second language (2026-10-22)
+
+**The same question, third time, and this time the answer was in the application.**  A
+read-only re-sighting of the Zune HD now prints the labels the screen draws and not just the
+columns it was handed - `[zmdb] artist tiles ...`, `[zmdb] album tiles ...`, and a `title`
+counter added to the field census, which reads artist 27, album 0, genre 130, title 0 of 189
+rows - and all 15 album tiles on this player carry their real names, ARIA's included, with
+its subtitle answered as `Unknown Artist`.  No field on this device is a GUID except the two
+that are already ruled, so the place a moniker still reached a screen was in QML.
+
+**`qml/MusicIdentity.js` is a second implementation of the rule and had none of it.**  It is
+not a binding; it is the same decision re-written in JavaScript, and it is the last mile for
+`MusicPage`, `ArtistDetail` and `GenreDetail` on local rows and device rows alike.  It
+carries the C++ predicate now - braces optional, surrounding blanks not part of the answer -
+so a moniker cannot become a tile name.  Three more raw doors went with it: `MusicPage`'s
+`computeArtists()` grouped off `t.artist` without ever asking the identity module,
+`AlbumDetail`'s headline and byline fell back to the first row's own fields unruled - a value
+that is also the name of the artist page its byline opens - and the customize re-key compared
+a drill-down key it built from a raw `before.artist` against an entry the mirror had already
+ruled, which fails by re-keying nothing and saying nothing.  The SyncEngine payload stays raw
+on purpose: the identity a send writes is not a label, and the rules that govern it are the
+scanner and `repairDeviceMonikers()`.
+
+**Neither Windows gate reaches a `.js` file, so the mirror was checked twice over by hand.**
+Evaluating the module says what it decides; `qmllint` says whether QML can see it, and it does
+resolve the relative `import "MusicIdentity.js"` - it names
+`Member "noSuchFunction" not found on type "MusicIdentity" [missing-property]` for an export
+that is not there, measured against a planted fault.  Across the 96 `.qml` files in `qml/` no
+`missing-property` warning names `MusicIdentity` and there is no `Error:` line, but it is not
+a gate: 3246 of those warnings name `Theme` and other singletons a source-directory lint
+cannot resolve.
+
+**The gate that failed here was the harness, third time in that shape.**  `Main.qml`'s
+breakpoints are logical pixels and `winshot`'s `MoveWindow` takes physical ones, so the
+compact phase's fixed 1400x1220 request cannot reach the ribbon at 150% scaling; and asking
+`GetDpiForWindow` from PowerShell answers 96 to a DPI-unaware caller, so the first repair
+reported a 150% desktop as 100% and went on blaming the application.  The scale now comes
+from `winshot --dpi`, which declares itself per-monitor aware before it asks, and the
+minimum-size check compares logical pixels against `Main.qml`'s 1100x700 floor instead of
+comparing physical ones and passing vacuously.  One consequence recorded and deliberately
+not tuned: at 150% a 2560x1440 desktop is 960 logical pixels tall, below
+`headroomCompactBelow` (1100), so the top ribbon is unreachable in any window that fits that
+screen.  That is a design question, not a Windows defect.
+
+**The artwork lead is corrected, and the fix this time is a log line.**  `Qt error 4` is
+`QNetworkReply::TimeoutError`, not `HostNotFoundError`.  Four curls on the same machine
+reach `api.github.com` in 0.39 s and fail to connect to Deezer and Google in ~21 s, both of
+which answer in under 1 s through `http://192.168.2.100:8117` - but `ProxyEnable` is 0 and a
+fresh Qt 6.11 process reports `usesSystemConfiguration=1`, so **Qt already follows the
+Windows shell and going direct is correct**; this machine simply has its proxy switched off.
+What was missing was the route in the log, so `src/library/NetworkAccess.h` prints
+`[network] ... HTTPS goes direct` once at startup and `via <route>` on every failed
+`[customize-http]` line, plus a `ZUUNED_PROXY` override for a tester who wants provider art
+without switching the whole desktop.  Unset, nothing is installed and Qt's answer stands on
+both platforms.
+
+Gates on the relinked binary: `librarytool paths` `ALL PASS (0 failures)` at 73 checks,
+`librarytool net` `ALL PASS (0 failures)` at 27, `tests\win-compat` `201 checks, 0 failures,
+0 skips`, `tests\win-usability` `launches=18 checks=102 failures=0 skips=0 killed=0
+pid-scan-fallbacks=1` with `OVERALL=ok`, and run again on the relink that carries the fourth
+door for `launches=18 checks=102 failures=0 skips=0 killed=0 pid-scan-fallbacks=0` and
+`OVERALL=ok` - that fallback counter is a tally, not a constant.  No Windows capability is added and no device claim
+changes - still one hand-tested Pavo Zune HD, read-only in this pass, nothing listened to.
+`docs/WINDOWS_COMPAT_AUDIT.md` carries the same sitting as its ninth sweep.
 
 ## What is not proven here
 

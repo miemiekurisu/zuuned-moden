@@ -1,4 +1,4 @@
-# Building ZuunedLinux
+# Building Zuuned Modern
 
 This guide covers the supported native source build and documents the separate
 maintainer AppImage workflow with its current public-layout limitations. Run
@@ -22,8 +22,11 @@ Local library and playback do not require authentication data.
 ## Install native build dependencies
 
 Qt 6.8 or newer is required. The application also links libusb, libgcrypt,
-SQLite, mpv, FFmpeg and LAME. The complete Arch and Debian package commands are
-kept in the [main README](README.md#build).
+SQLite, mpv, FFmpeg and LAME. The Arch and Debian package lists belong to the
+upstream Linux project and are kept in its
+[README](https://github.com/badgeromen/zuuned-linux); the Windows tree is a
+different list again and is under [Toolchain and dependencies](#toolchain-and-dependencies)
+below.
 
 ## Build the native application
 
