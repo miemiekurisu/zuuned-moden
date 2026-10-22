@@ -998,6 +998,49 @@ audit line into `[redacted]`.  The list below is unchanged by this pass: deletio
 podcast, audiobook, photo and video categories, every model but this Pavo, and anything
 anyone has listened to are still open.
 
+## The thirteenth pass: the uuid was a genre (2026-10-22)
+
+Same question, asked again from the device page: on the player, the ARIA album's name is
+still a GUID and the albums around it are not.  The twelfth pass answered "that is the
+artist subtitle, not the album name", and was right about the album and wrong about the
+screen.
+
+**The premise was measured this time, per field, before anything was changed.**  The scan
+now prints the whole name pool it holds, not a count of the one placeholder shape:
+
+    [zmdb] GUID moniker fields on 189 track rows: artist 27 ({09316835-3188-481c-a359-0f8d2a937ac8}), album 0 (-), genre 130 ({09316835-3188-481c-a359-0f8d2a937ac8}); blank-padded artist 27, album 0, genre 130
+    [zmdb] distinct genres (6): "                {09316835-3188-481c-a359-0f8d2a937ac8}", "Classical", "JPop", "QA", "Unknown Genre", "アニメ"
+    [zmdb] genre tiles after the moniker rule (5): Classical (17), JPop (13), QA (4), Unknown Genre (12), アニメ (13)
+
+Zero moniker albums in the track rows, zero among the 15 album objects, and 15 real album
+strings; 130 of 189 rows carry the moniker in **genre**, the one name field this app copied
+over raw.  So the GUID on screen is a genre tile: the Genres pivot titles a tile with
+`modelData.name` and puts up to four of that genre's albums in a 2x2 mosaic under it, with
+the albums listed below - which is what makes a genre look like an album, and why only
+"some" albums appeared to be affected.  `MusicIdentity::deviceGenre()` yields empty for it,
+because both pivots skip an empty genre and that is what an untagged file already answers;
+the device's own literal `Unknown Genre` is content and stays.
+
+Reads only, on the same player, inside the music-library-read gate that closed at the
+hardware checkpoint.  The local `library.db` (15 tracks) turned out to hold no moniker
+genre, so nothing needed repairing this time; `LibraryScanner` asks `usableName()` of the
+genre tag now and `repairDeviceMonikers()` carries the column, so the door is shut for the
+next pull.  A side effect worth naming: `DeviceService::pickMoodColor()` keys the device
+page's accent off the highest-count genre, so on this player it had been keying off that
+GUID and falling through to a random colour on every single connection.
+
+Gates on the `--clean-first` rebuild: `librarytool paths` `ALL PASS (0 failures)` at 74
+checks (six of them the genre rule), `tests\win-compat` `201 checks, 0 failures, 0 skips`.
+`tests\win-usability` again not re-run: as in the twelfth pass the app was in the
+user's hands on the real profile, and while such an instance is open the gate's two
+profile-isolation checks fail by design (`docs/WINDOWS_COMPAT_AUDIT.md`).  `docs/WINDOWS_COMPAT_AUDIT.md` carries this as its
+eighth sweep.  No Windows capability is added and no device claim is changed - still one
+hand-tested Pavo Zune HD, still nothing listened to, and deletion, the spoken and
+photo/video categories and every other model stay open.  One lead left on purpose for the
+open artwork complaint: `[customize-http] HTTP 0, Qt error 4 (https://api.deezer.com/...)`
+with `QIODevice::read (QNetworkReplyHttpImpl): device not open`, in the current log, which
+is a request that never started rather than a provider with no art.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and

@@ -192,7 +192,7 @@ TrackResult resolveTrack(const WorkItem &work, const QSet<QString> &roots) {
         if (meta.artist) t.artist = MusicIdentity::usableName(QString::fromUtf8(meta.artist).trimmed());
         if (meta.albumartist) t.albumartist = MusicIdentity::usableName(QString::fromUtf8(meta.albumartist).trimmed());
         if (meta.album) t.album = MusicIdentity::usableName(QString::fromUtf8(meta.album).trimmed());
-        if (meta.genre) t.genre = QString::fromUtf8(meta.genre).trimmed();
+        if (meta.genre) t.genre = MusicIdentity::usableName(QString::fromUtf8(meta.genre).trimmed());
         t.trackNumber = meta.tracknumber;
         t.discNumber = meta.discnumber;
         t.year = meta.year;

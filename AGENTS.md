@@ -405,6 +405,35 @@ the podcast, audiobook, photo and video categories, every model but this Pavo an
 anything anyone has listened to all stay open. The GUID-named import folders the old pull
 left on disk are the user's files and stay there, now read as Unknown Artist.
 
+**2026-10-22 the uuid was a genre, and 130 tracks of them:** the same question came back
+from the device page - the ARIA album still shows a GUID where other albums show a name -
+and this time every name field was counted before anything was touched. The album premise
+is still false (0 moniker albums in the 189 track rows, 0 among the 15 album objects, 15
+real album strings) and the screen was still right: `genre` was the one device name field
+this app copied over raw, it holds the same `{09316835-...}` on **130 of 189** rows, and the
+Genres pivot titles a tile with that string and puts up to four of the genre's albums in a
+2x2 mosaic under it (`qml/MusicPage.qml:737`, `genreAlbumRefs()`), which is exactly what
+makes a genre read as an album and why only some albums looked affected.
+`MusicIdentity::deviceGenre()` yields an empty `QString`, not an "Unknown Genre" word,
+because both pivots skip an empty genre and that is precisely what an untagged file answers
+- `deviceArtist`/`deviceAlbum` yield words only because those fields have a word to yield -
+while the device's own literal `Unknown Genre` is its content and stays untouched.
+`LibraryScanner` asks `usableName()` of the genre tag too and
+`repairDeviceMonikers()` carries the column, though the real `library.db` (15 tracks: `""`,
+`JPop`, `アニメ`) needed no repair, so that half is the door and not the mop. Side effect
+worth remembering: `DeviceService::pickMoodColor()` takes the highest-count genre, so on this
+player every device session had been keying the accent colour off a GUID and falling through
+to a random palette entry. The scan now also prints the distinct artist/album/genre pools
+and each album object's name, bounded, because "did the known placeholder shape appear"
+cannot answer a question about what is on screen; `librarytool paths` is 74 checks (six this
+rule), `tests\win-compat` 201/0/0, and `tests\win-usability` was again not re-run - the app
+was in the user's hands on the real profile and its two profile-isolation checks fail by
+design while that is true. **Still no new Windows capability and no new device claim:** one
+hand-tested Pavo Zune HD, read-only this time. Left open with its evidence:
+`[customize-http] HTTP 0, Qt error 4 (https://api.deezer.com/artist/...)` alongside
+`QIODevice::read (QNetworkReplyHttpImpl): device not open` in the live log is the lead for
+the unresolved artwork complaint - a request that never started, not a provider with no art.
+
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow
 windows. Resizing an existing queue opens the island unless a builder is active;

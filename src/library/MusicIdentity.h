@@ -62,6 +62,26 @@ inline QString deviceAlbum(const QString &value) {
     const QString name = value.trimmed();
     return isGuidMoniker(name) ? QStringLiteral("Unknown Album") : name;
 }
+// A genre moniker has no "Unknown Genre" to fall back to, and must not invent
+// one.  Both pivots skip an empty genre (DeviceWorker, LibraryService), so empty
+// is precisely what an untagged file already answers, and a device row has to
+// answer the same thing as the local scan of the file it came from - the reason
+// deviceArtist and deviceAlbum yield the words the library uses is that those two
+// fields have a word to yield.
+//
+// Measured, not guessed, on the port's Zune HD on 2026-10-22: asked for the names
+// a device row carries, 189 track rows reported 0 moniker albums and 15 real
+// album strings, while the 27 rows whose artist is the moniker store the same
+// {09316835-3188-481c-a359-0f8d2a937ac8} in genre as well, and the genre pool is
+// the one field this app has always copied over raw.  So the Genres pivot
+// rendered a GUID as a tile name - which is a name on screen, whatever the field
+// is called in the schema - next to an artist that correctly read Unknown Artist.
+// The player's literal "Unknown Genre" is its own text, seen in that same pool,
+// and stays exactly as it is.
+inline QString deviceGenre(const QString &value) {
+    const QString name = value.trimmed();
+    return isGuidMoniker(name) ? QString() : name;
+}
 // Whether a piece of text may be used as a name at all.  A moniker is a
 // placeholder wherever it is found, and it also reaches a scan from disk: a pull
 // written while the device fields were still read raw landed in

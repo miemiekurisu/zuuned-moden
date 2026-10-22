@@ -632,6 +632,41 @@ static int runPathsSelfTest() {
                   QStringLiteral("ARIA The NATURAL VOCAL SONG COLLECTION")).isEmpty(),
           "usableName: a Zune-authored import folder offers no artist candidate");
 
+    /* ---- the same moniker in the genre field ----
+     * Asked on 2026-10-22 why one album on the player was named by a GUID, the
+     * device answered with numbers: of 189 track rows 0 carried a moniker album
+     * and all 15 album strings were real, while the 27 rows whose artist is the
+     * moniker carry that same value in genre, and genre was the one name field
+     * copied over without a rule.  So a GUID was rendered as a tile name on the
+     * Genres pivot.  Genre has no "Unknown Genre" convention to yield - both
+     * pivots skip an empty genre, which is what an untagged file already answers -
+     * so a moniker genre has to become nothing, the same thing usableName() makes
+     * it on the local side. */
+    eq("deviceGenre: a moniker genre is no genre at all",
+       MusicIdentity::deviceGenre(
+           QStringLiteral("                {09316835-3188-481c-a359-0f8d2a937ac8}")),
+       QString());
+    eq("deviceGenre: an unbraced moniker is no genre either",
+       MusicIdentity::deviceGenre(QStringLiteral("09316835-3188-481c-a359-0f8d2a937ac8")),
+       QString());
+    eq("deviceGenre: a real genre keeps its own spelling and script",
+       MusicIdentity::deviceGenre(QStringLiteral("\u30A2\u30CB\u30E1")),
+       QStringLiteral("\u30A2\u30CB\u30E1"));
+    eq("deviceGenre: the blanks a Zune stores around a genre are not part of it",
+       MusicIdentity::deviceGenre(QStringLiteral("   JPop  ")),
+       QStringLiteral("JPop"));
+    /* The player really does have a genre it spells "Unknown Genre", seen in that
+     * same pool beside the moniker.  That is the device's own text and not a
+     * placeholder this app invented, so rewriting it would be editing the player. */
+    eq("deviceGenre: the device's own Unknown Genre is content, not a moniker",
+       MusicIdentity::deviceGenre(QStringLiteral("Unknown Genre")),
+       QStringLiteral("Unknown Genre"));
+    check(MusicIdentity::deviceGenre(
+              QStringLiteral("{09316835-3188-481c-a359-0f8d2a937ac8}")).isEmpty()
+              && MusicIdentity::usableName(
+                  QStringLiteral("{09316835-3188-481c-a359-0f8d2a937ac8}")).isEmpty(),
+          "identity: a moniker genre reads the same off the player as off a tag");
+
     /* ---- one path past MAX_PATH ----
      * 260 characters is not a limit Windows still enforces, it is a limit a
      * process opts out of: the file APIs stop refusing a long path for an image

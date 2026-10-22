@@ -468,7 +468,9 @@ int LibraryDb::repairWatchFolderRoots() {
  * row whose probe version already matches is never re-read, so the moniker would
  * be the artist for ever.  What this writes is precisely what a fresh scan of the
  * same file writes now - Unknown Artist for a missing performer, the album artist
- * filled from it, Unknown Album for a missing album - and a field that never held
+ * filled from it, Unknown Album for a missing album, no genre for a genre that was
+ * a moniker (LibraryScanner asks usableName() of genre too, because the player
+ * stores the same GUID there) - and a field that never held
  * a moniker keeps the spelling it has.  A row the user edited by hand is left
  * alone: there the stored text is theirs, moniker included. */
 int LibraryDb::repairDeviceMonikers() {
@@ -476,24 +478,26 @@ int LibraryDb::repairDeviceMonikers() {
         return 0;
     struct Row {
         qint64 id;
-        QString artist, albumartist, album;
+        QString artist, albumartist, album, genre;
     };
     QVector<Row> rows;
     {
-        Stmt s(m_db, "SELECT id, artist, albumartist, album FROM tracks"
+        Stmt s(m_db, "SELECT id, artist, albumartist, album, genre FROM tracks"
                      " WHERE IFNULL(user_edited,0)=0");
         if (!s.ok())
             return 0;
         while (s.step() == SQLITE_ROW)
-            rows.append({s.colInt64(0), s.colText(1), s.colText(2), s.colText(3)});
+            rows.append({s.colInt64(0), s.colText(1), s.colText(2), s.colText(3),
+                         s.colText(4)});
     }
     int repaired = 0;
     for (const Row &row : std::as_const(rows)) {
         const QString cleanArtist = MusicIdentity::usableName(row.artist);
         const QString cleanAlbumArtist = MusicIdentity::usableName(row.albumartist);
         const QString cleanAlbum = MusicIdentity::usableName(row.album);
+        const QString cleanGenre = MusicIdentity::usableName(row.genre);
         if (cleanArtist == row.artist && cleanAlbumArtist == row.albumartist
-                && cleanAlbum == row.album)
+                && cleanAlbum == row.album && cleanGenre == row.genre)
             continue;
         const QString artist = cleanArtist == row.artist
             ? row.artist
@@ -504,19 +508,24 @@ int LibraryDb::repairDeviceMonikers() {
         const QString album = cleanAlbum == row.album
             ? row.album
             : (cleanAlbum.isEmpty() ? QStringLiteral("Unknown Album") : cleanAlbum);
-        Stmt up(m_db, "UPDATE tracks SET artist=?, albumartist=?, album=? WHERE id=?");
+        Stmt up(m_db,
+                "UPDATE tracks SET artist=?, albumartist=?, album=?, genre=? WHERE id=?");
         if (!up.ok())
             continue;
         up.bindText(1, artist);
         up.bindText(2, albumArtist);
         up.bindText(3, album);
-        up.bindInt64(4, row.id);
+        up.bindText(4, cleanGenre);
+        up.bindInt64(5, row.id);
         if (up.step() != SQLITE_DONE)
             continue;
         fprintf(stderr,
-                "[librarydb] repaired device moniker on track %lld: %s / %s is now %s / %s\n",
+                "[librarydb] repaired device moniker on track %lld:"
+                " %s / %s / %s is now %s / %s / %s\n",
                 static_cast<long long>(row.id), qUtf8Printable(row.artist),
-                qUtf8Printable(row.album), qUtf8Printable(artist), qUtf8Printable(album));
+                qUtf8Printable(row.album), qUtf8Printable(row.genre),
+                qUtf8Printable(artist), qUtf8Printable(album),
+                qUtf8Printable(cleanGenre));
         ++repaired;
     }
     return repaired;

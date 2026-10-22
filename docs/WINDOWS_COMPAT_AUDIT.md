@@ -720,6 +720,96 @@ Pavo, and anything anyone has listened to all stay open, and the GUID-named impo
 folders the old pull left on disk stay where they are - they are the user's files, and
 they now read as Unknown Artist.
 
+## Eighth sweep: the uuid was a genre, and there were 130 of them (2026-10-22)
+
+Asked again from the device page, after two sweeps that both said the album string was fine:
+the ARIA album on the player still shows a string of hex where a name belongs, and other
+albums do not, "so some places still have problems".  The premise was tested before the code
+was, and the premise is false - which is exactly why the two sweeps above did not find it.
+
+**No album on this player is named by a moniker, and the fields had never been counted
+separately.**  The tally in the ZMDB scan loop now reads all three name fields and prints the
+whole pool rather than "did the one known placeholder shape appear":
+
+    [zmdb] GUID moniker fields on 189 track rows: artist 27 ({09316835-3188-481c-a359-0f8d2a937ac8}), album 0 (-), genre 130 ({09316835-3188-481c-a359-0f8d2a937ac8}); blank-padded artist 27, album 0, genre 130
+
+    [zmdb] distinct albums (15): "1995-2001 光华真纪录 - 单身日记", "ARIA The NATURAL VOCAL SONG COLLECTION", "Bi・Ki・Ni", "Extra terrestrial Biological Entities", "MENDELSSOHN: SONGS WITHOUT WORDS", "Messe in h-Moll, BWV 232", "QA Windows", "Watercolour", "Windows Round Trip", "Windows Round Trip 660", "Windows Round Trip 777", "Windows Round Trip 888", "【M3-41】虚構の楽園", "测试音乐", "真爱无敌精选 (2015)"
+    [zmdb] distinct genres (6): "                {09316835-3188-481c-a359-0f8d2a937ac8}", "Classical", "JPop", "QA", "Unknown Genre", "アニメ"
+    [zmdb] genre tiles after the moniker rule (5): Classical (17), JPop (13), QA (4), Unknown Genre (12), アニメ (13)
+    [zmdb] device playlists (0):
+
+plus one `album object <id> name="..." artist="..." tracks=N` line for each of the player's
+15 album objects, every one of them a real name - `album object 100663309 name="ARIA The
+NATURAL VOCAL SONG COLLECTION" artist="Unknown Artist" tracks=13`.  So: 0 moniker albums in
+the ZMDB rows, 0 in the album objects, 0 in the playlists (there are none), and 15 real album
+strings.  "An album named by a GUID" has never once been true on this device.
+
+**What was on screen is a genre, and the Genres pivot is drawn like an album shelf.**
+`genre` is the one name field this application has always copied over raw -
+`row.genre = QString::fromUtf8(t.genre ? t.genre : "")` - and the display path is
+`qml/MusicPage.qml:154 genreRows <- DeviceService.genresList <- src/DeviceWorker.cpp
+genreCounts <- row.genre`.  That pivot is a tile gallery (`qml/MusicPage.qml:737`) whose title
+is `modelData.name` and whose artwork is up to four of that genre's albums in a 2x2 mosaic
+(`genreAlbumRefs()`, `qml/MusicPage.qml:280`), with `GenreDetail` under the tile listing
+those albums by name.  A tile titled `{09316835-...}` carrying the ARIA covers therefore
+reads, perfectly reasonably, as one album named by a uuid, while the albums pivot beside it -
+whose artist got a rule two sweeps ago - read correctly.  That is the whole of "some albums
+are like this and some are not": one GUID, one field, and the one pivot that had no rule.
+
+**Genre is where a Zune parks an unlearned value far more often than artist - 130 rows of
+189, not 27.**  Before this change the moniker was the largest genre tile on the device by
+almost nine times, and `DeviceService::pickMoodColor()` (`src/DeviceService.cpp:400`) takes
+the highest-count genre as its dominant string, so every device session keyed the device
+page's accent colour off a GUID that matches none of the genre keywords and silently fell
+through to a random palette entry.  That is fixed by the same line, not by a second one.
+
+**What a genre yields, and why it is nothing.**  `MusicIdentity::deviceGenre()` trims and
+turns a moniker into an empty `QString`.  It deliberately does not yield an
+"Unknown Artist"-style word: both pivots skip an empty genre (`src/DeviceWorker.cpp:382`,
+`LibraryService`), so empty is precisely what an untagged file already answers, and a device
+row has to answer what the local scan of the same file answers.  `deviceArtist()` and
+`deviceAlbum()` yield words only because those two fields have a word to yield.  The
+device's own literal `Unknown Genre`, seen in that very pool beside the moniker, is the
+player's content and stays exactly as it is - rewriting it would be editing the player.
+
+**The local side got the same door, and needed no mop.**  `LibraryScanner.cpp` now asks
+`usableName()` of the genre tag beside the artist/albumartist/album lines, so a pull written
+before this change cannot teach a scan a GUID genre through the `Root/Artist/Album` folder
+inference the seventh sweep documented; `LibraryDb::repairDeviceMonikers()` carries `genre`
+beside artist/albumartist/album for the rows a probe version has already retired.  Read back
+out of the real `library.db` (15 tracks) the genre column is `""`, `JPop` and `アニメ`, and
+`tracks.artist` holds no `{`: this launch repaired nothing, because on this machine the
+scanner change is the door and not the mop.  The repair's log line grew to name all three
+fields - `%s / %s / %s is now %s / %s / %s` - so the next time this is asked the evidence
+exists before the question.
+
+Gates, on a `--clean-first` rebuild (`MusicIdentity.h` is header-only and Ninja records
+`#deps 0` on this host): `build\librarytool.exe paths` answers `ALL PASS (0 failures)` at 74
+checks, six of them the genre rule - the padded observed value, the unbraced form, `アニメ`
+untouched, `"   JPop  "` trimmed, the device's own `Unknown Genre` kept, and moniker genre
+reading the same off the player as off a tag.  `tests\win-compat` answers
+`201 checks, 0 failures, 0 skips`.  `tests\win-usability` was again deliberately not re-run:
+the application was in the user's hands on the real profile, and with that instance open its
+two profile-isolation checks fail by design (see the bullet on them below), so a run now
+would measure the harness.  What this adds to the Windows record is one more read of the same
+player inside the music-library-read gate that was already closed; **it adds no new
+capability.**  Device facts are unchanged - one hand-tested Pavo Zune HD - and deletion, the
+spoken and photo/video categories, every model but this Pavo and anything anyone has listened
+to all stay open.
+
+**Left open, with the line that shows it.**  The artwork complaint is not this bug and is now
+reproducing in the current log every time a detail page is opened:
+
+    2026-10-22T02:40:27.899Z [qt.warning] QIODevice::read (QNetworkReplyHttpImpl): device not open
+    2026-10-22T02:40:27.899Z [customize-http] HTTP 0, Qt error 4 (https://api.deezer.com/artist/325381)
+
+HTTP status 0 with `HostNotFoundError` and a reply that reports its own device as closed is a
+request that never started, not a provider that answered "no art" - the direct lead is the
+proxy/provisional-connection path in the provider workers, and it is where the open
+"no thumbnails" complaint should be picked up.  Separately noticed and untouched: a 0-byte
+`AppData\Local\Zuuned\Zuuned\State\library.db` beside the live profile's real database, which
+is a question about which location was asked for, not about this fix.
+
 ## What is proven, and by which gate
 
 - `tests/win-usability/watch_folder_repair.py` seeds four roots - a `/E:/` scar, a
@@ -788,7 +878,8 @@ they now read as Unknown Artist.
   screen the size that phase asks for cannot exist at any request: the app clamps to its
   own 1100x776 logical minimum, which is 1650x1164 in the device pixels `winshot --move`
   speaks.  Four ribbon checks fail on such a desktop and nothing in the ribbon is wrong.
-- `build\librarytool.exe paths` is 67 checks over the helpers above, and
+- `build\librarytool.exe paths` is 74 checks over the helpers above (67 at the
+   seventh sweep, 74 after the genre rule), and
   `names`/`customize` still pass on the same build.  All three ran here, against the
   executables produced by `cmake --build build --clean-first`.  Eleven of those 67
   checks are the fourth sweep's walk above, and they build their own junction rather

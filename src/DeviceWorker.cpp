@@ -234,9 +234,10 @@ void DeviceWorker::doBreach() {
         // its moniker, as opposed to only an artist, is visible exactly here, and
         // the line printed under this loop is the evidence for the next time the
         // question is asked - which the user just asked from the device page.
-        int monikerArtistRows = 0, monikerAlbumRows = 0;
-        int paddedArtistRows = 0, paddedAlbumRows = 0;
-        QString firstMonikerArtist, firstMonikerAlbum;
+        int monikerArtistRows = 0, monikerAlbumRows = 0, monikerGenreRows = 0;
+        int paddedArtistRows = 0, paddedAlbumRows = 0, paddedGenreRows = 0;
+        QString firstMonikerArtist, firstMonikerAlbum, firstMonikerGenre;
+        QSet<QString> rawArtistNames, rawAlbumNames, rawGenreNames;
         r.tracks.reserve(lib->track_count);
         for (int i = 0; i < lib->track_count; i++) {
             const ZuneTrack &t = lib->tracks[i];
@@ -254,6 +255,7 @@ void DeviceWorker::doBreach() {
             // MusicIdentity.h carries the observation and the shape.
             const QString rawArtist = QString::fromUtf8(t.artist ? t.artist : "");
             const QString rawAlbum = QString::fromUtf8(t.album ? t.album : "");
+            const QString rawGenre = QString::fromUtf8(t.genre ? t.genre : "");
             if (rawArtist != rawArtist.trimmed())
                 ++paddedArtistRows;
             if (rawAlbum != rawAlbum.trimmed())
@@ -268,9 +270,19 @@ void DeviceWorker::doBreach() {
                 if (firstMonikerAlbum.isEmpty())
                     firstMonikerAlbum = rawAlbum;
             }
+            if (rawGenre != rawGenre.trimmed())
+                ++paddedGenreRows;
+            if (MusicIdentity::isGuidMoniker(rawGenre)) {
+                ++monikerGenreRows;
+                if (firstMonikerGenre.isEmpty())
+                    firstMonikerGenre = rawGenre;
+            }
+            rawArtistNames.insert(rawArtist);
+            rawAlbumNames.insert(rawAlbum);
+            rawGenreNames.insert(rawGenre);
             row.artist = MusicIdentity::deviceArtist(rawArtist);
             row.album = MusicIdentity::deviceAlbum(rawAlbum);
-            row.genre = QString::fromUtf8(t.genre ? t.genre : "");
+            row.genre = MusicIdentity::deviceGenre(rawGenre);
             row.durationMs = int(t.duration_ms);
             row.trackNumber = t.tracknumber;
             row.discNumber = t.disc_number;
@@ -287,14 +299,50 @@ void DeviceWorker::doBreach() {
         // [redacted] - which this line did, once, taking its own evidence with it.
         fprintf(stderr,
                 "[zmdb] GUID moniker fields on %d track rows: artist %d (%s),"
-                " album %d (%s); blank-padded artist %d, album %d\n",
+                " album %d (%s), genre %d (%s);"
+                " blank-padded artist %d, album %d, genre %d\n",
                 lib->track_count, monikerArtistRows,
                 qUtf8Printable(firstMonikerArtist.trimmed().isEmpty()
                                    ? QStringLiteral("-") : firstMonikerArtist.trimmed()),
                 monikerAlbumRows,
                 qUtf8Printable(firstMonikerAlbum.trimmed().isEmpty()
                                    ? QStringLiteral("-") : firstMonikerAlbum.trimmed()),
-                paddedArtistRows, paddedAlbumRows);
+                monikerGenreRows,
+                qUtf8Printable(firstMonikerGenre.trimmed().isEmpty()
+                                   ? QStringLiteral("-") : firstMonikerGenre.trimmed()),
+                paddedArtistRows, paddedAlbumRows, paddedGenreRows);
+        // What the player actually calls its albums and artists. The count above
+        // only answers "did the one known placeholder shape appear", which cannot
+        // explain an id still visible on the device page - and that question was
+        // asked from the device page on 2026-10-22. Every distinct string the ZMDB
+        // pool handed over is quoted here so blanks and empty names are visible,
+        // bounded so a 10k-track library stays a line.
+        const auto nameList = [](const QSet<QString> &values) {
+            QStringList sorted(values.constBegin(), values.constEnd());
+            std::sort(sorted.begin(), sorted.end(),
+                      [](const QString &a, const QString &b) {
+                return a.compare(b, Qt::CaseInsensitive) < 0;
+            });
+            QString text;
+            for (int i = 0; i < sorted.size(); i++) {
+                if (i == 24) {
+                    text += QStringLiteral(", ...(+%1)").arg(sorted.size() - 24);
+                    break;
+                }
+                const QString &value = sorted.at(i);
+                if (i)
+                    text += QStringLiteral(", ");
+                text += QStringLiteral("\"%1\"").arg(value.size() > 60
+                    ? value.left(57) + QStringLiteral("...") : value);
+            }
+            return text;
+        };
+        fprintf(stderr, "[zmdb] distinct artists (%d): %s\n", int(rawArtistNames.size()),
+                qUtf8Printable(nameList(rawArtistNames)));
+        fprintf(stderr, "[zmdb] distinct albums (%d): %s\n", int(rawAlbumNames.size()),
+                qUtf8Printable(nameList(rawAlbumNames)));
+        fprintf(stderr, "[zmdb] distinct genres (%d): %s\n", int(rawGenreNames.size()),
+                qUtf8Printable(nameList(rawGenreNames)));
         r.albumCount = lib->album_count;
         r.artistCount = lib->artist_count;
         // NOTE: lib stays alive until AFTER the video/photo/playlist
@@ -344,6 +392,18 @@ void DeviceWorker::doBreach() {
         for (auto it = genreCounts.cbegin(); it != genreCounts.cend(); ++it)
             r.genres.append(QVariantMap{{"name", it.key()},
                                         {"count", it.value()}});
+        // The pivot as the screen will show it, after deviceGenre(). The pool above
+        // is what the player stores; this is what the user sees, and the two differ
+        // exactly where a name field held a moniker. Asked on 2026-10-22 because a
+        // GUID was on screen where a name belongs, this line is what answers it
+        // without anybody having to click into a tile to find out.
+        QStringList genreTiles;
+        for (const QVariant &g : std::as_const(r.genres))
+            genreTiles << QStringLiteral("%1 (%2)").arg(
+                g.toMap().value(QStringLiteral("name")).toString(),
+                g.toMap().value(QStringLiteral("count")).toString());
+        fprintf(stderr, "[zmdb] genre tiles after the moniker rule (%d): %s\n",
+                int(r.genres.size()), qUtf8Printable(genreTiles.join(QStringLiteral(", "))));
 
         // Device videos / pictures / playlists for the browse pages.
         auto metagenreLabel = [](uint16_t mg) -> QString {
@@ -510,6 +570,11 @@ void DeviceWorker::doBreach() {
                     {"count", int(pls[i].track_count)},
                     {"trackIds", ids}});
             }
+            QSet<QString> playlistNames;
+            for (int i = 0; i < npl; i++)
+                playlistNames.insert(QString::fromUtf8(pls[i].name ? pls[i].name : ""));
+            fprintf(stderr, "[zmdb] device playlists (%d): %s\n", npl,
+                    qUtf8Printable(nameList(playlistNames)));
             zune_free_playlists(pls, npl);
         }
         zune_free_scan(lib);
@@ -520,6 +585,16 @@ void DeviceWorker::doBreach() {
         // track get redirected to its album object.
         int albumObjCount = 0;
         if (ZuneAlbumObject *objs = zune_get_albums(dev, &albumObjCount)) {
+            // The player's own album objects, named as the player names them. An
+            // album object whose name property is absent shows its GUID moniker on
+            // the device's own screen (libzune src/album.c), which is a shape this
+            // app cannot repair by reading a field - so these names are recorded,
+            // bounded, rather than assumed to match the ZMDB album strings above.
+            for (int i = 0; i < albumObjCount && i < 24; i++)
+                fprintf(stderr,
+                        "[zmdb] album object %u name=\"%s\" artist=\"%s\" tracks=%u\n",
+                        objs[i].album_id, objs[i].name ? objs[i].name : "",
+                        objs[i].artist ? objs[i].artist : "", objs[i].track_count);
             for (int i = 0; i < albumObjCount; i++) {
                 // The album object's artist is the albumartist hint a pull hands
                 // the import batch, so the moniker is dropped here too rather
