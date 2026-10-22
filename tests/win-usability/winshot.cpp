@@ -3,6 +3,7 @@
 //
 //   winshot <hwndDecimal> <out.png>
 //   winshot --move <hwndDecimal> <width> <height>
+//   winshot --dpi <hwndDecimal>
 //   winshot --foreground <hwndDecimal>
 //   winshot --pid <processId>
 //
@@ -56,6 +57,25 @@ void makeDpiAware() {
         GetProcAddress(user32, "SetThreadDpiAwarenessContext"));
     if (setThread)
         setThread(GetCurrentThreadId(), awareV2);
+}
+
+// The scale the *target* window paints at, which is the only number that
+// reconciles a physical MoveWindow request with a logical QML breakpoint.  Ask
+// for it from a process that is already DPI aware: GetDpiForWindow answers 96
+// to a DPI-unaware caller, which is how a PowerShell drive came to be told a
+// 150% desktop was 100% and then blamed the application for four checks it
+// could not physically pass.  Resolved dynamically because the function needs
+// a Win10 SDK level this file does not otherwise ask for.
+UINT windowDpi(HWND hwnd) {
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (!user32)
+        return 0;
+    using GetDpiFn = UINT(WINAPI *)(HWND);
+    auto getDpi = reinterpret_cast<GetDpiFn>(
+        GetProcAddress(user32, "GetDpiForWindow"));
+    if (!getDpi)
+        return 0;
+    return getDpi(hwnd);
 }
 
 std::wstring wide(const char *utf8) {
@@ -269,6 +289,7 @@ int main(int argc, char **argv) {
                 "usage:\n"
                 "  winshot <hwndDecimal> <out.png>\n"
                 "  winshot --move <hwndDecimal> <width> <height>\n"
+                "  winshot --dpi <hwndDecimal>\n"
                 "  winshot --foreground <hwndDecimal>\n"
                 "  winshot --pid <processId>\n");
         return 2;
@@ -310,6 +331,24 @@ int main(int argc, char **argv) {
                pid, search.titled ? 1 : 0);
         return 0;
     }
+    if (mode == "--dpi") {
+        // Asked for on its own because a resize drive needs the scale before it
+        // can compute a request, and because this answers for the window the
+        // caller names rather than for whatever monitor that caller happens to
+        // be standing on.
+        HWND hwnd = handle(argv[2]);
+        if (!hwnd || !IsWindow(hwnd)) {
+            fprintf(stderr, "winshot: not a window: %s\n", argv[2]);
+            return 2;
+        }
+        const UINT dpi = windowDpi(hwnd);
+        RECT rc{};
+        if (!GetWindowRect(hwnd, &rc))
+            return 1;
+        printf("ok dpi dpi=%u rect=%dx%d\n", dpi, rc.right - rc.left,
+               rc.bottom - rc.top);
+        return dpi ? 0 : 1;
+    }
     if (mode == "--move" || mode == "--foreground") {
         HWND hwnd = handle(argv[2]);
         if (!hwnd || !IsWindow(hwnd)) {
@@ -339,9 +378,10 @@ int main(int argc, char **argv) {
         if (!GetWindowRect(hwnd, &after))
             return 1;
         GetClientRect(hwnd, &client);
-        printf("ok %s rect=%dx%d client=%dx%d\n", mode.c_str() + 2,
+        printf("ok %s rect=%dx%d client=%dx%d dpi=%u\n", mode.c_str() + 2,
                after.right - after.left, after.bottom - after.top,
-               client.right - client.left, client.bottom - client.top);
+               client.right - client.left, client.bottom - client.top,
+               windowDpi(hwnd));
         return 0;
     }
     HWND hwnd = handle(argv[1]);

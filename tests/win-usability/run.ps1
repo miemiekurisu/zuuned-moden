@@ -184,6 +184,41 @@ function ConvertFrom-HwndDecimal {
     return [IntPtr][BitConverter]::ToInt32($bytes, 0)
 }
 
+function Get-WindowScale {
+    # The scale the window is really painting at.  The breakpoints in Main.qml are
+    # logical pixels and winshot's MoveWindow takes physical ones, so a drive that
+    # asks for a fixed 1400x1220 is asking two different questions on two different
+    # desktops: at 100% that clears the ribbon's 1280x1100 requirement, and at 150%
+    # the same request lands on 933x773 logical and can never reach it - measured on
+    # 2026-10-22, when the compact playback phase failed four checks against an
+    # application it had not changed, because the desktop was at 150%.  The answer
+    # comes from winshot, which declares itself per-monitor DPI aware before it asks.
+    # Asking from here does not work: GetDpiForWindow answers 96 to a DPI-unaware
+    # process whatever the desktop is doing, so the first version of this helper
+    # reported the 150% screen as 100%, asked for a window that could not fit the
+    # ribbon, and then blamed the application for four checks it could not physically
+    # have passed.  Where nothing answers, 1 is what the phase assumed all along.
+    param([string]$Hwnd)
+    $r = Invoke-Proc -File $winshot -Arguments @('--dpi', $Hwnd) -WorkDir $out -Timeout 20
+    $dpi = 0
+    if ([int]::TryParse([regex]::Match($r.Out, 'dpi=(\d+)').Groups[1].Value, [ref]$dpi)) {
+        if ($dpi -ge 96) { return [math]::Round($dpi / 96, 4) }
+    }
+    return 1
+}
+
+function ConvertTo-LogicalSize {
+    # What the application itself sees for a physical client rectangle: QML
+    # measures the content area in logical pixels, so this is the only way to
+    # check a resize drive against a breakpoint written in Main.qml.
+    param([string]$Client, [double]$Scale)
+    $parts = $Client -split 'x'
+    if ($parts.Count -ne 2) { return '0x0' }
+    $w = [math]::Round([int]$parts[0] / $Scale)
+    $h = [math]::Round([int]$parts[1] / $Scale)
+    return ([string][int]$w + 'x' + [string][int]$h)
+}
+
 # ---------------------------------------------------------------------------
 # launch plumbing
 # ---------------------------------------------------------------------------
@@ -741,10 +776,23 @@ if (Select-Phase 'compact') {
             -Arguments @('--page', 'music', '--qa-play', $tone) -Drive {
                 param($Handle, $Hwnd, $Tag)
                 $dec = ConvertTo-HwndDecimal -Handle $Hwnd
+                $scale = Get-WindowScale -Hwnd $dec
+                # The trip has to cross 1280x1100 logical, and MoveWindow speaks
+                # physical pixels, so the tall stages come from the window's own
+                # scale plus room for its own frame: measured at 150%, 2000x1770
+                # physical answers 1319x1143 logical, and the frame there is 22 px
+                # wide and 56 px tall.  A window taller than the monitor is fine -
+                # MoveWindow does not clamp and the app never sees the screen -
+                # which matters, because 1100 logical does not fit on a 1440p
+                # display at 150% at all.  The narrow stage stays below Main.qml's
+                # 1100x700 floor at every scale at or above 100%, which is the
+                # point: the floor, not the request, has to answer there.
+                $tallW = [int][math]::Ceiling(1280 * $scale) + 80
+                $tallH = [int][math]::Ceiling(1100 * $scale) + 120
                 $stages = @(
-                    @{ Name = 'tall1'; W = 1400; H = 1220 },
+                    @{ Name = 'tall1'; W = $tallW; H = $tallH },
                     @{ Name = 'narrow'; W = 900; H = 640 },
-                    @{ Name = 'tall2'; W = 1400; H = 1220 }
+                    @{ Name = 'tall2'; W = $tallW; H = $tallH }
                 )
                 $moves = @()
                 $paint = @{}
@@ -752,16 +800,18 @@ if (Select-Phase 'compact') {
                     $moved = Invoke-Proc -File $winshot -Timeout 60 -WorkDir $out `
                         -Arguments @('--move', $dec, [string]$stage.W, [string]$stage.H)
                     $client = [regex]::Match($moved.Out, 'client=(\d+)x(\d+)')
+                    $clientSize = $client.Groups[1].Value + 'x' + $client.Groups[2].Value
                     $moves += [pscustomobject]@{
                         Stage = $stage.Name
                         Asked = ([string]$stage.W + 'x' + [string]$stage.H)
-                        Client = $client.Groups[1].Value + 'x' + $client.Groups[2].Value
+                        Client = $clientSize
+                        Logical = ConvertTo-LogicalSize -Client $clientSize -Scale $scale
                     }
                     Start-Sleep -Seconds 5
                     $shot = Invoke-Capture -Hwnd $dec -Png (Join-Path $shots ($Tag + '-' + $stage.Name + '.png'))
                     $paint[$stage.Name] = Get-PaintVerdict -Shot $shot
                 }
-                return [pscustomobject]@{ Moves = $moves; Paint = $paint }
+                return [pscustomobject]@{ Moves = $moves; Paint = $paint; Scale = $scale }
             }
         Assert-Case -Case $compactCase -Label 'a window with a queued track paints' `
             -ExpectPage 'music' -ExpectOnboarding 'false'
@@ -798,8 +848,10 @@ if (Select-Phase 'compact') {
             if ($sequence.Count -eq 0 -or $sequence[-1] -ne $state.Name) { $sequence += $state.Name }
         }
         Write-Host ('  note state sequence: ' + ($sequence -join ' -> '))
+        Write-Host ('  note window scale ' + $compactCase.Extra.Scale)
         foreach ($move in $compactCase.Extra.Moves) {
-            Write-Host ('  note ' + $move.Stage + ' asked ' + $move.Asked + ' client ' + $move.Client)
+            Write-Host ('  note ' + $move.Stage + ' asked ' + $move.Asked +
+                ' client ' + $move.Client + ' logical ' + $move.Logical)
         }
 
         # The trip the compact redesign is about, in the order the drive performed it.
@@ -820,11 +872,17 @@ if (Select-Phase 'compact') {
             ((@($states | Where-Object { $_.Ribbon -and -not $_.Tucked }).Count -gt 0) -and
                 (@($states | Where-Object { $_.Retired -and $_.Tucked }).Count -gt 0)) `
             ('ribbonStates=' + (@($states | Where-Object { $_.Ribbon }).Count))
+        # Main.qml's floor is written in logical pixels, so a physical rectangle
+        # has to be converted before it can be compared with it - at 150% the raw
+        # numbers clear 1100x700 without the floor having had anything to do
+        # with them.  The tolerance is for a scale that is not a whole fraction.
         Check 'the window respected its own minimum size when squeezed' `
             (@($compactCase.Extra.Moves | Where-Object { $_.Stage -eq 'narrow' } | ForEach-Object {
-                $parts = $_.Client -split 'x'
-                ([int]$parts[0] -ge 1100) -and ([int]$parts[1] -ge 700)
-            }).Count -eq 1) (($compactCase.Extra.Moves | ForEach-Object { $_.Client }) -join ' ')
+                $parts = $_.Logical -split 'x'
+                ([int]$parts[0] -ge 1100) -and ([int]$parts[0] -le 1108) -and
+                    ([int]$parts[1] -ge 700) -and ([int]$parts[1] -le 708)
+            }).Count -eq 1) (($compactCase.Extra.Moves | ForEach-Object {
+                $_.Stage + '=' + $_.Logical }) -join ' ')
         Check 'the roomy window painted' ($compactCase.Extra.Paint['tall2'].Painted) `
             ('distinct=' + $compactCase.Extra.Paint['tall2'].Distinct)
         Check 'the narrow window painted' ($compactCase.Extra.Paint['narrow'].Painted) `
@@ -862,6 +920,33 @@ if (Select-Phase 'tools') {
     $paths = Invoke-Proc -File $libraryTool -Arguments @('paths') -Timeout 600
     Check 'librarytool paths pins the Windows filename and playlist rules' `
         ($paths.Code -eq 0 -and $paths.Out -match 'ALL PASS \(0 failures\)') ('code=' + $paths.Code)
+    # ZUUNED_PROXY is the one network knob this application has, and this tool is the
+    # only place on Windows its parsing rules can be reached: no phase here sends
+    # provider traffic, and the situation the knob exists for - a network that drops
+    # some providers while its own Windows proxy setting is switched off - is a fact
+    # about one machine that no check is allowed to depend on.  The self-test installs
+    # a route and never sends one byte through it.
+    $net = Invoke-Proc -File $libraryTool -Arguments @('net') -Timeout 300
+    Check 'librarytool net pins the proxy route rules without sending traffic' `
+        ($net.Code -eq 0 -and $net.Out -match 'ALL PASS \(0 failures\)') ('code=' + $net.Code)
+    # The GUID moniker rule exists in two languages: src/library/MusicIdentity.h,
+    # which librarytool paths reaches, and qml/MusicIdentity.js, the last mile every
+    # album and artist pivot groups through.  Nothing in this gate executes QML, so it
+    # cannot paint the tile and must not claim to; what it can prove is that the two
+    # copies are still the same pattern, which is exactly how a second implementation
+    # drifts away from the first.
+    $cppText = [IO.File]::ReadAllText((Join-Path $root 'src\library\MusicIdentity.h'))
+    $jsText = [IO.File]::ReadAllText((Join-Path $root 'qml\MusicIdentity.js'))
+    $cppBlock = [regex]::Match($cppText, 'moniker\(([\s\S]*?)\);').Groups[1].Value
+    $cppPattern = ''
+    foreach ($piece in [regex]::Matches($cppBlock, '"(.*?)"')) { $cppPattern += $piece.Groups[1].Value }
+    $jsPattern = [regex]::Match($jsText, 'guidMoniker = /(.*?)/').Groups[1].Value
+    Check 'the QML mirror and the C++ predicate are one GUID moniker pattern' `
+        ($cppPattern.Replace('\\', '\') -ceq $jsPattern) `
+        ('cpp=' + $cppPattern + ' js=' + $jsPattern)
+    Check 'the Artists pivot groups through the mirror, not the raw name field' `
+        ([IO.File]::ReadAllText((Join-Path $root 'qml\MusicPage.qml')).Contains('MusicIdentity.artistName(')) `
+        'qml/MusicPage.qml computeArtists'
 }
 
 Write-Host ''
