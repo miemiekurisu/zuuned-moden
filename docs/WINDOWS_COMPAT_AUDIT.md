@@ -1102,6 +1102,65 @@ and no device claim changes - still one hand-tested Pavo Zune HD, read-only, not
 listened to.  The harness opened no device handle, and as on every run of it the instrumented
 launches browsed the attached player read-only.
 
+## Eleventh sweep: a second executable asking Qt where the application lives (2026-10-22)
+
+Ten sweeps walked the names the application writes and the commands it runs. This one
+walks a different question, which none of them could have reached: what happens when a
+process that is *not* ``zuuned.exe`` asks where a Zuuned profile lives. There is exactly
+one such place in the tree - ``tools/artwork-preview/main.cpp``, the artwork print lab,
+which defaults its ``--cache-root`` and ``--library-db`` and otherwise expects to find
+the application's own cached art and its library.
+
+The defaults were Qt's *generic* writable location plus a literal ``"/Zuuned/Zuuned"``.
+On Linux that expression is exactly the application's folder, by XDG luck: Qt puts
+``AppDataLocation`` under ``XDG_DATA_HOME`` and ``CacheLocation`` under
+``XDG_CACHE_HOME``, and both already end in ``Zuuned/Zuuned``. On Windows it is wrong
+twice over, and wrong in two different directions.
+
+- ``GenericDataLocation`` is ``C:\ProgramData``. Zuuned has never written a file there;
+  ``Test-Path C:\ProgramData\Zuuned`` is ``False`` on the port's machine while the
+  library sits at ``%APPDATA%\Zuuned\Zuuned\library.db``, measured at 176,128 bytes.
+  ``--library-db`` pointed into a folder that does not exist.
+- ``GenericCacheLocation`` is ``%LOCALAPPDATA%``, one level *above* the folder that holds
+  ``art``, ``artistart``, ``stills`` and ``vidthumbs``. One level above is worse than a
+  wrong drive, because it exists, so the tool reads a directory that looks like a cache
+  root, finds no sample in it, and says so.
+
+``QStandardPaths::AppDataLocation`` is not the fix either. Those two calls answer for
+*this process*, and the preview lab sets ``organizationName("ZuunedPreview")`` and
+``applicationName("Artwork Print Lab")`` on purpose - that identity is what keeps its
+settings and its Qt pipeline cache out of the application's. Qt therefore names the
+tool's own folder, which holds nothing. A tool that has to read somebody else's profile
+cannot ask Qt about it; the rule has to be stated independently, and stating that rule
+independently is already what ``Zuuned::ProfilePaths`` exists for.
+
+``ProfilePaths::applicationDataLocation()`` and ``applicationCacheLocation()`` state it.
+``ZUUNED_PROFILE_DIR`` wins on both platforms, so an instrumented tool reads the same
+throwaway profile the application wrote, which is the whole point of the variable.
+Unset, they name ``%APPDATA%\Zuuned\Zuuned`` and ``%LOCALAPPDATA%\Zuuned\Zuuned\cache``
+on Windows and ``$XDG_DATA_HOME/Zuuned/Zuuned`` and ``$XDG_CACHE_HOME/Zuuned/Zuuned`` on
+Linux - the same answers ``writableLocation()`` gives, minus its ``mkpath()``, because a
+tool looking for someone else's library has no business creating an empty one.
+
+Measured on Windows against one build of the tool, with no explicit roots given:
+
+- the old defaults (``%LOCALAPPDATA%`` and ``C:\ProgramData\Zuuned\Zuuned\library.db``):
+  exit ``1``, ``No cached artwork found. Supply --cache-root and --library-db.``
+- the new defaults: exit ``0``, four ``READY`` comparison sheets, one of them naming
+  itself ``ARIA The NATURAL VOCAL SONG COLLECTION / Unknown Artist`` - artwork out of the
+  real cache, titles out of the real library.
+
+Neither Windows gate builds this tool, so the ``tools`` phase of ``tests\win-usability``
+pins the rule instead of pretending to have read an artwork cache: the two helpers exist,
+the preview lab resolves through them, and no source file under ``src/`` or ``tools/``
+spells a profile folder out of a string any more except ``ProfilePaths.h`` itself, where
+the check lists its findings and listed none. The compile and the two runs above are separate evidence, done by
+hand with ``cmake -S tools\artwork-preview -B build\scratch\preview``.
+
+Left alone on purpose: the print lab's own render path, which is a Linux-line artefact and
+carries no Windows claim, and the three uncalled ``popen()`` sites in
+``libzune/src/transcode.c``, already recorded above under what this sweep does not re-check.
+
 ## What is proven, and by which gate
 
 - `tests/win-usability/watch_folder_repair.py` seeds four roots - a `/E:/` scar, a

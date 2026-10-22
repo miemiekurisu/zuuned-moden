@@ -91,6 +91,65 @@ inline QString writableLocation(QStandardPaths::StandardLocation type) {
     return path;
 }
 
+// The application data and cache folders, named for a process that is *not*
+// the application.
+//
+// QStandardPaths::AppDataLocation and CacheLocation answer for this process,
+// so a second executable that sets its own organisation and application names -
+// tools/artwork-preview runs as ZuunedPreview / "Artwork Print Lab" - cannot use
+// them to ask where Zuuned keeps its files: Qt would name the tool's folder.
+// The obvious shortcut is the generic location plus a literal "/Zuuned/Zuuned",
+// and on Linux that is exactly the application's folder, because Qt puts
+// AppDataLocation under XDG_DATA_HOME and CacheLocation under XDG_CACHE_HOME.
+// On Windows it is wrong twice over: the generic data location is
+// C:\ProgramData, where Zuuned has never written a file, and the generic cache
+// location is the shell's local app-data folder, one level above the
+// <LocalAppData>\Zuuned\Zuuned\cache that holds art, artistart, stills and
+// vidthumbs.  A tool built that way finds no artwork and no library on Windows
+// while working on Linux, which is how it survived.
+//
+// ZUUNED_PROFILE_DIR wins on both platforms, so an instrumented tool reads the
+// same throwaway profile the application wrote - the whole point of the variable.
+// With it unset these are read-only answers: neither creates the folder, because
+// a tool looking for someone else's library has no business making one.
+inline QString applicationDataLocation() {
+    const QString base = root();
+    if (!base.isEmpty())
+        return base;
+#ifdef Q_OS_WIN
+    // Qt asks the shell known folder here.  This variable is what the shell
+    // folder was built from, so the two agree unless someone redirects one and
+    // not the other; if it is unset at all, fall back to Qt's own answer for
+    // this process rather than invent a path out of nothing.
+    const QString roaming = qEnvironmentVariable("APPDATA");
+    if (!roaming.isEmpty())
+        return QDir::cleanPath(roaming + QStringLiteral("/Zuuned/Zuuned"));
+#else
+    const QString dataHome = qEnvironmentVariable("XDG_DATA_HOME");
+    if (!dataHome.isEmpty())
+        return QDir::cleanPath(dataHome + QStringLiteral("/Zuuned/Zuuned"));
+    return QDir::homePath() + QStringLiteral("/.local/share/Zuuned/Zuuned");
+#endif
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+}
+
+inline QString applicationCacheLocation() {
+    const QString base = root();
+    if (!base.isEmpty())
+        return base + QStringLiteral("/cache");
+#ifdef Q_OS_WIN
+    const QString local = qEnvironmentVariable("LOCALAPPDATA");
+    if (!local.isEmpty())
+        return QDir::cleanPath(local + QStringLiteral("/Zuuned/Zuuned/cache"));
+#else
+    const QString cacheHome = qEnvironmentVariable("XDG_CACHE_HOME");
+    if (!cacheHome.isEmpty())
+        return QDir::cleanPath(cacheHome + QStringLiteral("/Zuuned/Zuuned"));
+    return QDir::homePath() + QStringLiteral("/.cache/Zuuned/Zuuned");
+#endif
+    return QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+}
+
 // Route default-constructed QSettings into root() as well, so the settings file
 // is part of the profile folder instead of %APPDATA%.  Qt appends the
 // organisation and application names, which puts the file at

@@ -41,7 +41,11 @@ Texture zero restores exact Clean ink, including its original colors. These new
 controls affect only Halftone; Clean ink and the approved Worn treatment keep
 their existing output and cache entries.
 
-The default discovery reads `Zuuned/Zuuned` below Qt's generic cache/data roots.
+The default discovery reads the profile the application itself uses: the data
+and cache folders named by `Zuuned::ProfilePaths` - `$XDG_DATA_HOME/Zuuned/Zuuned`
+and `$XDG_CACHE_HOME/Zuuned/Zuuned` on Linux, `%APPDATA%\Zuuned\Zuuned` and
+`%LOCALAPPDATA%\Zuuned\Zuuned\cache` on Windows, or the one folder named by
+`ZUUNED_PROFILE_DIR` when that is set. A folder is only read when it exists.
 It looks for the cached Billie Eilish, Christopher Larkin and Adele portraits,
 Skyfall cover, and 1917/Alien posters. A read-only SQLite connection supplies
 poster paths/titles and optional album examples. Other cached files are used if
@@ -51,8 +55,8 @@ Override locations when needed:
 
 ```sh
 build/artwork-preview/zuuned-artwork-preview \
-  --cache-root /path/to/Zuuned/Zuuned \
-  --library-db /path/to/library.db \
+  --cache-root "$LOCALAPPDATA/Zuuned/Zuuned/cache" \
+  --library-db "$APPDATA/Zuuned/Zuuned/library.db" \
   --output /tmp/zuuned-artwork-preview
 ```
 

@@ -1,4 +1,5 @@
 #include "PreviewController.h"
+#include "ProfilePaths.h"
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QCommandLineParser>
@@ -16,10 +17,13 @@ int main(int argc, char **argv) {
     app.setOrganizationName("ZuunedPreview");
     app.setApplicationName("Artwork Print Lab");
     QCommandLineParser parser; parser.addHelpOption();
+    // Not QStandardPaths::CacheLocation / AppDataLocation: those answer for this
+    // process, whose identity is ZuunedPreview / "Artwork Print Lab", and the
+    // generic-location shortcut only spells the application's folders on Linux.
     parser.addOption({"cache-root", "Read artwork from this ZUUNED cache.", "path",
-        QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/Zuuned/Zuuned"});
+        Zuuned::ProfilePaths::applicationCacheLocation()});
     parser.addOption({"library-db", "Read sample titles from this library, read-only.", "path",
-        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/Zuuned/Zuuned/library.db"});
+        Zuuned::ProfilePaths::applicationDataLocation() + "/library.db"});
     parser.addOption({"output", "Write derived previews here.", "path", QDir::tempPath() + "/zuuned-artwork-preview"});
     parser.addOption({"export", "Export all sample comparisons and timings, then exit."});
     parser.addOption({"detail", "Starting detail, 0 to 100.", "number", "55"});

@@ -967,6 +967,35 @@ if (Select-Phase 'tools') {
     Check 'the audiobook folder import walks through LibraryScan::walkFiles' `
         ($spokenText.Contains('LibraryScan::walkFiles(')) `
         'src/spoken/SpokenMediaService.cpp previewBookFolder'
+    # A tool that runs under its own organisation and application name cannot ask
+    # QStandardPaths where Zuuned keeps its files, because Qt answers for the
+    # process that asks.  tools/artwork-preview worked around that with a literal
+    # "/Zuuned/Zuuned" on the generic location, which is the application's folder
+    # on Linux and one or two levels away from it on Windows, where the generic
+    # data location is C:\ProgramData and the generic cache location sits above
+    # the cache folder holding art and artistart.  Nothing here builds or launches
+    # that tool, so the check pins the rule instead of pretending to have read an
+    # artwork cache: the profile helpers own the application's folders, and no
+    # source file spells a profile path out of a string.
+    $profileText = [IO.File]::ReadAllText((Join-Path $root 'src\ProfilePaths.h'))
+    Check 'ProfilePaths names the application data and cache folders' `
+        ($profileText.Contains('applicationDataLocation()') -and
+         $profileText.Contains('applicationCacheLocation()')) `
+        'src/ProfilePaths.h'
+    $previewText = [IO.File]::ReadAllText(
+        (Join-Path $root 'tools\artwork-preview\main.cpp'))
+    Check 'the artwork preview lab resolves the profile through ProfilePaths' `
+        ($previewText.Contains('ProfilePaths::applicationCacheLocation()') -and
+         $previewText.Contains('ProfilePaths::applicationDataLocation()')) `
+        'tools/artwork-preview/main.cpp defaults'
+    $spellers = @(Get-ChildItem -LiteralPath (Join-Path $root 'src'),
+            (Join-Path $root 'tools') -Recurse -File -Include *.cpp, *.h |
+        Where-Object {
+            $_.Name -ne 'ProfilePaths.h' -and
+            [IO.File]::ReadAllText($_.FullName).Contains('/Zuuned/Zuuned')
+        } | ForEach-Object { $_.FullName.Substring($root.Length + 1) })
+    Check 'no source file builds a profile folder out of a string' `
+        ($spellers.Count -eq 0) ('found=' + ($spellers -join ','))
 }
 
 Write-Host ''
