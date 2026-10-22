@@ -41,6 +41,7 @@
 #include "DeviceWorker.h"
 #include "diagnostics/DiagnosticsService.h"
 #include "diagnostics/SessionLog.h"
+#include "library/NetworkAccess.h"
 #include "sync/SyncEngine.h"
 
 int main(int argc, char *argv[]) {
@@ -109,6 +110,19 @@ int main(int argc, char *argv[]) {
         qputenv("QSG_RHI_PIPELINE_CACHE_LOAD", pipelineCache.toUtf8());
         qputenv("QSG_RHI_PIPELINE_CACHE_SAVE", pipelineCache.toUtf8());
         std::fprintf(stderr, "[profile] Qt pipeline cache goes to \"%s\"\n", qUtf8Printable(pipelineCache));
+    }
+
+    // Say which route provider requests take, once, at startup.  A
+    // "[customize-http] HTTP 0, Qt error 4" line cannot be read without it:
+    // status 0 and TimeoutError look identical whether the request went direct
+    // into a network that drops Deezer and Google or through a proxy that
+    // refused it, and only one of those is the application's business
+    // (NetworkAccess.h holds the measurements, including the one that says Qt
+    // already follows the Windows proxy settings without any help from here).
+    {
+        const auto network = NetworkAccess::apply();
+        std::fprintf(stderr, "[network] %s\n",
+                     qUtf8Printable(NetworkAccess::summary(network)));
     }
 
     QGuiApplication app(argc, argv);

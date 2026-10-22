@@ -1,4 +1,5 @@
 #include "ArtworkHttp.h"
+#include "NetworkAccess.h"
 
 #include <QDateTime>
 #include <QEventLoop>
@@ -60,8 +61,13 @@ ArtworkHttp::Response artworkHttpAttempt(const QUrl &url, bool musicBrainz) {
     // Qt classifies them as network errors. Never use body text to retry.
     result.body = reply->readAll();
     if (!result.success())
-        fprintf(stderr, "[customize-http] HTTP %d, Qt error %d (%s)\n",
+        // The route belongs in the line because a timeout and a refused
+        // connection read identically without it: HTTP 0 plus Qt error 4 means
+        // only "no answer", and on a machine that reaches its providers through
+        // a proxy the reason is usually that this process used none.
+        fprintf(stderr, "[customize-http] HTTP %d, Qt error %d via %s (%s)\n",
                 result.status, int(result.networkError),
+                qUtf8Printable(NetworkAccess::effectiveHttps()),
                 qUtf8Printable(url.toString(QUrl::RemoveUserInfo | QUrl::RemoveQuery)));
     reply->deleteLater();
     return result;

@@ -35,6 +35,7 @@
 #include "LibraryPaths.h"
 #include "LibraryScanner.h"
 #include "MusicIdentity.h"
+#include "NetworkAccess.h"
 #include "PlaylistText.h"
 #include "VideoIdentity.h"
 #include "VideoMatcher.h"
@@ -855,6 +856,170 @@ static int runPathsSelfTest() {
     return failed == 0 ? 0 : 1;
 }
 
+/* ---- what route this process would use to reach a provider ----
+ *
+ * "HTTP 0, Qt error 4" says only that no reply arrived: Qt 6.11 numbers that as
+ * QNetworkReply::TimeoutError (QtNetwork/qnetworkreply.h, verified against the
+ * installed header - NoError 0, ConnectionRefused 1, RemoteHostClosed 2,
+ * HostNotFound 3, Timeout 4), and a status of 0 does not distinguish a network
+ * that drops the connection from a proxy that refused it.  That is why the route
+ * is in the log line now.
+ *
+ * The diagnosis this file first carried was wrong and is corrected here.  It said
+ * the artwork requests died because the network reaches Deezer and Google only
+ * through the proxy in Windows' own settings and nothing in the process had asked
+ * about it.  Measured instead (NetworkAccess.h holds the four numbers): curl from
+ * this machine fails to connect to api.deezer.com and www.google.com in 21 s and
+ * reaches api.github.com in 0.39 s, and the same two failures answer 200 and 204
+ * in under a second through http://192.168.2.100:8117 - so direct egress really
+ * is partly blocked here.  But this shell answers ProxyEnable=0, and a fresh Qt
+ * 6.11 process reports usesSystemConfiguration=1, so Qt already follows the shell
+ * and correctly goes direct: the machine has its proxy switched off, which is a
+ * fact about the network, not a missing call in the client.  ZUUNED_PROXY exists
+ * for exactly that case.
+ *
+ * Neither Windows gate can reach a C++ header, so the rules live here, and they
+ * are written so that none of them depends on what the operator's network happens
+ * to be: the system-proxy assertions are about which answer Qt was asked to
+ * consult, and the explicit-proxy assertions install a route that no traffic is
+ * ever sent through.
+ */
+static int runNetworkSelfTest() {
+    int failed = 0;
+    const auto check = [&failed](bool ok, const char *what) {
+        printf("  %s %s\n", ok ? "PASS" : "FAIL", what);
+        if (!ok)
+            failed++;
+    };
+    const auto eq = [&check](const char *what, const QString &got, const QString &expect) {
+        const bool ok = got == expect;
+        check(ok, what);
+        if (!ok)
+            printf("      got '%s' expected '%s'\n", got.toUtf8().constData(),
+                   expect.toUtf8().constData());
+    };
+
+    /* ---- what one route is allowed to be called in a log ---- */
+    eq("describe: an unset proxy is direct", NetworkAccess::describe(QNetworkProxy()),
+       QStringLiteral("direct"));
+    eq("describe: an explicit NoProxy is direct",
+       NetworkAccess::describe(QNetworkProxy(QNetworkProxy::NoProxy)),
+       QStringLiteral("direct"));
+    eq("describe: an http proxy names its endpoint",
+       NetworkAccess::describe(QNetworkProxy(QNetworkProxy::HttpProxy,
+                                             QStringLiteral("10.0.0.1"), 8080)),
+       QStringLiteral("http 10.0.0.1:8080"));
+    eq("describe: a socks proxy does not claim to be http",
+       NetworkAccess::describe(QNetworkProxy(QNetworkProxy::Socks5Proxy,
+                                             QStringLiteral("127.0.0.1"), 1080)),
+       QStringLiteral("socks5 127.0.0.1:1080"));
+
+    /* ---- what an operator may write into ZUUNED_PROXY ---- */
+    const auto refuses = [](const QString &spec) {
+        bool accepted = false;
+        NetworkAccess::parse(spec, &accepted);
+        return !accepted;
+    };
+    bool ok = false;
+    QNetworkProxy proxy = NetworkAccess::parse(QStringLiteral("127.0.0.1:8117"), &ok);
+    check(ok && proxy.type() == QNetworkProxy::HttpProxy
+              && proxy.hostName() == QStringLiteral("127.0.0.1") && proxy.port() == 8117,
+          "parse: a bare host:port is an http proxy");
+    proxy = NetworkAccess::parse(QStringLiteral("http://192.168.2.100:8117"), &ok);
+    check(ok && proxy.hostName() == QStringLiteral("192.168.2.100") && proxy.port() == 8117,
+          "parse: the scheme a browser uses is accepted");
+    proxy = NetworkAccess::parse(QStringLiteral("socks5://127.0.0.1:1080"), &ok);
+    check(ok && proxy.type() == QNetworkProxy::Socks5Proxy,
+          "parse: socks5 asks for a socks proxy, not an http one");
+    proxy = NetworkAccess::parse(QStringLiteral("HTTPS://[::1]:8117"), &ok);
+    check(ok && proxy.hostName() == QStringLiteral("[::1]") && proxy.port() == 8117,
+          "parse: a bracketed IPv6 host keeps its brackets and its port");
+    proxy = NetworkAccess::parse(QStringLiteral("http://zuuned:s3cr3t@127.0.0.1:3128"), &ok);
+    check(ok && proxy.user() == QStringLiteral("zuuned")
+              && proxy.password() == QStringLiteral("s3cr3t"),
+          "parse: credentials reach the proxy object that will authenticate");
+    check(!NetworkAccess::describe(proxy).contains(QStringLiteral("s3cr3t"))
+              && !NetworkAccess::describe(proxy).contains(QStringLiteral("zuuned")),
+          "describe: a proxy credential never reaches the line that gets logged");
+    check(refuses(QStringLiteral("not a proxy")),
+          "parse: prose is not a route");
+    check(refuses(QStringLiteral("http://proxy.internal")),
+          "parse: a proxy with no port is refused, not guessed at");
+    check(refuses(QStringLiteral("socks4://127.0.0.1:1080")),
+          "parse: a dialect this application cannot speak is refused");
+    check(refuses(QStringLiteral("http://:8117")),
+          "parse: a port with no host behind it is refused");
+    check(refuses(QStringLiteral("127.0.0.1:99999")),
+          "parse: a port outside the wire's range is refused");
+    check(refuses(QStringLiteral("http://a@:8117")),
+          "parse: an empty account name is refused");
+    check(refuses(QStringLiteral("::1")),
+          "parse: an ambiguous host is refused rather than guessed to be IPv6");
+
+    /* ---- the override reaches Qt, and the default is left alone ----
+     *
+     * The Windows assertions record a measurement, not a wish.  A fresh Qt 6.11
+     * process on this platform was asked before it had done anything at all and
+     * answered usesSystemConfiguration=1, so Qt consults the shell by itself and
+     * nothing in this application installs that - pinning the fact is what keeps
+     * a later edit from "fixing" a proxy problem that is really a switched-off
+     * proxy on a network that drops everything else.  The override assertions
+     * install a route and never send a byte through it.
+     */
+#ifdef Q_OS_WIN
+    check(QNetworkProxyFactory::usesSystemConfiguration(),
+          "policy: a fresh Windows process already answers from the shell, so no "
+          "call is needed here to make provider requests follow it");
+#endif
+    const QString defaultRoute = NetworkAccess::effectiveHttps();
+    qunsetenv("ZUUNED_PROXY");
+    const NetworkAccess::Decision plain = NetworkAccess::apply();
+    check(plain.policy == NetworkAccess::Policy::Unchanged,
+          "policy: with nothing configured apply() decides nothing");
+    eq("policy: and the route a request would use is exactly what it was",
+       NetworkAccess::effectiveHttps(), defaultRoute);
+
+    qputenv("ZUUNED_PROXY", "not a proxy");
+    const NetworkAccess::Decision refused = NetworkAccess::apply();
+    check(refused.policy == NetworkAccess::Policy::Rejected
+              && refused.note.contains(QStringLiteral("not a proxy")),
+          "policy: an unusable ZUUNED_PROXY is refused and quoted back");
+    eq("policy: a refusal installs no route at all",
+       NetworkAccess::effectiveHttps(), defaultRoute);
+    // A refusal quotes the value back, so say out loud that a credential inside
+    // an unusable value does not travel with it.  No port here, which is what
+    // makes the value unusable in the first place.
+    qputenv("ZUUNED_PROXY", "http://zuuned-secret-user:zuuned-secret-pass@proxy.invalid");
+    const NetworkAccess::Decision secret = NetworkAccess::apply();
+    check(secret.policy == NetworkAccess::Policy::Rejected
+              && !secret.note.contains("zuuned-secret-user")
+              && !secret.note.contains("zuuned-secret-pass")
+              && secret.note.contains("proxy.invalid"),
+          "policy: a refused value keeps its host and loses its credential");
+    qunsetenv("ZUUNED_PROXY");
+    NetworkAccess::apply();
+
+    qputenv("ZUUNED_PROXY", "http://127.0.0.1:8117");
+    const NetworkAccess::Decision configured = NetworkAccess::apply();
+    check(configured.policy == NetworkAccess::Policy::Environment,
+          "policy: ZUUNED_PROXY outranks the platform default");
+    eq("policy: an HTTPS request would use the configured route",
+       NetworkAccess::effectiveHttps(), QStringLiteral("http 127.0.0.1:8117"));
+    check(NetworkAccess::summary(configured).contains(QStringLiteral("HTTPS goes")),
+          "summary: the startup line names the route it settled on");
+    qunsetenv("ZUUNED_PROXY");
+    const NetworkAccess::Decision cleared = NetworkAccess::apply();
+    check(cleared.policy == NetworkAccess::Policy::Unchanged,
+          "policy: an override is read once at startup, not remembered by the app");
+    printf("      note: after clearing ZUUNED_PROXY in the same process the route "
+           "reads \"%s\"; zuuned calls apply() once per launch\n",
+           NetworkAccess::effectiveHttps().toUtf8().constData());
+
+    printf("network self-test: %s (%d failures)\n",
+           failed == 0 ? "ALL PASS" : "FAILED", failed);
+    return failed == 0 ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
 #if defined(_WIN32)
@@ -881,6 +1046,8 @@ int main(int argc, char **argv) {
         return runCustomizeSelfTest();
     if (mode == QLatin1String("paths"))
         return runPathsSelfTest();
+    if (mode == QLatin1String("net"))
+        return runNetworkSelfTest();
 
     const bool videoMode = mode == QLatin1String("videoscan");
     if (arguments.size() < 4 || (mode != QLatin1String("scan") && !videoMode)) {
@@ -890,7 +1057,8 @@ int main(int argc, char **argv) {
                 "  librarytool videoscan <folder> <tmpdb> [movies|tv|anime]\n"
                 "  librarytool names\n"
                 "  librarytool customize\n"
-                "  librarytool paths\n");
+                "  librarytool paths\n"
+                "  librarytool net\n");
         return 2;
     }
     const QString folder = arguments.at(2);
