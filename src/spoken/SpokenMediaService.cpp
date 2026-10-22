@@ -1,6 +1,7 @@
 #include "SpokenMediaService.h"
 #include "../ProfilePaths.h"
 #include "../ThreadDrain.h"
+#include "../library/LibraryScanner.h"
 #include "../player/PlayerService.h"
 #include "AudiobookProbe.h"
 #include "PodcastFeed.h"
@@ -11,7 +12,6 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
-#include <QDirIterator>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
@@ -27,6 +27,7 @@
 #include <QStandardPaths>
 #include <QUuid>
 #include <algorithm>
+#include <atomic>
 #include <climits>
 #include <cmath>
 #include <cstdio>
@@ -1141,35 +1142,92 @@ void SpokenMediaService::previewBookFolder(const QUrl &folder, bool collection) 
             QMap<QString, QStringList> groups;
             const QSet<QString> extensions = {"m4b", "m4a",  "mp3", "flac",
                                               "ogg", "opus", "wav", "wma"};
-            QDirIterator it(root, QDir::AllEntries | QDir::NoDotAndDotDot | QDir::NoSymLinks,
-                            QDirIterator::Subdirectories);
+            /* The walk a watch folder already uses.  This was a recursive
+             * QDirIterator asking for QDir::NoSymLinks, which is a filter that does
+             * nothing to the thing that matters here: QFileInfo does not call a
+             * Windows junction a link - the filesystem answers FILE_ATTRIBUTE_DIRECTORY
+             * and nothing else - so a folder linking back into one of its own
+             * ancestors is an ordinary directory, the walk descends until the path
+             * stops growing, and the same book comes out filed under every phantom
+             * path the loop invented.  walkFiles() carries an identity for each folder
+             * it enters (volume serial plus file index, real ones through compat/win)
+             * and refuses a folder it has already been in; librarytool walk holds that
+             * against a real `mklink /J`, so this import is now covered by a gate it
+             * used to be outside of.
+             *
+             * The file set is what the iterator used to hand over: directories only
+             * as places to look, a symbolic link to a file never offered (that is
+             * what NoSymLinks meant), and the first path element as the book a
+             * collection is grouped by.  Two refusals survive verbatim and one changes
+             * shape.  The 5 000-audio-file ceiling is still the ceiling.  The 100 000
+             * ceiling now counts entries the visitor saw rather than entries of every
+             * kind, so a tree of nothing but folders is no longer capped - with the
+             * identity guard a folder tree is only as deep as the filesystem's real
+             * one, which is why the count is a backstop here and not the protection.
+             * The unreadable-subfolder refusal comes from the walk instead of from
+             * asking QDir whether a folder looks readable: walkFiles() opens each
+             * folder to stat it, so `complete` false is a folder it could not list,
+             * which is also the question the library scan needs answered.
+             *
+             * Cancellation stays per-entry.  walkFiles() stops on the one flag it is
+             * handed and that flag is ours - it is what the two ceilings use - so the
+             * visitor asks the caller's flag itself and stops the walk through ours.
+             * Without that middle step a Cancel button would only be read after the
+             * walk, which is exactly the wait the old iterator did not impose, and the
+             * bounded spoken-worker close at shutdown waits on this loop. */
+            const QDir rootDir(root);
+            enum class Stopped { None, Cancelled, TooBig, TooMany };
+            Stopped stopped = Stopped::None;
+            std::atomic<bool> gaveUp{false};
             int visited = 0, files = 0;
-            while (it.hasNext()) {
-                if (cancel->load()) {
-                    r.error = "Cancelled";
-                    return;
-                }
-                it.next();
-                if (++visited > 100000) {
-                    r.error = "Folder is too large; choose a smaller book collection";
-                    return;
-                }
-                const auto file = it.fileInfo();
-                if (file.isDir() && !QDir(file.absoluteFilePath()).isReadable()) {
-                    r.error = "A subfolder cannot be read. Fix its access permissions "
-                              "and try again.";
-                    return;
-                }
-                if (!file.isFile() || !extensions.contains(file.suffix().toLower()))
-                    continue;
-                if (++files > 5000) {
-                    r.error = "Import up to 5,000 audio files at a time";
-                    return;
-                }
-                const QString relative = QDir(root).relativeFilePath(file.absoluteFilePath());
-                const QString group =
-                    collection && relative.contains('/') ? relative.section('/', 0, 0) : QString();
-                groups[group].append(file.absoluteFilePath());
+            const auto walked = LibraryScan::walkFiles(
+                root, QDir::Files,
+                [&](const QFileInfo &file) {
+                    if (stopped != Stopped::None)
+                        return;
+                    if (cancel->load()) {
+                        stopped = Stopped::Cancelled;
+                        gaveUp.store(true);
+                        return;
+                    }
+                    if (++visited > 100000) {
+                        stopped = Stopped::TooBig;
+                        gaveUp.store(true);
+                        return;
+                    }
+                    if (file.isSymLink() || !extensions.contains(file.suffix().toLower()))
+                        return;
+                    if (++files > 5000) {
+                        stopped = Stopped::TooMany;
+                        gaveUp.store(true);
+                        return;
+                    }
+                    const QString path = file.absoluteFilePath();
+                    const QString relative = rootDir.relativeFilePath(path);
+                    const QString group = collection && relative.contains('/')
+                        ? relative.section('/', 0, 0)
+                        : QString();
+                    groups[group].append(path);
+                },
+                &gaveUp);
+            if (stopped == Stopped::Cancelled || cancel->load()) {
+                r.error = "Cancelled";
+                return;
+            }
+            if (stopped == Stopped::TooBig) {
+                r.error = "Folder is too large; choose a smaller book collection";
+                return;
+            }
+            if (stopped == Stopped::TooMany) {
+                r.error = "Import up to 5,000 audio files at a time";
+                return;
+            }
+            if (!walked.complete) {
+                r.error = walked.directories == 0
+                    ? QStringLiteral("Choose a readable local audiobook folder")
+                    : QStringLiteral("A subfolder cannot be read. Fix its access "
+                                     "permissions and try again.");
+                return;
             }
             if (groups.isEmpty()) {
                 r.error = "No supported audiobook files found in this folder";

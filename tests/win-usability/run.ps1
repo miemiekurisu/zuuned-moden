@@ -947,6 +947,26 @@ if (Select-Phase 'tools') {
     Check 'the Artists pivot groups through the mirror, not the raw name field' `
         ([IO.File]::ReadAllText((Join-Path $root 'qml\MusicPage.qml')).Contains('MusicIdentity.artistName(')) `
         'qml/MusicPage.qml computeArtists'
+    # Exactly one recursive directory walk is allowed in this source tree, and it is
+    # the one librarytool walk holds against a real `mklink /J`.  A second hand-rolled
+    # QDirIterator(..., Subdirectories) would not ask who a folder is, and QFileInfo
+    # does not call a junction a link, so it would reopen the hole the identity guard
+    # closed for the library and open it for the audiobook import.  No phase here can
+    # drive that folder chooser, so the check pins the structure rather than pretending
+    # to have walked a tree: no second loop anywhere in src, and spoken import calls
+    # through the guarded function.
+    $walkers = @(Get-ChildItem -LiteralPath (Join-Path $root 'src') -Recurse -File `
+            -Include *.cpp, *.h |
+        Where-Object {
+            [IO.File]::ReadAllText($_.FullName).Contains('QDirIterator::Subdirectories')
+        } | ForEach-Object { $_.FullName.Substring($root.Length + 1) })
+    Check 'src contains no second recursive directory walk' `
+        ($walkers.Count -eq 0) ('found=' + ($walkers -join ','))
+    $spokenText = [IO.File]::ReadAllText(
+        (Join-Path $root 'src\spoken\SpokenMediaService.cpp'))
+    Check 'the audiobook folder import walks through LibraryScan::walkFiles' `
+        ($spokenText.Contains('LibraryScan::walkFiles(')) `
+        'src/spoken/SpokenMediaService.cpp previewBookFolder'
 }
 
 Write-Host ''
