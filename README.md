@@ -127,6 +127,7 @@ packaging/windows/  WinUSB driver guide and check-driver.ps1
 tests/win-compat/    Windows compatibility gate (no device)
 tests/win-usability/ Windows launch and UI gate (no device)
 docs/WINDOWS_PORT.md what is and is not proven on Windows
+docs/ZUNE_CLIENT_FEATURES.md the original Zune software, feature by feature
 ```
 
 ## What you can do with Zuuned
@@ -134,8 +135,9 @@ docs/WINDOWS_PORT.md what is and is not proven on Windows
 Browse a Zune's library and transfer media to it over USB; enjoy a local music library
 with artists, albums, playlists and playback; organize videos, podcasts and audiobooks;
 edit metadata and artwork; build photo albums. Local playback and organization work with
-no player connected. The Windows port currently carries the music path end to end and
-the rest of the categories are unproven there - see the status page.
+no player connected. The Windows port carries music in both
+directions against a player; photos and video have been sent from Windows without a byte of
+either coming back, and no Windows deletion has ever been done - see the status page.
 
 ## License
 

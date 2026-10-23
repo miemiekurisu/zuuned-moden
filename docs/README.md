@@ -20,6 +20,7 @@ This application snapshot includes libzune as ordinary source files.
 | Install device permissions or diagnose launch failure | [Tester installation](../packaging/TESTER_INSTALL.md) |
 | Compile the public application source | [Building](../BUILDING.md) |
 | Build or assess the Windows port | [Windows port status](WINDOWS_PORT.md) |
+| Compare this app against the original Zune software | [Zune client feature comparison](ZUNE_CLIENT_FEATURES.md) |
 | Supply authentication data for a source build | [Building with MTPZ](BUILD_WITH_MTPZ.md) |
 | Use libzune directly | [Library README](../libzune/README.md), [API reference](../libzune/docs/API_REFERENCE.md), [source index](../libzune/docs/TOC.md) |
 | Understand logs and debug reports | [Diagnostics](DIAGNOSTICS.md) |
@@ -59,6 +60,8 @@ for an older migrated executable. Preserve the recorded provenance limitations.
 - Windows: [native port status, what its gates prove and the outstanding device gate](WINDOWS_PORT.md).
 - Maintenance: [cleanup record](CODEBASE_CLEANUP.md), [feature scope](FEATURE_COMPLETION.md),
   [port plan](PORT_PLAN.md).
+- Product scope: [what the original Zune software did, what this app does instead, and
+  what cannot come back](ZUNE_CLIENT_FEATURES.md).
 - Spoken media implementation and remaining hardware gates: [podcasts, audiobooks and deferred HD artist backgrounds](SPOKEN_MEDIA_AND_DEVICE_ART.md).
 - Library usage: [podcast integration and audiobook status](../libzune/docs/SPOKEN_MEDIA.md).
 - Device spoken browser: [inventory, selection and removal verification](../tests/device-spoken/README.md).
