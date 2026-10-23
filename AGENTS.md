@@ -562,7 +562,45 @@ Linux guide frozen at an earlier revision, whose only three unique lines were it
 `ZuunedLinux` title and a superseded `usbreset 045e:0710`-only recovery - is a 58-line
 pointer to `AGENTS.md` and `docs/WINDOWS_PORT.md`, because a duplicated guide is how a
 superseded instruction survives a fork. No Windows capability is added and no device claim
-changes - still one hand-tested Pavo Zune HD, read-only, nothing listened to.
+changes - still one hand-tested Pavo Zune HD, nothing listened to. (Its `read-only` was
+false as written: the 2026-10-21 GUI checkpoint above had already sent and saved.)
+
+**2026-10-23 Windows QML name collision, two more categories on the wire, and a lookup
+that waits to be asked:** three things, one of them silent and user-visible.
+`src/PathText.h` registered its path singleton with `QML_ELEMENT`, and `Qt6Quick.dll`
+already exports a `PathText` shapes type beside `PathSvg`. Every QML file here imports
+`QtQuick`, so in a file that does not also import `Zuuned` the name resolves to Qt's and
+every binding on it throws: `QueueEntryView.qml:147` logged
+`Property 'url' of object QtQuick/PathText is not a function` six times in one
+launch, which is queue-row artwork failing per row while both gates passed. The singleton
+is `QML_NAMED_ELEMENT(ZPathText)` now, and a scan of every `Qt6*.dll` in the Qt bin answers
+that it was the only name this tree exports that Qt also owns; the usability gate pins the
+rule off the source - no bare `PathText.` anywhere in `qml/`, plus the registered name -
+because no phase of it loads a QML file that forgets the import.
+`transcode/transcodetool.c` rebuilds `argv` from `GetCommandLineW()` as UTF-8: the CRT
+hands `main()` the ANSI code page, so on a GBK machine the encoder phases were probing
+question marks where the application passes `toUtf8()` to the same C functions. That is
+what lets them gate a Chinese path instead of the ASCII one next to it.
+`librarytool photoscan`, `--qa-photo` and `--qa-video` make a photo album and a movie
+answer in log lines through the same typed admission the ordinary controls use, and they
+were used on hardware: five pictures prepared at 480px and sent into one album,
+`photos=5 failed=0`; one movie transcoded to container `0xB982` at 20,575,375 bytes and
+sent, `videos=1 failed=0`; the player re-listed both. A send the firmware counted is not a
+read-back, so the sentence in `tests/win-usability/run.ps1` that the hand test had "sent
+music, photos and video, and read back from" now says the truth - only music has come back
+byte for byte. Lastly, `AppSettings.autoMetadataLookup` (an ini key, default **false**)
+makes every provider lookup opt-in, because `discoverMissingArtwork()` had been asking
+MusicBrainz and Deezer for a portrait of *every* artist on every library load - an artist
+image has no local source, so unlike album art it never had a local-first hop to fail -
+and the shape asked for was one item looked up by right-click, not a library searched
+unconditionally. `retryArtwork` and the Settings button force their key and still reach the
+network whatever the switch says. On the profile that complained, six provider request
+lines, one of them `HTTP 503` from musicbrainz.org, became zero beside one
+`[artwork] online lookup off: 13 albums and 7 artists read locally, none queried`; the
+music-page case asserts both halves, so offline-by-default is protected rather than
+inherited. Gates on the relinked tree: 201 compat checks, and
+`launches=18 checks=116 failures=0 skips=0 killed=0` with `OVERALL=ok`. No device claim
+changes: still one Pavo Zune HD, and nothing on it has been heard.
 
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow
@@ -1387,7 +1425,8 @@ the scheme by hand is correct by luck on Linux and produces a drive-relative
 `/E:/Music` on Windows. `src/library/LibraryPaths.h` now owns the one canonical
 storage form - decode with `QUrl::toLocalFile()`, forward slashes, repair a stored
 `/E:/` scar, fold the drive letter to upper case because `UNIQUE(path)` is a byte
-comparison - and `PathText.canonical/url/display` are the QML-facing forms. No QML
+comparison - and `ZPathText.canonical/url/display` are the QML-facing forms, named
+`ZPathText` because `Qt6Quick.dll` exports a `PathText` shapes type of its own. No QML
 site may strip a scheme or concatenate `file://` again: that form spells
 `file://E:/Music`, parses host `E:` and loads no image. `LibraryDb::open()` repairs
 `watch_folders` rows an older build wrote, dropping a row whose repaired spelling is

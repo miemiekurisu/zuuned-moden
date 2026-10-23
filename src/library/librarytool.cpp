@@ -1050,11 +1050,14 @@ int main(int argc, char **argv) {
         return runNetworkSelfTest();
 
     const bool videoMode = mode == QLatin1String("videoscan");
-    if (arguments.size() < 4 || (mode != QLatin1String("scan") && !videoMode)) {
+    const bool photoMode = mode == QLatin1String("photoscan");
+    if (arguments.size() < 4
+        || (mode != QLatin1String("scan") && !videoMode && !photoMode)) {
         fprintf(stderr,
                 "librarytool — library core gate\n"
                 "  librarytool scan <folder> <tmpdb>\n"
                 "  librarytool videoscan <folder> <tmpdb> [movies|tv|anime]\n"
+                "  librarytool photoscan <folder> <tmpdb>\n"
                 "  librarytool names\n"
                 "  librarytool customize\n"
                 "  librarytool paths\n"
@@ -1065,7 +1068,7 @@ int main(int argc, char **argv) {
     const QString dbPath = arguments.at(3);
     const QString folderType = videoMode
         ? (arguments.size() >= 5 ? arguments.at(4) : QStringLiteral("tv"))
-        : QStringLiteral("music");
+        : photoMode ? QStringLiteral("photos") : QStringLiteral("music");
 
     {
         LibraryDb db;
@@ -1105,6 +1108,16 @@ int main(int argc, char **argv) {
     LibraryDb db;
     if (!db.open(dbPath))
         return 1;
+
+    if (photoMode) {
+        const auto photos = db.allPhotos();
+        printf("total photos in db: %d\n", int(photos.size()));
+        for (const LibPhoto &p : photos)
+            printf("  [%lld] '%s' | name='%s' | %lld bytes\n",
+                   (long long)p.id, p.filepath.toUtf8().constData(),
+                   p.filename.toUtf8().constData(), (long long)p.filesize);
+        return 0;
+    }
 
     if (!videoMode) {
         const auto tracks = db.allTracks();

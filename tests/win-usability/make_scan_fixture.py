@@ -21,11 +21,17 @@ mangles.  A scan root is not a readdir result, and it used to fail on its own:
 the scan found nothing and still exited 0.  Three separate roots, scanned one at
 a time by the gate, so a root that works cannot mask one that does not.
 
+``--photos <dir>`` puts an album of drawn JPEG frames in the same shape: one folder
+whose own name is Chinese.  Photos travel a different table and a different scanner
+branch than tracks, and until now nothing on Windows reached either of them from a
+gate; it is also the text a Zune photo album is named from, so the bytes that have
+to survive a scan here are the bytes a real transfer depends on later.
+
     python make_scan_fixture.py <music-dir> [--ffmpeg <ffmpeg.exe>] [--force]
-                                [--extra-roots <dir>]
+                                [--extra-roots <dir>] [--photos <dir>]
 
 Prints ASCII key=value lines.  Exits 0 when all four tracks are on disk, plus the
-three extra roots when they were asked for.
+three extra roots and the two photos when they were asked for.
 """
 
 import argparse
@@ -35,6 +41,7 @@ import subprocess
 import sys
 
 CJK_ALBUM = "\u6f22\u8a5e Album (2024)"
+CJK_PHOTO_FOLDER = "\u7167\u7247 Folder"
 # Hebrew, Hangul, and an emoji outside the BMP - each spelled from code points.
 SCRIPT_ROOTS = [
     "\u05db\u05ea\u05e8\u05d1\u05ea Root",
@@ -58,6 +65,8 @@ def main() -> int:
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--extra-roots", dest="extra_roots",
                     help="create the three non-ASCII scan roots under this directory")
+    ap.add_argument("--photos",
+                    help="create a Chinese-named photo album folder under this directory")
     a = ap.parse_args()
 
     if shutil.which(a.ffmpeg) is None and not os.path.isfile(a.ffmpeg):
@@ -79,6 +88,7 @@ def main() -> int:
     placed = []
 
     extras = []
+    shots = []
 
     def place(dst, src, into=placed):
         os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -99,11 +109,26 @@ def main() -> int:
         shutil.rmtree(er, ignore_errors=True)
         for name in SCRIPT_ROOTS:
             place(os.path.join(er, name, "Track One.mp3"), mp3, extras)
+
+    # The same rule as the extra roots: a photo album is a scan root of its own,
+    # so it must not sit where the music scan would walk into it.  The frames are
+    # ffmpeg colour swatches - the scan cares about the name and the bytes, not
+    # the picture, and a real photograph would make the fixture depend on luck.
+    if a.photos:
+        pr = os.path.abspath(a.photos)
+        if pr == root or pr.startswith(root + os.sep) or root.startswith(pr + os.sep):
+            sys.exit("--photos must sit outside the music dir")
+        shutil.rmtree(pr, ignore_errors=True)
+        frame = os.path.join(tmp, "frame.jpg")
+        run(a.ffmpeg, ["-f", "lavfi", "-i", "color=c=gray:s=64x48", "-frames:v", "1", frame])
+        for name in ("Shot One.jpg", "Shot Two.jpg"):
+            place(os.path.join(pr, CJK_PHOTO_FOLDER, name), frame, shots)
     shutil.rmtree(tmp, ignore_errors=True)
 
     longest = max(placed, key=len)
     print("created=%d" % len(placed))
     print("extra_roots=%d" % len(extras))
+    print("photos=%d" % len(shots))
     print("longest_path_chars=%d" % len(longest))
     print("fixture=%s" % ascii(root)[1:-1])
     print("OVERALL=ok")

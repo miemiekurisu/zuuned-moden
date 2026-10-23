@@ -697,7 +697,7 @@ Item {
                             anchors.fill: parent
                             visible: backdropStep.hasImage
                             source: backdropStep.hasImage
-                                    ? PathText.url(AppSettings.backgroundImagePath) : ""
+                                    ? ZPathText.url(AppSettings.backgroundImagePath) : ""
                             fillMode: Image.PreserveAspectCrop
                             opacity: AppSettings.backgroundOpacity
                             asynchronous: true
@@ -1819,7 +1819,7 @@ Item {
 
                     Text {
                         Layout.fillWidth: true
-                        text: PathText.display(modelData.path)
+                        text: ZPathText.display(modelData.path)
                         font.pixelSize: 11
                         font.weight: Font.Light
                         color: Theme.textSecondary
@@ -1851,7 +1851,7 @@ Item {
         title: "Choose a " + pendingType + " folder"
         onAccepted: {
             console.warn("[onboarding] folder accepted:", selectedFolder)
-            const p = PathText.canonical(selectedFolder.toString())
+            const p = ZPathText.canonical(selectedFolder.toString())
             if (p.length > 1)
                 root.addedFolders = root.addedFolders.concat([{ path: p, type: pendingType }])
         }
@@ -1864,7 +1864,7 @@ Item {
         title: "Choose a background image"
         nameFilters: ["Images (*.png *.jpg *.jpeg *.webp *.bmp)"]
         onAccepted: {
-            const path = PathText.canonical(selectedFile.toString())
+            const path = ZPathText.canonical(selectedFile.toString())
             if (path.length > 1)
                 AppSettings.backgroundImagePath = path
         }

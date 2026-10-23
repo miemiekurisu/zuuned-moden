@@ -111,6 +111,15 @@ public:
     ZUNE_SETTING(QString, videoControlsStyle, setVideoControlsStyle,
                  "videoControlsStyle", QStringLiteral("vinyl"), toString)
 
+    // Online metadata/artwork lookup is opt-in: the user asks, per item.
+    // An automatic pass (library load, import, browsing the artist grid)
+    // reads only the user's own files. A provider request needs either this
+    // switch or an explicit right-click lookup on one album/artist, or the
+    // Settings retry button. Default OFF - no launch contacts a provider by
+    // itself, because a file that already carries a cover never needed one.
+    ZUNE_SETTING(bool, autoMetadataLookup, setAutoMetadataLookup,
+                 "autoMetadataLookup", false, toBool)
+
     // Artwork is a reversible display preference. Each print keeps its own
     // tuning; changing looks never rewrites source artwork or metadata.
     Q_PROPERTY(QString artworkStyle READ artworkStyle WRITE setArtworkStyle NOTIFY changed)

@@ -434,6 +434,11 @@ private:
     OnlineAlbumArtService *m_onlineAlbumArt = nullptr;
     QTimer *m_artworkDiscovery = nullptr;
     void discoverMissingArtwork();
+    // Settings -> Library "look up artwork and metadata online". Default off.
+    // Every automatic caller consults it; an explicit lookup for one album or
+    // artist is carried by m_forceArtworkRetry instead, so the per-item
+    // right-click works with the switch off. Local art extraction ignores it.
+    bool onlineMetadataLookupEnabled() const;
     QVariantMap m_artistImages;
     QVariantMap m_albumArtworkStatus, m_artistArtworkStatus;
     QHash<QString, QVariantMap> m_albumMatchingEvidence;

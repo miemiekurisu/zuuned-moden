@@ -92,7 +92,15 @@ LibraryService::LibraryService(QObject *parent) : QObject(parent) {
             if (m_albumArtSources.contains(artKey(artist, album)) && !m_art->isResolving(artist, album)) {
                 const QVariantMap context{{"artist", artist}, {"album", album}};
                 const auto input = artworkContext(QStringLiteral("album"), context);
-                if (!restoreArtworkResult(QStringLiteral("album"), context, input))
+                // Local sources are exhausted at this point, so this is the
+                // only place an album lookup could leave the machine. It does
+                // so for an album the user asked about (retryArtwork /
+                // retryMissingArtwork marks its key) or when the Settings
+                // switch is on - never because a scan finished.
+                const bool asked = onlineMetadataLookupEnabled()
+                    || m_forceArtworkRetry.contains(QStringLiteral("album")
+                        + AlbumArtService::cacheKey(artist, album));
+                if (asked && !restoreArtworkResult(QStringLiteral("album"), context, input))
                     m_onlineAlbumArt->request(artist, album, input);
             }
             return;
@@ -293,9 +301,22 @@ void LibraryService::rearmFolderWatcher() {
 void LibraryService::requestArtistImage(const QString &name) {
     const QVariantMap context{{"name", name}};
     const auto input = artworkContext(QStringLiteral("artist"), context);
-    if (m_artistImagesSvc->cachedPath(name).isEmpty()
+    const QString cached = m_artistImagesSvc->cachedPath(name);
+    if (cached.isEmpty()
         && restoreArtworkResult(QStringLiteral("artist"), context, input)) return;
+    // A portrait has no file to read, so asking for one is the network request:
+    // MusicBrainz for the identity, then Fanart/Deezer for the picture. Until
+    // now simply opening the artist grid spent one lookup per visible artist on
+    // every launch. A cached portrait still publishes (requestImage returns
+    // before queueing when the file exists); a missing one waits to be asked.
+    if (cached.isEmpty() && !onlineMetadataLookupEnabled()
+        && !m_forceArtworkRetry.contains(QStringLiteral("artist")
+            + ArtistImageService::cacheKey(name))) return;
     m_artistImagesSvc->requestImage(name, input);
+}
+
+bool LibraryService::onlineMetadataLookupEnabled() const {
+    return QSettings().value(QStringLiteral("autoMetadataLookup"), false).toBool();
 }
 
 namespace {
@@ -1038,8 +1059,10 @@ void LibraryService::requestArt(const QString &artist, const QString &album,
 }
 
 void LibraryService::discoverMissingArtwork() {
-    // Both setup and later imports use this path. Local extraction is queued
-    // first; only an exhausted local album request can start online lookup.
+    // Both setup and later imports use this path, and it stays local: embedded
+    // and folder art is read from the user's own files, and an album that ends
+    // up with nothing goes online only if that album was explicitly asked for
+    // (see the artReady gate) or the opt-in switch is on.
     for (const auto &value : std::as_const(m_albumsList)) {
         const auto row = value.toMap();
         requestArt(row.value(QStringLiteral("artArtist")).toString(),
@@ -1048,6 +1071,14 @@ void LibraryService::discoverMissingArtwork() {
     }
     for (const auto &value : std::as_const(m_artistsList))
         requestArtistImage(value.toMap().value(QStringLiteral("name")).toString());
+    if (!onlineMetadataLookupEnabled())
+        // One honest line per pass: the gate greps it to prove a launch asked
+        // a provider nothing, and a user wondering why a circle is empty can
+        // read the answer instead of guessing.
+        fprintf(stderr, "[artwork] online lookup off: %d albums and %d artists "
+                        "read locally, none queried; right-click an album, "
+                        "artist or track to look one up\n",
+                int(m_albumsList.size()), int(m_artistsList.size()));
 }
 
 void LibraryService::retryMissingArtwork() {

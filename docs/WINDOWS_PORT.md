@@ -1211,11 +1211,132 @@ No Windows capability is added and no device claim changes - still one hand-test
 Zune HD, read-only, nothing listened to. Deletion, the podcast, audiobook, photo and video
 categories, every model but this Pavo, audible audio and packaging stay open.
 
+## The seventeenth pass: a QML name that belonged to Qt, and the two categories that reached the player (2026-10-23)
+
+Everything here was re-run on a relinked tree - ``cmake --build build --clean-first``, then both
+gates.  ``tests\win-compat`` reports 201 checks, 0 failures and 0 skips; ``tests\win-usability``
+reports launches=18 checks=116 failures=0 skips=0 killed=0 pid-scan-fallbacks=2 and ``OVERALL=ok``.
+Two of the eighteen launches needed the ``winshot --pid`` scan instead of
+``Process.MainWindowHandle``, which is the cached-zero behaviour the harness was built for and is
+counted rather than smoothed away.
+
+**A singleton whose name was already taken.**  ``src/PathText.h`` registered the path singleton
+with ``QML_ELEMENT``, which offers QML the bare name ``PathText`` - and ``Qt6Quick.dll`` exports a
+``PathText`` of its own, a shapes type, beside ``PathSvg``.  Every QML file in this application
+imports ``QtQuick``, so in a file that does not also import ``Zuuned`` the name resolves to Qt's
+type and every binding on it throws at run time.  It did, and the log said so while the gate
+passed:
+
+    [qml-warn] qrc:/qt/qml/Zuuned/QueueEntryView.qml:147: TypeError:
+    Property 'url' of object QtQuick/PathText is not a function
+
+six sightings in one instrumented launch, one site, which is queue-row artwork failing once per
+row and again per refresh.  ``qml/QueueEntryView.qml`` and ``qml/OnboardingView.qml`` import
+``QtQuick`` without ``Zuuned``; ``qml/LibraryPhotosView.qml`` and ``qml/LibraryVideosView.qml``
+import both, which is why the same call worked on one page and not the next.  The singleton is
+``QML_NAMED_ELEMENT(ZPathText)`` now, and a scan of every ``Qt6*.dll`` in the Qt bin answers that
+``PathText`` was the only name this tree exports that Qt also owns.  The usability gate reads the
+rule off the source outside every phase - it fails if any ``qml/*.qml`` writes a bare
+``PathText.``, and it pins the registered name - because no phase of it loads a QML file that
+forgets the import, so nothing but the source can gate it.  The launches since the rename log
+neither line of that TypeError, in the harness profiles or in the profile the user actually uses.
+
+**A tool that could not read its own arguments.**  ``transcode/transcodetool.c`` rebuilds
+``argv`` from ``GetCommandLineW()`` as UTF-8 on Windows.  The CRT hands ``main()`` its arguments
+in the ANSI code page, so on this locale-936 machine a Chinese path arrived as question marks and
+probe, art and frame all failed on a file the application opens happily.  That mattered because
+the tool is the gate: ``FrameThumbnailService``, ``LibraryService`` and ``AudioCopyFingerprint``
+all hand the same C functions ``toUtf8()``, so an ANSI ``argv`` made the encoder phases test a
+different byte string from the one the application uses.  Two ``encode`` cases and one ``decode``
+case now run over a Chinese album folder and over a root the ANSI code page cannot spell at all.
+
+**One command per category.**  ``librarytool photoscan <folder> <tmpdb>`` prints the photo rows a
+scan produced, so a photo library becomes something a gate counts instead of something an eye
+checks; the fixture gained two photos in a Chinese-named album folder and the gate insists both
+are in the database with the folder name intact.  ``--qa-photo "<file>[;<file>...]|<album>"`` and
+``--qa-video "<file>|<title>"`` drive a photo album and a movie through ``SyncEngine.addPhotos``
+and ``addVideos``, the same typed admission the ordinary controls use, and the semicolons keep a
+whole album inside one device session the way the album action does.
+
+**Then the two categories crossed the wire.**  Both are recorded from a launch into an isolated
+profile against the attached Pavo Zune HD, and both answer in the application's own lines:
+
+- five photos into an album named in Chinese: ``photo prepared (480px JPEG): DSC00891.JPG`` then
+  ``photo sent: DSC00891.JPG -> folder 83886360``, four more the same way, closing
+  ``sync-summary elapsedMs=5288 tracks=0 videos=0 photos=5 skipped=0 failed=0`` over a device
+  re-read that counted ``devicePhotos=5``.
+- one movie, titled in Chinese: the transcoder ran on the real clip
+  (``video: loop done - 1795 video frames, 2660352 audio samples``) and the send answers
+  ``video sent, item_id=33554718`` at 20,575,375 bytes in container ``0xB982``, closing
+  ``sync-summary elapsedMs=14089 tracks=0 videos=1 photos=0 skipped=0 failed=0`` over a device
+  re-scan that answered ``[videos] 1 device keys, e.g.: ....``
+
+That is a send the firmware accepted and re-listed, and it is not a read-back.  No photo byte and
+no video byte came off the player to this machine, nothing on the player was played or heard, and
+the movie this application made answers every thumbnail method with
+``get_representative_sample 0x0200011E: bad AUINT8 count 0 in 4-byte payload`` and
+``all thumbnail methods failed for 33554718`` - one of the response classes the first Windows read
+left unanswered, now attached to an object this port wrote rather than one it inherited.
+
+**Four sentences in this repository were wrong, and three of them undersold the evidence.**
+"no picture has been prepared and smuggled to a device from Windows" (item 10 below) is closed by
+the five lines above; "photo and video transfer" as a single open item is now a send that is done
+and a read that is not, and the open list says it in those words; the sixteenth pass closed itself
+with "still one hand-tested Pavo Zune HD, read-only" when that document had already recorded a
+write and a byte read-back two passes earlier.  The fourth overreached the other way:
+``tests\win-usability\run.ps1`` described the hand test as having "sent music, photos and video,
+and read back from", and only the music has ever been read back byte for byte.  All four now say
+what was measured.
+
+## The eighteenth pass: a lookup that waits until it is asked (2026-10-23)
+
+Asked why the application was calling ``https://musicbrainz.org/ws/2/artist/`` at all when the
+files on disk already carry their covers, the read answers it.  ``src/LibraryService.cpp`` armed
+one 750 ms timer per library load into ``discoverMissingArtwork()``, which asked for artwork for
+*every* album and a portrait for *every* artist.  Album art is local-first - the provider is
+reached only at the ``artReady(ok=false)`` hop, after the embedded picture and the folder image
+have both failed - but an artist portrait has no local source at all, so every artist in a
+library became a MusicBrainz lookup and a Deezer image fetch, and
+``qml/MusicPage.qml`` and ``qml/ArtistDetail.qml`` asked again on every visibility change.  A
+profile of fourteen songs was enough to make six provider requests and take a
+``HTTP 503 ... (https://musicbrainz.org/ws/2/artist/)`` for it.
+
+The answer that was asked for is not "search less", it is "ask per item", and that is what shipped.
+
+- ``AppSettings.autoMetadataLookup`` is a real setting, an ini key, and it defaults to **false**.
+- Both automatic hops check it before they reach a provider.  A forced key
+  (``m_forceArtworkRetry``, the set the Customize sheet retry and the Settings button already
+  used) still reaches the network whatever the switch says, so no explicit request lost a path.
+- Right-click asks for exactly one thing: ``albumLookupAction`` on an album,
+  ``artistLookupAction`` on an artist, and a "Search Cover Online" row on a track row, each of
+  which calls ``LibraryService.retryArtwork`` for that one artist/album and nothing else.
+- A library read with the switch off says what it did instead of being silent about it:
+  ``[artwork] online lookup off: 13 albums and 7 artists read locally, none queried;
+  right-click an album, artist or track to look one up``.
+
+Measured, on the profile that raised the complaint rather than on a fixture: the launch before the
+change logged six ``customize-http`` lines including that 503; the launch of this build logs the
+line above and **zero** provider lines.  In the gate the music-page case asserts both halves - the
+report line appears, and no provider request line appears at all - so the offline default is a
+fact the harness protects instead of a coincidence nobody noticed, and the gate header no longer
+has to disclaim a network call it could not see coming.
+
+What it costs is worth stating instead of discovering.  On a library whose files carry no embedded
+picture and no folder image, album tiles and artist circles now stay empty until someone asks, and
+the artist grid says ``Needs a match`` under every circle.  That is the requested behaviour: the
+network is a thing a user does to one item, not a thing that happens to a library.
+
+No device claim changes with either pass: still the one hand-tested Pavo Zune HD, and nothing on
+it has been heard.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and
-   firmware resume, podcast, audiobook, photo and video transfer, and every model
-   but this Pavo Zune HD - each a real gate rather than a ported assumption.  Of
+   firmware resume, podcast and audiobook transfer, and every model but this Pavo
+   Zune HD - each a real gate rather than a ported assumption.  Photos and video
+   are half a gate now, and only half: the seventeenth pass sent five of one and
+   one of the other and the player re-listed both, so what is missing is the read -
+   no photo byte, no video byte, nothing played.  Of
    the two responses the first reads left open, `0x200F` on `GetObject` is
    explained: the same save that added MTPZ credentials made that write succeed,
    so it was an unauthenticated save and not a refusal.  One is still unanswered,
@@ -1248,9 +1369,11 @@ categories, every model but this Pavo, audible audio and packaging stay open.
    the local ANSI code page cannot spell, Qt's own shader/pipeline cache cannot
    open its file even though the directory exists, so such a user pays a cold
    shader cache on every start and loses no data.
-9. Also recorded, not asserted: a GUI launch reaches musicbrainz.org for artwork
-   discovery exactly as it does on Linux, and a 503 there is noise; a brand new
-   profile legitimately shows onboarding rather than the requested page.
+9. Recorded, not asserted: a brand new profile legitimately shows onboarding
+   rather than the requested page.  The other half of this entry is gone - a GUI
+   launch reaching musicbrainz.org for artwork was the last unasserted network
+   claim, and online lookup became opt-in with two assertions in the `pages`
+   phase instead - the eighteenth pass has the before-and-after log lines.
    Native path display, which was the last entry in this list, is gated now - see
    the `wf*` bullet above.  Where it reaches without a gate is narrower than it
    was: the labels at `qml/OnboardingView.qml:1822`,
@@ -1273,8 +1396,10 @@ categories, every model but this Pavo, audible audio and packaging stay open.
     `safeFilePart:` and the `decode:` checks, the latter extended to UTF-16 with a BOM - and
     the photo-thumbnail fallback still has neither gate nor hand test.  The eighth pass put
     both photo shell-outs right and gave the code-page rule a gate of its own, and neither
-    one has met a player: no picture has been prepared and smuggled to a device from
-    Windows, and no device thumbnail has come back through the `zune_grab_photo_thumb()`
+    one has met a player.  The seventeenth pass closed the first half of that on real
+    hardware - five pictures prepared at 480px on this machine and sent, one album, no
+    failures - and left the second half exactly as it was: no device thumbnail has ever
+    come back through the `zune_grab_photo_thumb()`
 11. The download half on a binary that carries the photo, shell and diagnostics
     fixes.  The ninth pass re-proved the send and had the firmware count it, then
     wedged before the pull could run, so the newest QA track is proven only as a
@@ -1294,18 +1419,20 @@ categories, every model but this Pavo, audible audio and packaging stay open.
 2. Repeat the remaining Linux hardware gates in the order Linux used, from here,
    each with its own evidence and none inherited: library read (done 2026-10-20),
    one track send with byte readback (done 2026-10-21), then one deletion, then
-   the podcast and audiobook categories and firmware resume, then photos and
-   video, then a Classic, a Draco and an 80/120.
+   the podcast and audiobook categories and firmware resume, then the read half of
+   photos and video (both sent and re-listed 2026-10-23, neither read back), then a
+   Classic, a Draco and an 80/120.
 3. Answer `0x2002` on `GetObjectInfo(0x07000002)` in `libzune/docs/` before it is
    assumed benign or changed.  `0x200F` needs nothing further - see above.
 4. Add the remaining software gates: audible (unmuted) playback, a
    `spokenmediatool` phase, and a launch that plays a spoken item so the resume write
    behind the bounded spoken close is exercised.  Measure NVDEC against software on a
    real 1080p item before quoting a speed-up for Windows.
-5. One photo and one spoken item across the wire, so the two photo shell-outs the eighth pass
-   fixed and the `zune_grab_photo_thumb()` fallback stop being software-only claims.  The
+5. One picture back and one spoken item across the wire.  The two photo shell-outs the
+   eighth pass fixed are no longer software-only claims - the seventeenth pass sent five
+   pictures through them - but the `zune_grab_photo_thumb()` fallback still has never
+   returned a thumbnail from a player, which is the half of it a read would close.  The
    spoken import walk this item carried is routed through `LibraryScan::walkFiles()` as
-   of the fifteenth pass, so what is left here is the wire.
-   `LibraryScan::walkFiles()` as of the fifteenth pass, so what is left here is the wire.
-   The import itself still has no phase, gated or hand.
+   of the fifteenth pass, so what is left there is the wire, and the import itself still
+   has no phase, gated or hand.
 6. Only then talk about Windows packaging or a Windows release channel.

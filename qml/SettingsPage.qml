@@ -452,7 +452,7 @@ Item {
                                     anchors.fill: parent
                                     visible: AppSettings.backgroundImagePath.length > 0
                                     source: AppSettings.backgroundImagePath.length > 0
-                                            ? PathText.url(AppSettings.backgroundImagePath) : ""
+                                            ? ZPathText.url(AppSettings.backgroundImagePath) : ""
                                     fillMode: Image.PreserveAspectCrop
                                     opacity: AppSettings.backgroundOpacity
                                     asynchronous: true
@@ -597,7 +597,7 @@ Item {
                             delegate: Text {
                                 required property var modelData
                                 Layout.fillWidth: true
-                                text: PathText.display(modelData.filepath)
+                                text: ZPathText.display(modelData.filepath)
                                 color: Theme.textSecondary
                                 font.pixelSize: Theme.customizeBodySize
                                 wrapMode: Text.WrapAnywhere
@@ -916,7 +916,25 @@ Item {
 
                     Sblk {
                         title: "Music artwork"
-                        desc: "Missing covers are found from your files first, then online. Your existing artwork stays yours."
+                        desc: "Covers are read from your own files automatically — an embedded picture or a folder image never needs the network. A provider lookup runs only when you ask for it: right-click one album, artist or track, or use the button below. Your existing artwork stays yours."
+                        RowLayout {
+                            spacing: Theme.spaceSm
+                            SpokenCheckBox {
+                                objectName: "autoMetadataLookupToggle"
+                                checked: AppSettings.autoMetadataLookup
+                                Accessible.name: "look up artwork and metadata online"
+                                onClicked: AppSettings.autoMetadataLookup =
+                                    !AppSettings.autoMetadataLookup
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: "look up artwork and metadata online"
+                                color: Theme.textSecondary
+                                font.pixelSize: 13
+                                font.weight: Font.Light
+                                wrapMode: Text.WordWrap
+                            }
+                        }
                         GlassButton {
                             text: "find missing artwork"
                             disabled: LibraryService.trackCount === 0
@@ -1613,7 +1631,7 @@ Item {
             // canonical(), not a hand-stripped scheme: file:///E:/Music has to
             // become E:/Music.  Chopping "file://" leaves "/E:/Music", which is
             // a valid absolute path on Linux and nothing at all on Windows.
-            const p = PathText.canonical(selectedFolder.toString())
+            const p = ZPathText.canonical(selectedFolder.toString())
             if (p.length > 1)
                 LibraryService.addWatchFolder(p, pendingType)
         }
@@ -1672,7 +1690,7 @@ Item {
         onAccepted: {
             // Store a plain local path (mac stores url.path); the mac also
             // resets opacity to 0.3 on every new pick — match that.
-            const path = PathText.canonical(selectedFile.toString())
+            const path = ZPathText.canonical(selectedFile.toString())
             AppSettings.backgroundImagePath = path
             AppSettings.backgroundOpacity = 0.3
         }

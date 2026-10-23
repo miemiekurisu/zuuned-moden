@@ -24,6 +24,59 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+
+/* The CRT hands main() its argv in the ANSI code page, so on a machine whose
+ * ACP cannot spell the name every argument arrives as question marks and probe,
+ * art and frame all fail on a file the application opens happily.  The library
+ * is called with UTF-8 by the app itself (FrameThumbnailService,
+ * LibraryService, AudioCopyFingerprint all pass toUtf8()), so for this tool to
+ * gate what the app does its arguments have to be the same bytes: rebuild argv
+ * from the wide command line as UTF-8, which is what QCoreApplication does for
+ * the Qt-side tools. */
+static char **utf8_argv(int *count)
+{
+    int wide_argc = 0;
+    LPWSTR *wide = CommandLineToArgvW(GetCommandLineW(), &wide_argc);
+    if (!wide || wide_argc <= 0)
+        return NULL;
+
+    char **vec = calloc((size_t)wide_argc + 1, sizeof(char *));
+    if (!vec) {
+        LocalFree(wide);
+        return NULL;
+    }
+    for (int i = 0; i < wide_argc; i++) {
+        const int need = WideCharToMultiByte(CP_UTF8, 0, wide[i], -1,
+                                             NULL, 0, NULL, NULL);
+        if (need <= 0)
+            goto fail;
+        char *utf8 = malloc((size_t)need);
+        if (!utf8)
+            goto fail;
+        if (WideCharToMultiByte(CP_UTF8, 0, wide[i], -1,
+                                utf8, need, NULL, NULL) <= 0) {
+            free(utf8);
+            goto fail;
+        }
+        vec[i] = utf8;
+    }
+    vec[wide_argc] = NULL;
+    LocalFree(wide);
+    *count = wide_argc;
+    return vec;
+
+fail:
+    for (int i = 0; i < wide_argc; i++)
+        free(vec[i]);
+    free(vec);
+    LocalFree(wide);
+    return NULL;
+}
+#endif
+
 static void progress_cb(float fraction, void *userdata)
 {
     (void)userdata;
@@ -50,6 +103,16 @@ static int usage(void)
 
 int main(int argc, char **argv)
 {
+#ifdef _WIN32
+    {
+        int utf8_argc = 0;
+        char **wide_argv = utf8_argv(&utf8_argc);
+        if (wide_argv) {
+            argv = wide_argv;
+            argc = utf8_argc;
+        }
+    }
+#endif
     if (argc < 3) return usage();
     const char *cmd = argv[1];
     const char *in = argv[2];

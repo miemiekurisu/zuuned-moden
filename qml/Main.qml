@@ -106,7 +106,7 @@ ApplicationWindow {
             greetingTimer.start()
         reportQaState("startup")
         startQaQueue()
-        if (qaDeviceSpec)
+        if (qaTransferSpec)
             qaDeviceTimer.start()
     }
     // QA harness (`--qa-probe`): one authoritative line about what this window
@@ -154,7 +154,7 @@ ApplicationWindow {
                 stored++
         }
         if (rows > 0)
-            agrees = PathText.display(String(wf[0].path)) === String(wf[0].displayPath) ? 1 : 0
+            agrees = ZPathText.display(String(wf[0].path)) === String(wf[0].displayPath) ? 1 : 0
         return { rows: rows, native: native, raw: raw, stored: stored, agrees: agrees }
     }
     function reportQaState(when) {
@@ -220,6 +220,34 @@ ApplicationWindow {
     }
     readonly property bool qaDevicePull:
         qaDeviceSpec !== null && String(qaDeviceSpec[0]).length === 0
+    // QA harness (`--qa-photo "<file>|<album>"`, `--qa-video "<file>|<title>"`):
+    // a photo album upload and a movie upload through the very admission the
+    // ordinary controls use, so the photo and movie categories become evidence
+    // in a log instead of a screenshot.  Filesize stays zero on purpose: it only
+    // feeds the capacity estimate, which is not what these passes ask about.
+    readonly property var qaPhotoSpec: {
+        const args = Qt.application.arguments
+        const i = args.indexOf("--qa-photo")
+        if (i < 0 || i + 1 >= args.length)
+            return null
+        const parts = String(args[i + 1]).split("|")
+        return parts[0].length > 0 ? parts : null
+    }
+    readonly property var qaVideoSpec: {
+        const args = Qt.application.arguments
+        const i = args.indexOf("--qa-video")
+        if (i < 0 || i + 1 >= args.length)
+            return null
+        const parts = String(args[i + 1]).split("|")
+        return parts[0].length > 0 ? parts : null
+    }
+    readonly property var qaTransferSpec:
+        qaPhotoSpec !== null ? qaPhotoSpec
+            : qaVideoSpec !== null ? qaVideoSpec : qaDeviceSpec
+    readonly property string qaTransferKind:
+        qaPhotoSpec !== null ? "photo"
+            : qaVideoSpec !== null ? "video"
+            : qaDeviceSpec !== null ? (qaDevicePull ? "pull" : "track") : ""
     property bool qaDeviceQueued: false
     property bool qaDeviceSawFinish: false
     property bool qaDeviceDone: false
@@ -234,10 +262,12 @@ ApplicationWindow {
         return null
     }
     function qaDeviceStep() {
-        const spec = qaDeviceSpec
+        const spec = qaTransferSpec
         if (!spec || qaDeviceDone)
             return
         qaDeviceLog("state pull=" + qaDevicePull
+            + " kind=" + qaTransferKind
+            + " devicePhotos=" + DeviceService.photosList.length
             + " connected=" + DeviceService.connected
             + " busy=" + DeviceService.busy
             + " stage=" + DeviceService.connectionStage
@@ -267,16 +297,35 @@ ApplicationWindow {
             // Queueing is the only pass that needs a live device.
             if (!DeviceService.connected || DeviceService.busy)
                 return
-            const res = SyncEngine.addTracks([{
-                filepath: spec[0], artist: spec[1], album: spec[2],
-                title: spec[3], albumartist: spec[1], genre: "QA",
-                trackNumber: 1, discNumber: 0, year: 2026,
-                durationMs: spec.length > 4 ? parseInt(spec[4], 10) || 0 : 0,
-                filesize: 0, libraryId: -1
-            }])
-            qaDeviceLog("add added=" + res.added + " duplicates=" + res.duplicates
-                + " onDevice=" + res.onDevice + " rejected=" + res.rejected
-                + " ambiguous=" + res.ambiguous)
+            let res
+            if (qaTransferKind === "photo")
+                // One "|" apart is the album; ";" apart is a batch, so a whole
+                // folder travels in ONE device session like the album action.
+                res = SyncEngine.addPhotos(
+                    String(spec[0]).split(";").map(f => ({
+                        filepath: f,
+                        filename: f.replace(/^.*[\\/]/, ""),
+                        album: spec.length > 1 ? spec[1] : "",
+                        filesize: 0, libraryId: -1
+                    })))
+            else if (qaTransferKind === "video")
+                res = SyncEngine.addVideos([{
+                    filepath: spec[0], title: spec[1], description: "",
+                    posterPath: "", category: "movie", durationMs: 0,
+                    filesize: 0, libraryId: -1
+                }])
+            else
+                res = SyncEngine.addTracks([{
+                    filepath: spec[0], artist: spec[1], album: spec[2],
+                    title: spec[3], albumartist: spec[1], genre: "QA",
+                    trackNumber: 1, discNumber: 0, year: 2026,
+                    durationMs: spec.length > 4 ? parseInt(spec[4], 10) || 0 : 0,
+                    filesize: 0, libraryId: -1
+                }])
+            qaDeviceLog("add kind=" + qaTransferKind
+                + " added=" + res.added + " duplicates=" + res.duplicates
+                + " onDevice=" + (res.onDevice || 0) + " rejected=" + res.rejected
+                + " ambiguous=" + (res.ambiguous || 0))
             if (res.added === 0) {
                 qaDeviceLog("upload-refused")
                 qaDeviceDone = true
@@ -312,10 +361,10 @@ ApplicationWindow {
     }
     Connections {
         target: SyncEngine
-        enabled: window.qaDeviceSpec !== null
+        enabled: window.qaTransferKind.length > 0
         function onSyncSummary(elapsedMs, tracks, videos, photos, skipped,
                                failed, podcasts, audiobooks) {
-            if (!window.qaDeviceSpec)
+            if (!window.qaTransferSpec)
                 return
             window.qaDeviceSawFinish = true
             window.qaDeviceLog("sync-summary elapsedMs=" + Math.round(elapsedMs)
@@ -324,16 +373,16 @@ ApplicationWindow {
                 + " failed=" + failed)
         }
         function onLastSyncChanged() {
-            if (!window.qaDeviceSpec)
+            if (!window.qaTransferSpec)
                 return
             window.qaDeviceLog("last-sync " + JSON.stringify(SyncEngine.lastSync))
         }
     }
     Connections {
         target: DeviceService
-        enabled: window.qaDeviceSpec !== null
+        enabled: window.qaTransferKind.length > 0
         function onTrackSaved(filename, ok) {
-            if (!window.qaDeviceSpec)
+            if (!window.qaTransferSpec)
                 return
             window.qaDeviceLog("download-saved name='" + filename + "' ok=" + ok)
             if (ok) {
@@ -344,7 +393,7 @@ ApplicationWindow {
             }
         }
         function onPullToast(message) {
-            if (!window.qaDeviceSpec)
+            if (!window.qaTransferSpec)
                 return
             window.qaDeviceLog("pull-toast '" + message + "'")
         }

@@ -1498,6 +1498,23 @@ Item {
             height: visible ? implicitHeight : 0
             onTriggered: root.customizeAlbum(albumCtxMenu.albumRef)
         }
+        // Explicit, per-item online lookup. The automatic pass reads files
+        // only, so this is where a cover request is allowed to start - for
+        // this album, not for the whole library.
+        ZuneMenuItem {
+            objectName: "albumLookupAction"
+            text: "Search Cover Online"
+            visible: !root.deviceSource
+            height: visible ? implicitHeight : 0
+            onTriggered: {
+                const first = root.tracksInAlbum(albumCtxMenu.albumRef, "")[0]
+                if (!first) return
+                const album = first.album || albumCtxMenu.albumRef.name
+                LibraryService.retryArtwork("album",
+                    { artist: MusicIdentity.owner(first), album: album })
+                toastHost.show("searching a cover for '" + album + "'")
+            }
+        }
         ZuneMenuItem {
             text: "Save Album to Library"
             visible: root.deviceSource
@@ -1544,6 +1561,21 @@ Item {
                     poster: LibraryService.artistImages[
                         artistCtxMenu.artistName.toLowerCase()] ?? ""
                 })
+            }
+        }
+        // A portrait has no local source, so browsing used to query
+        // MusicBrainz for every artist on every launch. Now it costs a
+        // request only when this artist is asked for by name.
+        ZuneMenuItem {
+            objectName: "artistLookupAction"
+            text: "Search Artist Picture Online"
+            visible: !root.deviceSource
+            height: visible ? implicitHeight : 0
+            onTriggered: {
+                LibraryService.retryArtwork("artist",
+                    { name: artistCtxMenu.artistName })
+                toastHost.show("searching a picture for '"
+                    + artistCtxMenu.artistName + "'")
             }
         }
         ZuneMenuItem {

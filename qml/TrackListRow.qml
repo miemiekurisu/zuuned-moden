@@ -271,6 +271,35 @@ Rectangle {
             onTriggered: row.editRequested()
         }
 
+        // One track, one lookup: the album this row belongs to, not the whole
+        // library. Library rows only - a device track has no local file whose
+        // cover could be found, and its album art already came off the player.
+        MenuItem {
+            id: lookupMenuItem
+            text: "Search Cover Online"
+            implicitHeight: 30
+            visible: row.playlistable
+            height: row.playlistable ? implicitHeight : 0
+            contentItem: Text {
+                text: lookupMenuItem.text
+                font.pixelSize: 13
+                font.weight: Font.Light
+                color: lookupMenuItem.highlighted ? Theme.textPrimary : Theme.textMid
+                leftPadding: Theme.spaceSm
+                verticalAlignment: Text.AlignVCenter
+            }
+            background: Rectangle {
+                color: lookupMenuItem.highlighted ? Theme.rowHoverPink : "transparent"
+            }
+            onTriggered: {
+                const album = row.track.album || ""
+                const artist = row.track.albumartist && row.track.albumartist.length > 0
+                    ? row.track.albumartist : (row.track.artist || "")
+                if (album === "" || artist === "") return
+                LibraryService.retryArtwork("album", { artist: artist, album: album })
+            }
+        }
+
         MenuItem {
             id: saveMenuItem
             objectName: "trackSaveAction"

@@ -6,9 +6,12 @@
 # is the GUI equivalent of tests/win-compat: no device, no sound (ZUUNED_MPV_AO is
 # the null driver) and no contact with the real profile, because every launch gets
 # its own ZUUNED_PROFILE_DIR plus its own ZUUNED_LOCK_SUFFIX and the run compares
-# the real profile before and after.  It needs no network to pass, but a launch
-# whose seeded library lacks covers does reach musicbrainz.org; that traffic is
-# incidental, logged per launch, and never asserted for or against.
+# the real profile before and after.  It needs no network to pass and, since
+# online artwork and metadata lookup became opt-in, it asks a provider nothing
+# at all: the music page case asserts the app's own "online lookup off" line and
+# that no provider request line appears.  (With Settings -> Library switched on
+# a launch whose seeded library lacks covers does reach musicbrainz.org; that is
+# the user's choice, not the gate's.)
 #
 # A started process is not proof of anything on Windows: a Qt Quick window can
 # come up with a clean stderr and paint nothing.  So each case ends with a
@@ -20,7 +23,10 @@
 # the MSVC x64 environment for winshot, loaded from msvc-env.ps1 when cl is not
 # already on PATH.  Nothing in this gate opens a USB device handle, so it certifies
 # the UI, the tools and the profile - never the wire.  The Windows wire evidence is
-# the hand test recorded in docs\WINDOWS_PORT.md: one Pavo Zune HD, opened.
+# the hand test recorded in docs\WINDOWS_PORT.md: one Pavo Zune HD, authenticated,
+# browsed, sent music, photos and video, and read the music back byte for byte -
+# a photo and a video have been re-listed on the player, never read off it.
+# Nothing here adds to that, and no run of this gate has ever opened a device.
 param(
     [string]$Deps = 'D:\dev\zuuned-deps',
     [string]$QtDir = 'D:\dev\Qt\6.11.0\msvc2022_64',
@@ -322,12 +328,23 @@ function Stop-Zuuned {
     }
 }
 
+# Only the harness's own instrumentation is forgiven, and it is forgiven by
+# name.  A blanket 'qml:' allowance used to sit in this pattern, and that is
+# what hid a real defect for a whole checkpoint: a QML binding that threw on
+# every transfer-queue row printed
+#   [qml-warn] qrc:/qt/qml/Zuuned/QueueEntryView.qml:147: TypeError: ...
+# which matched, so the gate stayed green while the app was broken.  From here
+# an engine warning is a failure, and the [qa] reports opt out by name.
+$script:ownReport = '^\[(debug|info|warning)\] qml: \[qa'
 $script:noisePattern =
-    'qml:|TypeError|ReferenceError|Cannot read|is not defined|does not exist|Local logs unavailable|did not capture|profile isolation is incomplete'
+    'TypeError|ReferenceError|Cannot read|is not defined|does not exist|Local logs unavailable|did not capture|profile isolation is incomplete'
 
 function Find-Noise {
     param([string[]]$Lines)
-    return @($Lines | Where-Object { $_ -match $script:noisePattern -and $_ -notmatch '\[qa\] ' })
+    return @($Lines | Where-Object {
+        (($_ -match $script:noisePattern) -or ($_ -match '^\[qml-')) -and
+        $_ -notmatch $script:ownReport
+    })
 }
 
 function Note-Diagnostics {
@@ -335,7 +352,7 @@ function Note-Diagnostics {
     # are gone, without letting a benign one turn the gate red.
     param([string]$Case, [string[]]$Lines)
     foreach ($line in $Lines) {
-        if ($line -match '(?i)(warn|error|fail)' -and $line -notmatch $script:noisePattern -and $line -notmatch '\[qa\] ') {
+        if ($line -match '(?i)(warn|error|fail)' -and $line -notmatch $script:noisePattern -and $line -notmatch $script:ownReport) {
             $script:noise.Add($Case + ' | ' + $line.Trim())
         }
     }
@@ -554,6 +571,26 @@ Check 'winshot build leaves no incremental pdb in the checkout' `
     (-not (Test-Path (Join-Path $root 'vc140.pdb')))
 
 Write-Host ''
+Write-Host '== QML type names: QtQuick exports a PathText of its own'
+# Deliberately outside any phase: this reads source, launches nothing, and costs
+# nothing, so every filtered run keeps it.  Qt6Quick.dll exports PathText (and
+# PathSvg), so a QML file that imports QtQuick without Zuuned resolves the name to
+# Qt's type and every binding on it throws at run time - which is exactly how the
+# queue rows lost their artwork, silently, with the gate passing.  The app's
+# singleton answers to ZPathText now, and no phase here loads a QML file that
+# forgets the import, so the rule can only be read off the source.
+$clash = @(Get-ChildItem (Join-Path $root 'qml') -Filter '*.qml' -Recurse |
+           Where-Object {
+               [regex]::Matches([string](Get-Content -LiteralPath $_.FullName -Raw),
+                                '(?m)(?<![A-Za-z0-9_./])PathText\s*\.').Count -gt 0
+           })
+Check 'no QML file uses a type name QtQuick also exports' `
+    ($clash.Count -eq 0) ('files=' + ($clash.Name -join ' '))
+$pathHeader = [string](Get-Content -LiteralPath (Join-Path $root 'src\PathText.h') -Raw)
+Check 'the path singleton is exposed to QML as ZPathText' `
+    ($pathHeader -match 'QML_NAMED_ELEMENT\(ZPathText\)')
+
+Write-Host ''
 Write-Host '== scan fixture: CJK album folder, path past MAX_PATH, WMA named .mp3'
 if (Select-Phase 'fixture') {
     if (-not $pythonExe) {
@@ -563,7 +600,8 @@ if (Select-Phase 'fixture') {
         $fx = Invoke-Proc -File $pythonExe -Arguments @(
             (Join-Path $PSScriptRoot 'make_scan_fixture.py'), $fixtureMusic,
             '--ffmpeg', $ffmpeg, '--force',
-            '--extra-roots', (Join-Path $fixture 'nonascii-roots')) -WorkDir $out -Timeout 300
+            '--extra-roots', (Join-Path $fixture 'nonascii-roots'),
+            '--photos', (Join-Path $fixture 'photos')) -WorkDir $out -Timeout 300
         Check 'the fixture put four tracks on disk' `
             ($fx.Code -eq 0 -and $fx.Out -match 'created=4') `
             (Format-KvDetail -Out ($fx.Out + [Environment]::NewLine + $fx.Err))
@@ -604,6 +642,25 @@ if (Select-Phase 'fixture') {
                 ('code=' + $rs.Code + ' nonAsciiName=' + $named + ' ' `
                  + ($rs.Out + ' ' + $rs.Err).Trim())
         }
+        # The photo category is the one the ordinary scan reaches through a
+        # different table and a different branch, and until now no Windows gate
+        # had ever walked it.  The folder name here is the same kind of text a Zune
+        # photo album is named from on a real send, so the CJK bytes that survive
+        # this scan are the bytes a transfer depends on.
+        Check 'the fixture put two photos in a Chinese-named album folder' `
+            ($fx.Out -match 'photos=2') ('out=' + $fx.Out.Trim())
+        $fixturePhotos = Join-Path $fixture 'photos'
+        $photoScan = Invoke-Proc -File $libraryTool -Timeout 300 `
+            -Arguments @('photoscan', $fixturePhotos, (Join-Path $out 'scan-photos.db'))
+        Check 'librarytool photoscan counts both photos in the Chinese folder' `
+            ($photoScan.Code -eq 0 -and $photoScan.Out -match 'total photos in db: 2') `
+            ('code=' + $photoScan.Code + ' ' + ($photoScan.Out + ' ' + $photoScan.Err).Trim())
+        $photoInsp = Invoke-Proc -File $pythonExe -Timeout 180 -Arguments @(
+            (Join-Path $PSScriptRoot 'inspect_scan_db.py'), (Join-Path $out 'scan-photos.db'),
+            '--expect-photos', '2', '--expect-codepoints', '0x7167,0x7247') -WorkDir $out
+        Check 'the photo scan stored the Chinese album folder intact' `
+            ($photoInsp.Code -eq 0) (Format-KvDetail -Out $photoInsp.Out)
+
         # A root stored as "/E:/Music" is not absolute on Windows: it resolves
         # against that drive's current directory, so the folder scanned nothing
         # and reported itself unreachable for ever.  LibraryDb repairs those
@@ -709,6 +766,17 @@ if (Select-Phase 'pages') {
                     ($wfStored -eq $wfRows) ('wfStored=' + $wfStored + ' wfRows=' + $wfRows)
                 Check 'the QML display helper and the row it feeds agree' `
                     ($wfLabel -eq '1') ('wfLabel=' + $wfLabel)
+                # Opt-in lookup.  A launch used to reach musicbrainz.org once per
+                # album without embedded art and once per artist on the grid, so a
+                # user with covers in their files watched requests they never asked
+                # for.  The app now says out loud that it asked nothing, and the one
+                # line the provider layer writes about a request must not appear.
+                $quiet = @($pageCase.Lines | Where-Object { $_ -match 'online lookup off' })
+                $asked = @($pageCase.Lines | Where-Object { $_ -match 'customize-http' })
+                Check 'a music launch reports that it looked nothing up online' `
+                    ($quiet.Count -ge 1) ('lines=' + $quiet.Count)
+                Check 'a music launch contacts no artwork provider' `
+                    ($asked.Count -eq 0) ('' + ($asked | Select-Object -First 1))
             }
         }
         # A device page with nothing attached is the case a user hits every time the
@@ -905,6 +973,28 @@ if (Select-Phase 'tools') {
             -Arguments @('probe', (Join-Path $fixtureMusic 'Sneaky Wma.mp3'))
         Check 'transcodetool sniffs the WMA stream inside a file named .mp3' `
             ($sneaky.Code -eq 0 -and $sneaky.Out -match 'duration=6\.') ('out=' + $sneaky.Out.Trim())
+        # The library is called with UTF-8 by the app itself (FrameThumbnailService,
+        # LibraryService and AudioCopyFingerprint all pass toUtf8()), while the CRT
+        # handed main() its argv in the ANSI code page: the tool probed a name the
+        # local code page cannot spell as question marks and failed on a file the
+        # application opened happily.  Its argv comes off the wide command line now.
+        # Two probes, because one name inside this code page and one outside it are
+        # different questions - ?? survives code page 936 untouched, Hebrew does not.
+        $han = [string][char]0x6F22 + [string][char]0x8A5E
+        $cjkTrack = Join-Path $fixtureMusic ($han + ' Album (2024)\Track One.mp3')
+        $cjkProbe = Invoke-Proc -File $transcodeTool -Timeout 120 -Arguments @('probe', $cjkTrack)
+        Check 'transcodetool probes a track under a Chinese album folder' `
+            ($cjkProbe.Code -eq 0 -and $cjkProbe.Out -match 'duration=6\.') ('out=' + $cjkProbe.Out.Trim())
+        $heb = (-join ([char]0x5DB, [char]0x5EA, [char]0x5E8, [char]0x5D1, [char]0x5EA)) + ' Root'
+        $hebTrack = Join-Path (Join-Path $fixture 'nonascii-roots') (Join-Path $heb 'Track One.mp3')
+        if (Test-Path -LiteralPath $hebTrack) {
+            $hebProbe = Invoke-Proc -File $transcodeTool -Timeout 120 -Arguments @('probe', $hebTrack)
+            Check 'transcodetool probes a track whose root the ANSI code page cannot spell' `
+                ($hebProbe.Code -eq 0 -and $hebProbe.Out -match 'duration=6\.') ('out=' + $hebProbe.Out.Trim())
+        }
+        else {
+            Skip 'transcodetool probe outside the ANSI code page' 'the non-ASCII roots are not on disk in this run'
+        }
     }
     else {
         Skip 'transcodetool probe' 'no fixture tone on disk'

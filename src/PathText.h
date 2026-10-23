@@ -24,7 +24,15 @@
 // must never be rewritten.
 class PathText : public QObject {
     Q_OBJECT
-    QML_ELEMENT
+    // QML_NAMED_ELEMENT, not QML_ELEMENT: Qt 6 owns the bare name PathText
+    // for its shapes type - Qt6Quick.dll exports PathText and PathSvg - and
+    // every QML file here imports QtQuick, so a singleton registered as
+    // PathText is Qt's type in any file that does not also import Zuuned.
+    // The call then fails per delegate as "Property 'url' of object
+    // QtQuick/PathText is not a function".  ZPathText belongs to nobody else,
+    // and a scan of every Qt6 DLL says it is the only name of ours that
+    // collided at all.
+    QML_NAMED_ELEMENT(ZPathText)
     QML_SINGLETON
 
 public:

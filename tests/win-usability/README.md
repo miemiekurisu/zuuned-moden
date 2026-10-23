@@ -101,7 +101,7 @@ silent unless asked, on either platform.
 
 `run.ps1` is that gate and it is complete.  An unfiltered run makes eighteen
 instrumented launches plus the tool, encoder, decode and profile probes and ends
-`launches=18 checks=99 failures=0 skips=0 killed=0` and `OVERALL=ok`:
+`launches=18 checks=116 failures=0 skips=0 killed=0` and `OVERALL=ok`:
 
     pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 
@@ -112,19 +112,30 @@ the seeded library (`-Only fixture,pages`).
 - `winshot` - compiles this tool into `build\win-usability\` and proves the build
   left no incremental `vc140.pdb` in the checkout.  Built on every run, filtered or
   not, for the run deletes the scratch tree first.
+- QML type names - outside every phase, so no `-Only` list can lose it.  `Qt6Quick.dll`
+  exports a `PathText` shapes type, every QML file here imports `QtQuick`, and in a file
+  that does not also import `Zuuned` the app's own singleton registered under that bare
+  name was Qt's type, so every binding on it threw at run time and queue-row artwork was
+  missing with both gates green.  It is now `ZPathText`; the phase fails if any
+  `qml/*.qml` writes a bare `PathText.` and pins the registered name, because no phase
+  launches a QML file that forgets the import, so only the source can be checked.
 - `fixture` - the fixture, a real `librarytool scan` over it, and the inspector: four
   tracks, four fingerprints, zero probe failures, the Chinese album folder and a path
   past 260 characters present in the database.  Then the two roots bugs: one scan per
   non-ASCII root folder, each expected to count its one track, and a seeded library
   full of `//e:/`-style watch-folder roots that a real `librarytool` run has to heal
-  on open.  Also seeds the library the page cases copy into their profiles.
+  on open.  Then `librarytool photoscan` over two pictures in a Chinese-named album
+  folder, because a photo library is otherwise only readable by an eye.  Also seeds the
+  library the page cases copy into their profiles.
 - `pages` - one launch each for music, videos, photos, podcasts and audiobooks with
   the seeded library, plus the device page with no device attached.  Every one ends
   with a capture, a paint verdict and the app's own `[qa]` report.  The music case
   also pins the path spelling it reports: at least one watch folder reached the app,
   every label it shows is spelled natively with no forward slash left in it, every
   stored path keeps one canonical forward-slash identity, and the row agrees with
-  `PathText::display()` for the path behind it.
+  `ZPathText.display()` for the path behind it.  It also pins the offline default: the
+  launch has to report `online lookup off`, and no provider request line may appear at
+  all, because online artwork and metadata lookup is opt-in now.
 - `settings` - the five settings tabs, each proving it is on the settings page.
 - `collapse` - the header pinned at 0 and at 1, with the value the window reports.
 - `compact` - one real file in the queue, then `winshot --move` through tall, narrow
@@ -133,7 +144,9 @@ the seeded library (`-Only fixture,pages`).
   growing the window brings the ribbon back, and shrinking it retires the ribbon with
   the island already up.
 - `tools` - `transcodetool probe` on a real MP3 and on a WMA stream named `.mp3`,
-  `librarytool names`, `librarytool customize`.
+  `librarytool names`, `librarytool customize`, `librarytool paths` and
+  `librarytool net`, plus `devicetool`, which answers what is plugged in without
+  opening it.
 - `encode` - the transcode layer *producing*, not only reading, because video sync and
   FLAC sync are nothing but production: FFmpeg makes a real three-second H.264 clip,
   profile 0 has to return ASF (magic `30 26 b2 75`) at the source frame size with the
@@ -187,8 +200,10 @@ Six things it cannot certify, and does not claim to:
   playback; nobody listened to it, so it certifies no waveform.
 - Dismissing the Now Playing island by clicking its X needs a mouse.  The gate proves
   the island opens on resize and that the ribbon retires and returns with the window.
-- Nothing needs the network, but a GUI launch does reach musicbrainz.org for artwork
-  discovery exactly as it does on Linux, and a 503 there is recorded, not asserted.
+- Nothing needs the network, and by default nothing uses it: online artwork and
+  metadata lookup is a Settings switch, so the music-page case asserts the app's
+  own `online lookup off` report and that no provider request line appears at all.
+  A user who turns the switch on does reach musicbrainz.org, as on Linux.
 - On a 1080p-class logical desktop the default 1280x800 window is already below
   `Theme.headroomCompactBelow`, so the compact island is the ordinary Windows view and
   the top ribbon needs an enlarged window by design.

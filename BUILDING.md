@@ -263,7 +263,7 @@ real profile stayed untouched.
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 ```
 
-Expected: `launches=18 checks=107 failures=0 skips=0 killed=0` and `OVERALL=ok` -
+Expected: `launches=18 checks=116 failures=0 skips=0 killed=0` and `OVERALL=ok` -
 the check count is whatever the gate pins today and moves when a pin is added, so the
 number to hold it to is `failures=0`. It
 needs the same MSVC environment as the build and compiles its own capture tool into

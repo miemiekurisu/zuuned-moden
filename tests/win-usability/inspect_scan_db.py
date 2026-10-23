@@ -7,7 +7,7 @@ candidate.  What is expected is passed as code points: the CJK fixture folder is
 the only way to express the check without depending on the console codepage of
 the caller.
 
-    python inspect_scan_db.py <db> [--expect-tracks N]
+    python inspect_scan_db.py <db> [--expect-tracks N] [--expect-photos N]
            [--expect-codepoints 0xNN,0xNN] [--expect-long-segments N]
 
 Exit code 0 when every requested property holds, 1 otherwise.
@@ -22,6 +22,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("db")
     ap.add_argument("--expect-tracks", type=int, default=None)
+    ap.add_argument("--expect-photos", type=int, default=None)
     ap.add_argument("--expect-codepoints", default=None)
     ap.add_argument("--expect-long-segments", type=int, default=None)
     ap.add_argument("--min-longest-path", type=int, default=None)
@@ -33,6 +34,8 @@ def main() -> int:
     rows = cur.execute(
         "SELECT filepath, title, duration, audio_fingerprint FROM tracks"
         " ORDER BY filepath").fetchall()
+    photoRows = cur.execute(
+        "SELECT filepath, filename FROM photos ORDER BY filepath").fetchall()
     failures = cur.execute("SELECT COUNT(*) FROM music_probe_failures").fetchone()[0]
     folders = cur.execute("SELECT COUNT(*) FROM watch_folders").fetchone()[0]
 
@@ -41,11 +44,13 @@ def main() -> int:
     print("probe_failures=%d" % failures)
     print("watch_folders=%d" % folders)
     print("fingerprints=%d" % sum(1 for r in rows if (r[3] or "").strip()))
+    print("photos=%d" % len(photoRows))
     print("min_duration=%d" % (min(durations) if durations else -1))
     # Filenames are reported escaped: the gate prints this line verbatim, and a
     # Windows console would otherwise mangle the CJK fixture.
     print("paths=%s" % ascii([r[0] for r in rows]))
     print("titles=%s" % ascii([r[1] for r in rows]))
+    print("photo_paths=%s" % ascii([r[0] for r in photoRows]))
 
     ok = True
     if args.expect_tracks is None:
@@ -56,6 +61,14 @@ def main() -> int:
         if not matched:
             ok = False
 
+    if args.expect_photos is None:
+        print("photos_expected=yes")
+    else:
+        matched = len(photoRows) == args.expect_photos
+        print("photos_expected=%s" % ("yes" if matched else "no"))
+        if not matched:
+            ok = False
+
     if failures:
         ok = False
     print("probe_failures_clean=%s" % ("yes" if not failures else "no"))
@@ -63,6 +76,7 @@ def main() -> int:
     if args.expect_codepoints:
         want = "".join(chr(int(t, 16)) for t in args.expect_codepoints.split(","))
         hit = [r[0] for r in rows if want in r[0]]
+        hit += [r[0] for r in photoRows if want in r[0]]
         print("codepoint_path_rows=%d" % len(hit))
         if not hit:
             ok = False
