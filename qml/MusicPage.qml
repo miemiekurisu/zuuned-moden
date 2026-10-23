@@ -54,6 +54,8 @@ Item {
         // via visible/height, so it's attached conditionally)
         if (!root.deviceSource)
             albumCtxMenu.insertMenu(1, albumPlSubmenu)
+        if (qaPivot.length > 0 && pivots.tabs.indexOf(qaPivot) >= 0)
+            pivots.current = qaPivot
     }
 
     // ── Navigation (MusicNavState) ──
@@ -74,6 +76,16 @@ Item {
 
     readonly property var drill: navStack.length > 0 ? navStack[navStack.length - 1] : null
 
+    // QA harness (`--music-pivot Albums`): a gate or a screenshot has to reach a
+    // specific pivot.  A painted frame of the artists circles proves nothing about
+    // album card art, and the tabs are the only way there by hand.  Validated
+    // against the live tab list, so a bad name leaves the page exactly as it was;
+    // quiet unless the flag is passed, on every platform.
+    readonly property string qaPivot: {
+        const args = Qt.application.arguments
+        const i = args.indexOf("--music-pivot")
+        return i >= 0 && i + 1 < args.length ? String(args[i + 1]) : ""
+    }
     // ── ONE spine, ONE plan per page (2026-09-06): every pivot's
     // content left-anchors to the same x and shares the same cell
     // width, so a tab click never moves the tabs, re-centers the
@@ -155,6 +167,20 @@ Item {
         navStack.length === 0 ? searchText : "")
     readonly property var genreRows: filterNamed(source.genresList,
         navStack.length === 0 ? searchText : "")
+    // The only picture a local library really has for a person is the cover of
+    // one of their own albums, so the Artists pivot borrows exactly that. Built
+    // once per library revision rather than per cell: a large library would
+    // otherwise rescan every album for every artist tile.
+    readonly property var artistArtOwners: MusicIdentity.localArtOwners(
+        deviceSource ? [] : source.albumsList, root.albumHasArt)
+
+    // Does the library's own art cache hold this album's picture right now. A
+    // read, never a request: an album tile asks for its cover, an artist tile
+    // only looks at what that already produced.
+    function albumHasArt(album) {
+        return String(LibraryService.artPaths[LibraryService.artKey(
+            album.artArtist || "", album.artAlbum || "")] || "") !== ""
+    }
 
     // ── Songs pivot: search + sortable columns ──
     property string sortField: "title"
@@ -253,6 +279,8 @@ Item {
         return list.map(t => ({
             filepath: t.filepath || "", title: t.title || "",
             artist: t.artist || "", album: t.album || "",
+            albumartist: (t.albumartist && t.albumartist.length > 0)
+                         ? t.albumartist : (t.artist || ""),
             discNumber: t.discNumber || 0, year: t.year || 0,
             libraryId: t.libraryId !== undefined ? t.libraryId : -1
         }))
@@ -593,6 +621,8 @@ Item {
                         artItemId: modelData.artItemId || 0
                         localArt: !root.deviceSource
                         photoUrl: LibraryService.artistImages[modelData.name.toLowerCase()] ?? ""
+                        fallbackArtist: (root.artistArtOwners[modelData.name.toLowerCase()] || {}).artist || ""
+                        fallbackAlbum: (root.artistArtOwners[modelData.name.toLowerCase()] || {}).album || ""
                         artworkDiscovery: root.deviceSource ? ({})
                             : (LibraryService.artistArtworkStatus || ({}))[modelData.name.toLowerCase()] || ({})
                         Component.onCompleted: LibraryService.requestArtistImage(modelData.name)
@@ -1352,6 +1382,7 @@ Item {
         PlayerService.setQueue(rows.map(t => ({
             filepath: t.filepath, title: t.title,
             artist: t.artist, album: t.album, libraryId: t.id,
+            albumartist: t.albumartist || t.artist || "",
             discNumber: t.discNumber || 0, year: t.year || 0
         })), 0)
         root._plQueueLen = rows.length

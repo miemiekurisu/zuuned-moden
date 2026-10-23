@@ -119,6 +119,13 @@ public:
     // itself, because a file that already carries a cover never needed one.
     ZUNE_SETTING(bool, autoMetadataLookup, setAutoMetadataLookup,
                  "autoMetadataLookup", false, toBool)
+    // Album covers are the one lookup that is on by default. A cover exists for
+    // almost every commercial album, the store answers from the two names the
+    // file already carries, and the answer is a picture and nothing else - it
+    // never rewrites a tag or replaces art the user's own files supplied.
+    // Metadata and artist portraits stay with autoMetadataLookup above.
+    ZUNE_SETTING(bool, albumCoverLookup, setAlbumCoverLookup,
+                 "albumCoverLookup", true, toBool)
 
     // Artwork is a reversible display preference. Each print keeps its own
     // tuning; changing looks never rewrites source artwork or metadata.

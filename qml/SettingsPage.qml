@@ -916,19 +916,37 @@ Item {
 
                     Sblk {
                         title: "Music artwork"
-                        desc: "Covers are read from your own files automatically — an embedded picture or a folder image never needs the network. A provider lookup runs only when you ask for it: right-click one album, artist or track, or use the button below. Your existing artwork stays yours."
+                                                desc: "Covers are read from your own files first: an embedded picture or a folder image never needs the network, and art you already have is never replaced. An album that stays blank can ask a music store for its cover, which is on by default. Portraits and tag lookups go to MusicBrainz and stay off until you ask."
+                        RowLayout {
+                            spacing: Theme.spaceSm
+                            SpokenCheckBox {
+                                objectName: "albumCoverLookupToggle"
+                                checked: AppSettings.albumCoverLookup
+                                Accessible.name: "look up missing album covers from the music store"
+                                onClicked: AppSettings.albumCoverLookup =
+                                    !AppSettings.albumCoverLookup
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: "look up missing album covers from the music store"
+                                color: Theme.textSecondary
+                                font.pixelSize: 13
+                                font.weight: Font.Light
+                                wrapMode: Text.WordWrap
+                            }
+                        }
                         RowLayout {
                             spacing: Theme.spaceSm
                             SpokenCheckBox {
                                 objectName: "autoMetadataLookupToggle"
                                 checked: AppSettings.autoMetadataLookup
-                                Accessible.name: "look up artwork and metadata online"
+                                Accessible.name: "look up artist portraits and tags online"
                                 onClicked: AppSettings.autoMetadataLookup =
                                     !AppSettings.autoMetadataLookup
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: "look up artwork and metadata online"
+                                text: "look up artist portraits and tags online (MusicBrainz)"
                                 color: Theme.textSecondary
                                 font.pixelSize: 13
                                 font.weight: Font.Light
@@ -1303,8 +1321,12 @@ Item {
                                         for (let i = 0; i < rows.length
                                                  && urls.length < 8; i++) {
                                             const t = rows[i]
+                                            // The album's owner names the cover,
+                                            // not the track credit: same rule as
+                                            // the grid, the drill-down and the
+                                            // player, and the row carries both.
                                             const key = LibraryService.artKey(
-                                                t.artist, t.album)
+                                                t.albumartist || t.artist, t.album)
                                             if (seen[key])
                                                 continue
                                             seen[key] = true

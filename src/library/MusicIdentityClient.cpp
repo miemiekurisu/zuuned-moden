@@ -28,6 +28,9 @@ constexpr qint64 kNegativeTtl = 5 * 60 * 1000;
 constexpr qint64 kStaleGraceTtl = 6 * 24 * 60 * 60 * 1000LL;
 constexpr qint64 kFailureCooldown = 30 * 1000;
 constexpr qint64 kMaxJsonBytes = 8 * 1024 * 1024;
+// A store cover is kept at most 400px on disk, so asking for the CDN's next
+// published size above that is enough; 100px would be upscaled by the app.
+constexpr int kStoreArtworkEdge = 600;
 QMutex cacheMutex;
 
 struct JsonRequest {
@@ -101,12 +104,16 @@ QString imageUrl(const QString &value) {
         && !value.contains(QLatin1String("/artist//")) ? url.toString(QUrl::FullyEncoded) : QString();
 }
 
-QString deezerId(const QJsonValue &value) {
+// Deezer and the store both answer with a JSON number for an id, which is the
+// one shape MusicBrainz never uses - so a numeric id tells the two apart.
+QString numericId(const QJsonValue &value) {
     const QString id = value.isString() ? value.toString()
         : value.isDouble() ? QString::number(value.toInteger()) : QString();
     static const QRegularExpression digits(QStringLiteral("^[1-9][0-9]{0,17}$"));
     return digits.match(id).hasMatch() ? id : QString();
 }
+
+QString deezerId(const QJsonValue &value) { return numericId(value); }
 
 QString joinNonempty(const QStringList &values) {
     QStringList out;
@@ -272,6 +279,23 @@ QString MusicIdentityClient::normalizedName(const QString &raw) {
     return out.simplified();
 }
 
+QString MusicIdentityClient::storeArtworkUrl(const QString &raw) {
+    const QUrl parsed(raw);
+    const QString host = parsed.host().toLower();
+    if (parsed.scheme() != QLatin1String("https")
+            || (host != QLatin1String("mzstatic.com")
+                && !host.endsWith(QLatin1String(".mzstatic.com"))))
+        return {};
+    static const QRegularExpression sized(QStringLiteral("/[0-9]{1,5}x[0-9]{1,5}bb\\.jpg$"));
+    const QString encoded = parsed.toString(QUrl::FullyEncoded);
+    const auto match = sized.match(encoded);
+    // Only the size-bearing tail is replaced, and imageUrl() re-checks the
+    // result, so a provider response cannot aim the downloader at another host.
+    if (!match.hasMatch()) return {};
+    return imageUrl(encoded.left(match.capturedStart())
+                        + QStringLiteral("/%1x%1bb.jpg").arg(kStoreArtworkEdge));
+}
+
 QJsonObject MusicIdentityClient::json(const QUrl &url, const QString &provider,
     const std::function<bool(const QJsonObject &)> &valid,
     const std::function<bool(const QJsonObject &)> &empty, QString *error, bool missingIsEmpty) const {
@@ -388,6 +412,31 @@ QJsonObject MusicIdentityClient::json(const QUrl &url, const QString &provider,
     return body;
 }
 
+namespace {
+// The matching rule every lookup shares, whether a scan asked for a cover or a
+// right-click asked for tags: normalized artist AND title must agree, edition
+// qualifiers are never stripped, and a name that more than one entry claims is
+// ambiguous rather than a coin flip. Rows carry "album" for a release-group and
+// only "title" for a recording.
+QStringList exactIdentityIds(const QVariantList &rows, const QString &owner,
+                            const QString &title, bool *incomplete) {
+    QStringList ids;
+    for (const auto &value : rows) {
+        const auto row = value.toMap();
+        if (incomplete && row.value(QStringLiteral("searchIncomplete")).toBool())
+            *incomplete = true;
+        if (MusicIdentityClient::normalizedName(row.value(QStringLiteral("artist")).toString()) != owner)
+            continue;
+        QString rowTitle = row.value(QStringLiteral("album")).toString();
+        if (rowTitle.isEmpty()) rowTitle = row.value(QStringLiteral("title")).toString();
+        if (MusicIdentityClient::normalizedName(rowTitle) != title) continue;
+        const QString id = row.value(QStringLiteral("providerId")).toString();
+        if (!id.isEmpty() && !ids.contains(id)) ids.append(id);
+    }
+    return ids;
+}
+} // namespace
+
 QVariantList MusicIdentityClient::searchAlbums(const QString &query, const QString &artistHint, QString *error, const QString &artistMbid) const {
     if (error) error->clear();
     if (query.trimmed().isEmpty()) return {};
@@ -410,6 +459,52 @@ QVariantList MusicIdentityClient::searchAlbums(const QString &query, const QStri
             body.value(QStringLiteral("count")).toInt() > body.value(QStringLiteral("release-groups")).toArray().size());
         const QString id = row.value(QStringLiteral("providerId")).toString();
         if (!row.isEmpty() && !ids.contains(id)) { out.append(row); ids.insert(id); }
+    }
+    return out;
+}
+
+QVariantList MusicIdentityClient::searchStoreAlbums(const QString &album, const QString &artist,
+                                                   const QString &country, QString *error) const {
+    if (error) error->clear();
+    const QString term = (artist.trimmed() + QLatin1Char(' ') + album.trimmed()).trimmed();
+    if (term.isEmpty() || country.trimmed().isEmpty()) return {};
+    QUrl url(QStringLiteral("https://itunes.apple.com/search"));
+    QUrlQuery parameters;
+    parameters.addQueryItem(QStringLiteral("media"), QStringLiteral("music"));
+    parameters.addQueryItem(QStringLiteral("entity"), QStringLiteral("album"));
+    parameters.addQueryItem(QStringLiteral("limit"), QStringLiteral("25"));
+    parameters.addQueryItem(QStringLiteral("country"), country.trimmed().toLower());
+    parameters.addQueryItem(QStringLiteral("term"), term);
+    url.setQuery(parameters);
+    const auto body = json(url, QStringLiteral("iTunes"),
+        [](const auto &o) { return o.value(QStringLiteral("results")).isArray(); },
+        [](const auto &o) { return o.value(QStringLiteral("results")).toArray().isEmpty(); }, error);
+    QVariantList out;
+    QSet<QString> ids;
+    for (const auto &value : body.value(QStringLiteral("results")).toArray()) {
+        const auto row = value.toObject();
+        // One album is only an album here when the store calls it a collection;
+        // a single carries other artwork and answers a different question.
+        if (row.value(QStringLiteral("wrapperType")).toString().compare(
+                QStringLiteral("collection"), Qt::CaseInsensitive) != 0) continue;
+        const QString id = numericId(row.value(QStringLiteral("collectionId")));
+        const QString title = row.value(QStringLiteral("collectionName")).toString().trimmed();
+        const QString credited = row.value(QStringLiteral("artistName")).toString().trimmed();
+        const QString artwork = storeArtworkUrl(row.value(QStringLiteral("artworkUrl100")).toString());
+        const QString release = row.value(QStringLiteral("releaseDate")).toString();
+        // A row that cannot supply a cover is not a candidate for a lookup whose
+        // only question is the cover; it is dropped rather than reported twice.
+        if (id.isEmpty() || title.isEmpty() || credited.isEmpty() || artwork.isEmpty()
+                || ids.contains(id)) continue;
+        out.append(QVariantMap{{QStringLiteral("provider"), QStringLiteral("store")},
+            {QStringLiteral("store"), QStringLiteral("itunes")},
+            {QStringLiteral("providerId"), id}, {QStringLiteral("kind"), QStringLiteral("album")},
+            {QStringLiteral("album"), title}, {QStringLiteral("title"), title},
+            {QStringLiteral("artist"), credited}, {QStringLiteral("albumartist"), credited},
+            {QStringLiteral("artworkUrl"), artwork}, {QStringLiteral("releaseDate"), release},
+            {QStringLiteral("year"), release.left(4)},
+            {QStringLiteral("country"), country.trimmed().toLower()}});
+        ids.insert(id);
     }
     return out;
 }
@@ -569,19 +664,13 @@ QString MusicIdentityClient::automaticAlbumImageUrl(const QString &artist, const
         QString searchError;
         const auto matches = searchAlbums(album, artist, &searchError);
         if (!searchError.isEmpty()) { if (error) *error = searchError; return {}; }
-        QSet<QString> exact;
-        for (const auto &value : matches) {
-            const auto row = value.toMap();
-            // Never remove edition qualifiers or pick the first fuzzy match.
-            if (normalizedName(row.value(QStringLiteral("artist")).toString()) == owner
-                && normalizedName(row.value(QStringLiteral("album")).toString()) == title)
-                exact.insert(row.value(QStringLiteral("providerId")).toString());
-        }
+        // Never remove edition qualifiers or pick the first fuzzy match.
+        const auto exact = exactIdentityIds(matches, owner, title, nullptr);
         if (exact.size() != 1) {
             if (error && exact.size() > 1) *error = QStringLiteral("Ambiguous album; choose a match in Customize.");
             return {};
         }
-        id = *exact.cbegin();
+        id = exact.first();
     }
     QString caaError, fanartError;
     const auto covers = caaAlbumUrls(id, &caaError);
@@ -948,4 +1037,89 @@ QStringList MusicIdentityClient::caaReleaseUrls(const QString &releaseMbid, QStr
         if (!url.isEmpty() && !urls.contains(url)) urls.append(url);
     }
     return urls;
+}
+
+namespace {
+// Catalogues are separate: a Japanese or Greater China release is often absent
+// from the American one, and a Chinese release from all three. The order is
+// fixed so the same library always asks the same questions in the same order.
+const QStringList &storeCatalogues() {
+    static const QStringList ladder = {QStringLiteral("us"), QStringLiteral("jp"), QStringLiteral("tw"),
+        QStringLiteral("hk"), QStringLiteral("gb"), QStringLiteral("de")};
+    return ladder;
+}
+
+// Smallest catalogue id first, without trusting a long id to fit a number.
+bool storeIdFirst(const QString &left, const QString &right) {
+    return left.size() != right.size() ? left.size() < right.size() : left < right;
+}
+} // namespace
+
+MusicIdentityClient::MatchResult MusicIdentityClient::resolveStoreAlbumArtwork(
+        const QString &artist, const QString &album, const QVariantMap &) const {
+    MatchResult result;
+    const QString owner = normalizedName(artist), title = normalizedName(album);
+    if (owner.isEmpty() || title.isEmpty() || owner == QLatin1String("unknown artist")
+            || title == QLatin1String("unknown album")) {
+        result.reason = QStringLiteral("Artist and album are required.");
+        return result;
+    }
+    bool sawRows = false;
+    for (const QString &country : storeCatalogues()) {
+        QString error;
+        const auto rows = searchStoreAlbums(album, artist, country, &error);
+        if (!error.isEmpty()) {
+            // A catalogue that refused, timed out or rate-limited is not a cue
+            // to ask five more questions of the same endpoint. The next rungs
+            // would be answered the same way, and the burst is what earned the
+            // refusal; a whole library looked up this way ends up with no
+            // covers at all. Say the store is unavailable and let the service
+            // park this album and ask again later.
+            result.status = QStringLiteral("providerUnavailable");
+            result.reason = error;
+            return result;
+        }
+        sawRows |= !rows.isEmpty();
+        QVariantList matches;
+        const auto ids = exactIdentityIds(rows, owner, title, nullptr);
+        for (const auto &value : rows) {
+            const auto row = value.toMap();
+            if (ids.contains(row.value(QStringLiteral("providerId")).toString())) matches.append(row);
+        }
+        if (matches.isEmpty()) continue;
+        // Several editions of one record share the name and the cover. Take the
+        // earliest and then the smallest id so two passes ask for one picture.
+        std::stable_sort(matches.begin(), matches.end(), [](const QVariant &a, const QVariant &b) {
+            const auto left = a.toMap(), right = b.toMap();
+            const QString leftDate = left.value(QStringLiteral("releaseDate")).toString();
+            const QString rightDate = right.value(QStringLiteral("releaseDate")).toString();
+            if (leftDate != rightDate) {
+                if (leftDate.isEmpty()) return false;
+                if (rightDate.isEmpty()) return true;
+                return leftDate < rightDate;
+            }
+            return storeIdFirst(left.value(QStringLiteral("providerId")).toString(),
+                                right.value(QStringLiteral("providerId")).toString());
+        });
+        const auto chosen = matches.first().toMap();
+        result.status = QStringLiteral("ready");
+        result.imageUrl = chosen.value(QStringLiteral("artworkUrl")).toString();
+        result.identity = {{QStringLiteral("provider"), QStringLiteral("store")},
+            {QStringLiteral("store"), QStringLiteral("itunes")},
+            {QStringLiteral("providerId"), chosen.value(QStringLiteral("providerId"))},
+            {QStringLiteral("country"), country},
+            {QStringLiteral("artworkScope"), QStringLiteral("storeAlbum")}};
+        result.reason = QStringLiteral("Cover comes from the %1 catalogue of the music store.")
+                            .arg(country.toUpper());
+        return result;
+    }
+    // Candidates stay empty on purpose. Customize offers MusicBrainz matches,
+    // and a store row cannot be confirmed, corrected or re-picked there.
+    if (sawRows) {
+        result.reason = QStringLiteral("No music store release matches this artist and album exactly.");
+    } else {
+        result.status = QStringLiteral("noArtwork");
+        result.reason = QStringLiteral("No music store carries this album.");
+    }
+    return result;
 }

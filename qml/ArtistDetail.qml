@@ -33,12 +33,28 @@ Item {
     property bool deviceSource: false
 
     readonly property bool narrow: width < 700
+    // The same rule the Artists pivot uses: with no portrait file to read, a
+    // local artist wears the cover of one of their own albums, taken straight
+    // out of the library's art cache. Read only - no lookup, no request.
+    readonly property string albumFallbackUrl: {
+        const owner = MusicIdentity.localArtOwners(albums, detailAlbumHasArt)[
+            artistName.toLowerCase()]
+        return owner && owner.album
+            ? (LibraryService.artPaths[
+                   LibraryService.artKey(owner.artist, owner.album)] || "")
+            : ""
+    }
+    function detailAlbumHasArt(album) {
+        return String(LibraryService.artPaths[LibraryService.artKey(
+            album.artArtist || "", album.artAlbum || "")] || "") !== ""
+    }
 
     // Playback (local library only)
     function _queueItems() {
         return page.tracks.map(t => ({
             filepath: t.filepath || "", title: t.title || "",
             artist: t.artist || "", album: t.album || "",
+            albumartist: t.albumartist || t.artist || "",
             discNumber: t.discNumber || 0, year: t.year || 0,
             libraryId: t.libraryId !== undefined ? t.libraryId : -1
         }))
@@ -132,8 +148,7 @@ Item {
                     radius: width / 2
                     color: Theme.artworkPlaceholder
                 }
-                // The Zune exposes representative artwork for device
-                // browsing; local portraits use artist photos only.
+                // The Zune exposes representative artwork for device browsing.
                 Loader {
                     anchors.fill: parent
                     active: !page.localArt
@@ -143,8 +158,26 @@ Item {
                         showPlaceholder: false
                     }
                 }
-                // An unavailable artist photo leaves a flat circle in
-                // the local library instead of borrowing an album cover.
+                // The artist's own album cover, under the portrait slot.
+                ArtworkImage {
+                    id: detailAlbumArt
+                    anchors.fill: parent
+                    source: page.albumFallbackUrl
+                    visible: status === Image.Ready
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    layer.enabled: page.albumFallbackUrl !== ""
+                    layer.effect: OpacityMask {
+                        maskSource: Rectangle {
+                            width: detailAlbumArt.width
+                            height: detailAlbumArt.height
+                            radius: width / 2
+                        }
+                    }
+                }
+
+                // An artist photo paints over that cover; without one the
+                // cover, and then the flat circle, stays visible.
                 ArtworkImage {
                     id: artistPhoto
                     anchors.fill: parent

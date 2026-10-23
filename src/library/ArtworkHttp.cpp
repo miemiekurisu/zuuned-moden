@@ -19,6 +19,15 @@ QMutex musicBrainzMutex;
 std::chrono::steady_clock::time_point nextMusicBrainzRequest;
 int lastMusicBrainzBusyStatus = 503;
 constexpr qint64 kMaximumRetryWaitMs = 8000;
+// The music store's search endpoint publishes no quota. What it does publish,
+// observed here, is a plain HTTP 429 a couple of dozen searches into a
+// library-sized burst - and a refused search reads to the app exactly like an
+// album the store does not carry, so a burst is how every cover in a real
+// collection ends up blank. One search in flight, spaced like this, is the fix.
+QMutex storeSearchMutex;
+std::chrono::steady_clock::time_point nextStoreSearch;
+constexpr qint64 kStoreSearchIntervalMs = 2000;
+constexpr qint64 kMaximumStoreSearchWaitMs = 30000;
 std::atomic_bool artworkStopping{false};
 
 ArtworkHttp::Response cancelledArtworkResponse() {
@@ -72,9 +81,60 @@ ArtworkHttp::Response artworkHttpAttempt(const QUrl &url, bool musicBrainz) {
     reply->deleteLater();
     return result;
 }
+
+ArtworkHttp::Response artworkStoreSearch(const QUrl &url) {
+    if (artworkStopping.load()) return cancelledArtworkResponse();
+    // One store search in flight and no two starts closer than the interval,
+    // across every worker in this process. The lock is held through a retry so
+    // a Retry-After earned by one album delays the next album as well.
+    while (!storeSearchMutex.tryLock(25))
+        if (artworkStopping.load()) return cancelledArtworkResponse();
+    const auto unlock = qScopeGuard([] { storeSearchMutex.unlock(); });
+    ArtworkHttp::Response result;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        if (artworkStopping.load()) return cancelledArtworkResponse();
+        const auto now = std::chrono::steady_clock::now();
+        const qint64 wait = std::chrono::duration_cast<std::chrono::milliseconds>(
+            nextStoreSearch - now).count();
+        if (wait > kMaximumStoreSearchWaitMs) {
+            // Past this point the honest answer is "the store is busy", which
+            // parks the album and asks again later. Returning an empty result
+            // instead would file a rate limit as "this album has no cover".
+            fprintf(stderr, "[album-art] store search waits behind a %lld ms cooldown\n",
+                    static_cast<long long>(wait));
+            result.status = 503;
+            result.networkError = QNetworkReply::ServiceUnavailableError;
+            return result;
+        }
+        for (qint64 remaining = wait; remaining > 0; remaining -= 25) {
+            if (artworkStopping.load()) return cancelledArtworkResponse();
+            QThread::msleep(static_cast<unsigned long>(qMin(qint64(25), remaining)));
+        }
+        nextStoreSearch = std::chrono::steady_clock::now()
+            + std::chrono::milliseconds(kStoreSearchIntervalMs);
+        result = artworkHttpAttempt(url, false);
+        if (result.success() || (result.status != 429 && result.status != 503)) break;
+        const qint64 requested = ArtworkHttp::retryAfterMs(result.retryAfter);
+        const qint64 backoff = requested >= 0
+            ? requested : kStoreSearchIntervalMs * 4 * (attempt + 1);
+        if (backoff > kMaximumStoreSearchWaitMs) break;
+        nextStoreSearch = qMax(nextStoreSearch,
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(backoff));
+    }
+    return result;
+}
 } // namespace
 
 void ArtworkHttp::beginShutdown() { artworkStopping.store(true); }
+
+// Only the search endpoint is paced. Its answers cost the store nothing but
+// query parsing, which is precisely why it is the one that pushes back; the
+// CDN that serves the pictures it names never sees more than one request per
+// cover. A host that merely contains the name is not the store.
+bool ArtworkHttp::isStoreSearch(const QUrl &url) {
+    return url.host().compare(QLatin1String("itunes.apple.com"), Qt::CaseInsensitive) == 0
+        && url.path().compare(QLatin1String("/search"), Qt::CaseInsensitive) == 0;
+}
 
 qint64 ArtworkHttp::retryAfterMs(const QByteArray &header) {
     const QByteArray value = header.trimmed();
@@ -97,7 +157,8 @@ qint64 ArtworkHttp::retryAfterMs(const QByteArray &header) {
 
 ArtworkHttp::Response ArtworkHttp::get(const QUrl &url, bool musicBrainz) {
     if (artworkStopping.load()) return cancelledArtworkResponse();
-    if (!musicBrainz) return artworkHttpAttempt(url, false);
+    if (!musicBrainz)
+        return isStoreSearch(url) ? artworkStoreSearch(url) : artworkHttpAttempt(url, false);
     // Only one MusicBrainz request can start per second across every
     // sheet/worker in this process. Hold the lock through retries so a
     // second lookup also observes a provider-wide Retry-After cooldown.

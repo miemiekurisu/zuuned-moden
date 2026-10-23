@@ -1161,6 +1161,86 @@ Left alone on purpose: the print lab's own render path, which is a Linux-line ar
 carries no Windows claim, and the three uncalled ``popen()`` sites in
 ``libzune/src/transcode.c``, already recorded above under what this sweep does not re-check.
 
+## Twelfth sweep: a name you may rewrite but not delete (2026-10-24)
+
+The album-art path, asked as a compatibility question rather than a UI one, because that is what
+turned out to be in it.  Four findings, and the first is the same class of defect that opened this
+document: an assumption that is simply true on POSIX and has no Windows counterpart.
+
+**A destination an in-process handle still owns cannot be deleted.**  ``AlbumArtService``'s
+``storeToCache()`` staged a picture into a live ``QTemporaryFile`` and published it with
+``QFile::remove(dst)`` plus ``QFile::copy(src, dst)``.  Windows refuses the removal of a name whose
+owning object has not been destroyed - closing the file is not enough, the handle is held by the
+object - so ``remove()`` returned false with a sharing violation, ``copy()`` then refused the
+destination that was still sitting there, and the branch returned false.  POSIX happily unlinks an
+open file, so these lines have never misbehaved anywhere else.  The branch is the verbatim-JPEG
+fast path for a picture that is already a JPEG of 400 px or less, which is what a ``folder.jpg``
+and a device thumbnail usually are, and a slow path that *decodes and re-saves* is unaffected:
+this is why the symptom was "folder and device covers are missing" and not "artwork is broken".
+``copyBytes()`` opens the destination ``WriteOnly | Truncate`` and streams; a holder that shares
+reads and writes allows that, it withholds only deletion.
+
+The rule is worth more than the fix, so the shape was hunted rather than assumed.  What the sweep
+looked at, and cleared:
+
+- the four ``QFile::remove(dest)`` sites in ``src/LibraryService.cpp`` remove a cache path they then
+  write themselves with ``img.save()`` or an external frame grabber.  No live object owns those
+  names, so there is no held handle to refuse the delete, and none of them copies onto a staged
+  temporary name.
+- the two publishers that *do* stage into a live ``QTemporaryFile`` - ``install()`` in
+  ``src/library/OnlineAlbumArtService.cpp`` and ``installAutomaticPortrait()`` in
+  ``src/library/ArtistImageService.cpp`` - publish with ``link()`` onto a destination they first
+  prove absent.  ``link()`` fails with ``EEXIST`` instead of removing anything, so the sharing rule
+  is never reached; they were not carrying the defect, which is also why store and portrait covers
+  kept working while every folder cover disappeared.
+- the ``QFile::remove()`` calls in ``src/sync/SyncEngine.cpp`` delete transcode output the engine
+  owns outright.  The ``QTemporaryFile`` in that file is a *source* snapshot handed to the encoder,
+  not a destination being published onto, so it is not this idiom.
+
+One instance, one fix.  ``tests/win-compat``'s ``file_identity`` group already pins that ``st_dev``
+and ``st_ino`` answer for the volume serial and file index, which is the surface the artwork
+cache's "this image is its own source" refusal is built on; nothing there needed to change.
+
+**A name rule that had to be written from nothing: the disc folder.**  Resolution now looks one
+level up for the album's picture when the track's own folder is only a disc, and the rule for
+*is this folder a disc* is ``^(?:cd|disc|disk|vinyl|lp|pt|part)[\s._-]*[0-9]+$``, case-insensitive.
+It belongs in this audit because it is a naming rule that decides whether a folder's own name is
+allowed to be an identity at all, and the exactness is the point: the prefix is required and the
+whole name has to be accounted for, so an album actually named ``Vol 2``, ``LP`` plus a year, or
+``Album 2024`` is not a disc folder and never inherits whatever its parent happens to contain.
+Nothing is written under that rule - it only reads - so ``LibraryPaths::safeComponent()`` and the
+export naming rule are untouched.
+
+**A remote URL given the same discipline as a local path.**  The store rung now keeps only an
+``https`` URL whose host is ``*.mzstatic.com`` before it will fetch anything, and the file that
+result lands in is named from the album's own cache digest, never from anything in the response.
+That is the founding line of this document read in the other direction: the first defect here was
+treating a path as a URL, and the mirror mistake - letting a URL decide what to call a file - is
+the one that turns a provider into a directory traversal.
+
+**A rate limit that was filed as data.**  ``docs/WINDOWS_PORT.md`` carries the mechanics of the
+music-store pacing in full, because it is transport, not naming.  What belongs here is the shape of
+the mistake, which this document has seen several times already: the ladder could not tell "the
+provider declined to answer" from "the provider has no such album", so a ``429`` became a permanent
+"no music store carries this album" in the UI and a five-minute park became a missing cover.  A
+refusal from the environment and a refusal from the truth must not share a representation, and when
+they do, the bug outlives the outage.
+
+Two harness findings, both of which made evidence that was not evidence.  PowerShell 5.1 resolves
+``-Include`` against the *parent* of a ``-Recurse`` path, so ``<profile>\cache\art\*`` together with
+``-Include *.jpg`` matches nothing at all: two art assertions in ``tests/win-usability`` had been
+reading an empty list and passing.  And ``tests/device-music-import`` isolates its artwork cache
+with ``qputenv("XDG_CACHE_HOME")``, which the Windows known folders do not consult, so its five
+``device-album-art`` checks fail on this platform for that reason alone - reproduced against a
+scratch build of the pre-fix ``AlbumArtService.cpp``, which failed the identical five.  Neither is
+a Windows behaviour worth a shim; both are worth remembering the next time a gate reports a number.
+
+**Not re-checked by this sweep**, unchanged from the eleventh: the four uncalled shell-invoking
+sites in ``libzune``, the absence of a ``<longPathAware>`` manifest entry, UTF-16 without a
+BOM in playlist files, and the narrower naming rule that playlist *exports* keep on purpose.
+POSIX behaviour is unchanged by construction here and remains unverified on this machine.  Device
+evidence is unchanged: one hand-tested Pavo Zune HD.
+
 ## What is proven, and by which gate
 
 - `tests/win-usability/watch_folder_repair.py` seeds four roots - a `/E:/` scar, a

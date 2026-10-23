@@ -6,12 +6,15 @@
 # is the GUI equivalent of tests/win-compat: no device, no sound (ZUUNED_MPV_AO is
 # the null driver) and no contact with the real profile, because every launch gets
 # its own ZUUNED_PROFILE_DIR plus its own ZUUNED_LOCK_SUFFIX and the run compares
-# the real profile before and after.  It needs no network to pass and, since
-# online artwork and metadata lookup became opt-in, it asks a provider nothing
-# at all: the music page case asserts the app's own "online lookup off" line and
-# that no provider request line appears.  (With Settings -> Library switched on
-# a launch whose seeded library lacks covers does reach musicbrainz.org; that is
-# the user's choice, not the gate's.)
+# the real profile before and after.  It needs no network to pass, and it does not
+# get there by hoping the defaults are quiet: album cover lookup is ON by default
+# now, so a seeded case writes albumCoverLookup=false and autoMetadataLookup=false
+# into its own settings ini before launching, and the music page case asserts the
+# app's own "online lookup off" line plus that no provider request line appears.
+# Without that ini the gate would send real store traffic on the user's machine
+# and still call itself offline.  (With Settings -> Library switched on a launch
+# whose seeded library lacks covers does reach a provider; that is the user's
+# choice, not the gate's.)
 #
 # A started process is not proof of anything on Windows: a Qt Quick window can
 # come up with a clean stderr and paint nothing.  So each case ends with a
@@ -456,6 +459,15 @@ function Invoke-Case {
     New-Item -ItemType Directory -Force -Path $profile | Out-Null
     if ($Seed) {
         Copy-Item -LiteralPath (Join-Path $out 'seed-library.db') -Destination (Join-Path $profile 'library.db')
+        # Both online questions get answered "no" here, by the profile and not by
+        # a default: album cover lookup ships switched on, so leaving the ini
+        # absent would have this gate browse a music store on the user's machine
+        # and then assert that it contacted nobody.  The ini is the same file the
+        # Settings page writes, at the path ProfilePaths gives ZUUNED_PROFILE_DIR.
+        $ini = Join-Path $profile 'Zuuned\Zuuned.ini'
+        New-Item -ItemType Directory -Force -Path (Split-Path -LiteralPath $ini) | Out-Null
+        Set-Content -LiteralPath $ini -Encoding ASCII -Value @(
+            '[General]', 'albumCoverLookup=false', 'autoMetadataLookup=false')
     }
     $handle = Start-Zuuned -Profile $profile -Suffix ('wus' + $script:caseSeq) `
         -Arguments (@($Arguments) + @('--qa-probe'))
@@ -605,6 +617,11 @@ if (Select-Phase 'fixture') {
         Check 'the fixture put four tracks on disk' `
             ($fx.Code -eq 0 -and $fx.Out -match 'created=4') `
             (Format-KvDetail -Out ($fx.Out + [Environment]::NewLine + $fx.Err))
+        # An empty-artwork assertion is only worth what its fixture is worth, so the
+        # one picture the art checks depend on is named here as its own fact.
+        Check 'the fixture put one album folder cover on disk' `
+            ($fx.Out -match 'album_covers=1') ('out=' + ($fx.Out -split "`r?`n" |
+                Where-Object { $_ -match 'album_covers' } | Select-Object -First 1))
 
         $scanDb = Join-Path $out 'scan-library.db'
         $scan = Invoke-Proc -File $libraryTool -Arguments @('scan', $fixtureMusic, $scanDb) -Timeout 900
@@ -766,6 +783,57 @@ if (Select-Phase 'pages') {
                     ($wfStored -eq $wfRows) ('wfStored=' + $wfStored + ' wfRows=' + $wfRows)
                 Check 'the QML display helper and the row it feeds agree' `
                     ($wfLabel -eq '1') ('wfLabel=' + $wfLabel)
+                # Artwork identity, asserted rather than read off a picture.  The
+                # island, a queue row and the media-property report all ask the art
+                # cache for the album's cover; a row that carries a track artist as
+                # well asked with that name once, which is a different cache key, so
+                # one view had art and the other did not and the same picture got
+                # extracted twice.  The seed now carries one real folder cover, so
+                # the same assertion also says the album that HAS art resolves it the
+                # same way in both places, not just the two that have none.
+                $artKeyOwner = Get-QaField $pageCase.QaLast 'artKeyOwner'
+                $artKeyDecoy = Get-QaField $pageCase.QaLast 'artKeyDecoy'
+                Check 'the player asks for album art as the album owner, never the track artist' `
+                    ($artKeyOwner -eq '1' -and $artKeyDecoy -eq '1') `
+                    ('artKeyOwner=' + $artKeyOwner + ' artKeyDecoy=' + $artKeyDecoy)
+                # Whether any artwork reached the grid at all.  The seeded ini answers
+                # both online questions with "no" and the fixture puts one Cover.jpg in
+                # one album folder, so a non-zero count can only be the user's own bytes
+                # extracted into that profile's art cache - the half of album art no
+                # Windows gate had ever reached, and the half a user with covers in
+                # their files cares about.  Read from the last report rather than the
+                # splash one because extraction is thread-pool work that lands after
+                # the first frame paints.
+                $artAlbums = Get-QaField $pageCase.QaLast 'albums'
+                $artWith = Get-QaField $pageCase.QaLast 'artWith'
+                $artAgree = Get-QaField $pageCase.QaLast 'artAgree'
+                $artDecoy = Get-QaField $pageCase.QaLast 'artDecoy'
+                $artWithCount = 0
+                if ($artWith -match '^[0-9]+$') { $artWithCount = [int]$artWith }
+                Check 'the fixture cover is extracted and reaches the running album grid' `
+                    ($artWithCount -ge 1) ('albums=' + $artAlbums + ' artWith=' + $artWith)
+                Check 'every album resolves the same picture in the grid and the player' `
+                    ($artAgree -eq $artAlbums -and $artDecoy -eq $artAlbums) `
+                    ('albums=' + $artAlbums + ' artAgree=' + $artAgree + ' artDecoy=' + $artDecoy)
+                # The artist tile. A local library owns no portrait file, so an
+                # artist wears the cover of one of their own albums, and every album
+                # the cache holds a picture for has to land one. The Artists page is
+                # the page the app opens on, and it refused any album fallback at
+                # all: a library with real covers in its files painted nothing but
+                # empty circles and "Needs a match" there, on every platform.
+                $ownerWanted = Get-QaField $pageCase.QaLast 'artOwnerWanted'
+                $ownerFound = Get-QaField $pageCase.QaLast 'artOwnerFound'
+                Check 'every album with a cover hands one to its artist tile' `
+                    ($ownerWanted -match '^[0-9]+$' -and $ownerWanted -eq $ownerFound `
+                     -and [int]$ownerWanted -ge 1) `
+                    ('artOwnerWanted=' + $ownerWanted + ' artOwnerFound=' + $ownerFound)
+                # And the tie-break, proved on invented rows so it bites whether or
+                # not this seed happens to hold two albums for one person.
+                $rankOk = Get-QaField $pageCase.QaLast 'artRankOk'
+                $preferArtOk = Get-QaField $pageCase.QaLast 'artPreferArtOk'
+                Check 'an artist takes the album that has art and size breaks only a tie' `
+                    ($rankOk -eq '1' -and $preferArtOk -eq '1') `
+                    ('artRankOk=' + $rankOk + ' artPreferArtOk=' + $preferArtOk)
                 # Opt-in lookup.  A launch used to reach musicbrainz.org once per
                 # album without embedded art and once per artist on the grid, so a
                 # user with covers in their files watched requests they never asked
@@ -1010,6 +1078,15 @@ if (Select-Phase 'tools') {
     $paths = Invoke-Proc -File $libraryTool -Arguments @('paths') -Timeout 600
     Check 'librarytool paths pins the Windows filename and playlist rules' `
         ($paths.Code -eq 0 -and $paths.Out -match 'ALL PASS \(0 failures\)') ('code=' + $paths.Code)
+    # Album cover lookup is on by default, so the rule that decides what it sends
+    # and what it is allowed to download is worth more than a screenshot.  The
+    # self-test injects its transport and its cache directory and never opens a
+    # socket: what it proves is the catalogue ladder, the exact-name rule and the
+    # URL filter, from a canned answer rather than from whatever a store carries
+    # today.  No phase here sends provider traffic.
+    $cover = Invoke-Proc -File $libraryTool -Arguments @('cover') -Timeout 600
+    Check 'librarytool cover pins the album cover lookup from canned answers' `
+        ($cover.Code -eq 0 -and $cover.Out -match 'ALL PASS \(0 failures\)') ('code=' + $cover.Code)
     # ZUUNED_PROXY is the one network knob this application has, and this tool is the
     # only place on Windows its parsing rules can be reached: no phase here sends
     # provider traffic, and the situation the knob exists for - a network that drops
@@ -1045,9 +1122,9 @@ if (Select-Phase 'tools') {
     # drive that folder chooser, so the check pins the structure rather than pretending
     # to have walked a tree: no second loop anywhere in src, and spoken import calls
     # through the guarded function.
-    $walkers = @(Get-ChildItem -LiteralPath (Join-Path $root 'src') -Recurse -File `
-            -Include *.cpp, *.h |
+    $walkers = @(Get-ChildItem -LiteralPath (Join-Path $root 'src') -Recurse -File |
         Where-Object {
+            ($_.Extension -eq '.cpp' -or $_.Extension -eq '.h') -and
             [IO.File]::ReadAllText($_.FullName).Contains('QDirIterator::Subdirectories')
         } | ForEach-Object { $_.FullName.Substring($root.Length + 1) })
     Check 'src contains no second recursive directory walk' `
@@ -1079,8 +1156,9 @@ if (Select-Phase 'tools') {
          $previewText.Contains('ProfilePaths::applicationDataLocation()')) `
         'tools/artwork-preview/main.cpp defaults'
     $spellers = @(Get-ChildItem -LiteralPath (Join-Path $root 'src'),
-            (Join-Path $root 'tools') -Recurse -File -Include *.cpp, *.h |
+            (Join-Path $root 'tools') -Recurse -File |
         Where-Object {
+            ($_.Extension -eq '.cpp' -or $_.Extension -eq '.h') -and
             $_.Name -ne 'ProfilePaths.h' -and
             [IO.File]::ReadAllText($_.FullName).Contains('/Zuuned/Zuuned')
         } | ForEach-Object { $_.FullName.Substring($root.Length + 1) })

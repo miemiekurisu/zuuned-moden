@@ -41,6 +41,7 @@ Item {
         return page.tracks.map(t => ({
             filepath: t.filepath || "", title: t.title || "",
             artist: t.artist || "", album: t.album || "",
+            albumartist: t.albumartist || t.artist || "",
             discNumber: t.discNumber || 0, year: t.year || 0,
             libraryId: t.libraryId !== undefined ? t.libraryId : -1
         }))

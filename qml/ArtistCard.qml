@@ -10,13 +10,23 @@ Item {
     property string name
     property int count: 0
     property int artItemId: 0
-    // Local portraits use artist photos only. Device browsing can use
-    // its representative artwork when no artist photo is available.
+    // Device browsing uses the Zune's representative artwork. A local artist
+    // has no portrait file to read, so the tile falls back to the cover of one
+    // of their own albums - the library's art cache, not a provider.
     property bool localArt: false
     property string photoUrl: ""
+    // The artist's own album the fallback cover comes from, named by the host
+    // out of rows the library already has. Empty means no cover to borrow.
+    property string fallbackArtist: ""
+    property string fallbackAlbum: ""
     property var artworkDiscovery: ({})
+    // The cover as the library's art cache holds it right now. Read only: an
+    // artist tile never asks for artwork, it shows what the album side found.
+    readonly property string albumFallbackUrl: fallbackAlbum === "" ? ""
+        : (LibraryService.artPaths[
+              LibraryService.artKey(fallbackArtist, fallbackAlbum)] || "")
     readonly property string missingArtStatus: {
-        if (!localArt || photoUrl) return ""
+        if (!localArt || photoUrl || albumFallbackUrl) return ""
         switch (artworkDiscovery.status) {
         case "checkingLocal": return "Checking local artwork"
         case "lookingUp": return "Looking up portrait"
@@ -70,8 +80,28 @@ Item {
                 }
             }
 
-            // Artist photo; an empty/loading/broken local image leaves
-            // the flat circle visible, never an unrelated album cover.
+            // The artist's own album cover, standing in for a portrait that a
+            // local library has no file for. Painted under the portrait, so an
+            // artist photo that does arrive still wins.
+            ArtworkImage {
+                id: localAlbumArt
+                anchors.fill: parent
+                source: card.albumFallbackUrl
+                visible: status === Image.Ready
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                layer.enabled: card.albumFallbackUrl !== ""
+                layer.effect: OpacityMask {
+                    maskSource: Rectangle {
+                        width: card.diameter
+                        height: card.diameter
+                        radius: width / 2
+                    }
+                }
+            }
+
+            // Artist photo. A missing, loading or broken portrait leaves the
+            // album cover, and then the flat circle, visible beneath it.
             ArtworkImage {
                 id: artistPhoto
                 anchors.fill: parent

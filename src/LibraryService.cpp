@@ -95,13 +95,25 @@ LibraryService::LibraryService(QObject *parent) : QObject(parent) {
                 // Local sources are exhausted at this point, so this is the
                 // only place an album lookup could leave the machine. It does
                 // so for an album the user asked about (retryArtwork /
-                // retryMissingArtwork marks its key) or when the Settings
-                // switch is on - never because a scan finished.
-                const bool asked = onlineMetadataLookupEnabled()
+                // retryMissingArtwork marks its key) or because asking about
+                // covers is on by default - never because a scan finished, and
+                // never for a portrait.
+                const bool asked = albumCoverLookupEnabled() || onlineMetadataLookupEnabled()
                     || m_forceArtworkRetry.contains(QStringLiteral("album")
                         + AlbumArtService::cacheKey(artist, album));
-                if (asked && !restoreArtworkResult(QStringLiteral("album"), context, input))
+                if (!asked) {
+                    // The files are the whole story for this album and nobody
+                    // asked a provider, so say so once. Left unstated, the card
+                    // kept answering "Checking local artwork" forever - a state
+                    // that also covers the artist line beneath the title, which
+                    // is how a library of art-less files reads as broken art.
+                    recordArtworkResult(QStringLiteral("album"), context,
+                        {{QStringLiteral("status"), QStringLiteral("noArtwork")},
+                         {QStringLiteral("reason"),
+                          QStringLiteral("No embedded or folder art in the local files")}});
+                } else if (!restoreArtworkResult(QStringLiteral("album"), context, input)) {
                     m_onlineAlbumArt->request(artist, album, input);
+                }
             }
             return;
         }
@@ -319,6 +331,10 @@ bool LibraryService::onlineMetadataLookupEnabled() const {
     return QSettings().value(QStringLiteral("autoMetadataLookup"), false).toBool();
 }
 
+bool LibraryService::albumCoverLookupEnabled() const {
+    return QSettings().value(QStringLiteral("albumCoverLookup"), true).toBool();
+}
+
 namespace {
 bool hasManualCollectionChoice(const QVariantMap &choice) {
     auto identity = choice.value("identity").toMap();
@@ -346,6 +362,13 @@ QVariantMap LibraryService::artworkContext(const QString &kind, const QVariantMa
     const auto choiceRevision = identity.take("_artworkChoiceRevision");
     if (!chosen.isEmpty()) identity = chosen;
     if (kind == QLatin1String("album")) {
+        // Whether asking a provider is allowed at all is evidence about a cover.
+        // Without it a "nobody asked" verdict recorded while the switch was off
+        // would be handed back as still valid after the user turns it on, and
+        // the album would stay blank for as long as the names did not change.
+        identity.insert(QStringLiteral("_onlineArtwork"),
+            albumCoverLookupEnabled() || onlineMetadataLookupEnabled()
+                ? QStringLiteral("on") : QStringLiteral("off"));
         const auto evidence = m_albumMatchingEvidence.value(artworkDisplayKey(kind, context));
         for (auto it = evidence.cbegin(); it != evidence.cend(); ++it) identity.insert(it.key(), it.value());
         auto artistChoice = m_db->collectionCustomization(QStringLiteral("artist"),
@@ -1059,10 +1082,10 @@ void LibraryService::requestArt(const QString &artist, const QString &album,
 }
 
 void LibraryService::discoverMissingArtwork() {
-    // Both setup and later imports use this path, and it stays local: embedded
-    // and folder art is read from the user's own files, and an album that ends
-    // up with nothing goes online only if that album was explicitly asked for
-    // (see the artReady gate) or the opt-in switch is on.
+    // Both setup and later imports use this path. Embedded and folder art comes
+    // from the user's own files and is never replaced; an album that ends up
+    // with nothing asks a store for a cover (the artReady gate), and only an
+    // explicitly enabled switch sends anything to MusicBrainz.
     for (const auto &value : std::as_const(m_albumsList)) {
         const auto row = value.toMap();
         requestArt(row.value(QStringLiteral("artArtist")).toString(),
@@ -1071,13 +1094,20 @@ void LibraryService::discoverMissingArtwork() {
     }
     for (const auto &value : std::as_const(m_artistsList))
         requestArtistImage(value.toMap().value(QStringLiteral("name")).toString());
-    if (!onlineMetadataLookupEnabled())
-        // One honest line per pass: the gate greps it to prove a launch asked
-        // a provider nothing, and a user wondering why a circle is empty can
-        // read the answer instead of guessing.
+    // One honest line per pass: the gate greps it to prove a launch asked a
+    // provider nothing, and a user wondering why a circle is empty can read the
+    // answer instead of guessing. Covers and portraits are two questions with
+    // two answers, so the line names both states rather than one switch.
+    const bool covers = albumCoverLookupEnabled(), portraits = onlineMetadataLookupEnabled();
+    if (!covers && !portraits)
         fprintf(stderr, "[artwork] online lookup off: %d albums and %d artists "
                         "read locally, none queried; right-click an album, "
                         "artist or track to look one up\n",
+                int(m_albumsList.size()), int(m_artistsList.size()));
+    else
+        fprintf(stderr, "[artwork] album covers %s, artist portraits %s: %d albums "
+                        "and %d artists\n",
+                covers ? "on" : "off", portraits ? "on" : "off",
                 int(m_albumsList.size()), int(m_artistsList.size()));
 }
 

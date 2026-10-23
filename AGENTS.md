@@ -602,6 +602,51 @@ inherited. Gates on the relinked tree: 201 compat checks, and
 `launches=18 checks=116 failures=0 skips=0 killed=0` with `OVERALL=ok`. No device claim
 changes: still one Pavo Zune HD, and nothing on it has been heard.
 
+**2026-10-24 Windows album-art pass: three ways to lose a cover, and a store that will not be
+rushed:** "the PC albums have no covers" was four faults, and none of them is in the matching.
+`storeToCache()` staged a picture into a live `QTemporaryFile` and then did `QFile::remove(dst)`
+followed by `QFile::copy()` onto it, and Windows will not delete a name its owning object still
+holds - not after `close()` either - so the verbatim-JPEG branch returned false: every picture
+that was already a JPEG of 400px or less, which is what a `folder.jpg` and a device thumbnail
+usually are, was thrown away on this platform alone. `copyBytes()` opens the destination
+`WriteOnly | Truncate` and streams, which the holder allows because it withholds only deletion.
+The local resolution order is now a known name (`cover`, `folder`, `artwork`, `album`, `front`,
+case-insensitive, jpg/jpeg/png) in the track's own folder, that same name one level up when the
+folder is only a disc - `^(?:cd|disc|disk|vinyl|lp|pt|part)[\s._-]*[0-9]+$`, so `CD1` inherits the
+album's picture and an album actually called `Vol 2` does not - then the picture embedded in the
+file, and last of all an image that goes by no recognised name; embedded art used to sit *behind*
+"any image in the folder", so a scanned lyric sheet dropped in with the lossless files beat the
+real cover, and `tests/device-music-import/album-art-precedence.cpp` now pins the order. Artist
+tiles and the player keyed art by the *track* artist, which stops being the album owner at the
+first compilation or featured artist; `localArtOwners()` in `qml/MusicIdentity.js` derives the
+owner per album and `ArtistCard`, `ArtistDetail`, `MusicPage` and `Main` ask for that key with the
+album's own cover as fallback. Album-cover lookup (`albumCoverLookup`, default **on**) and
+MusicBrainz identity lookup (`autoMetadataLookup`, default **off**, portraits included) are
+separate switches now, so a file that carries its own art still causes no request while an album
+with no local art does get a real cover - and that last clause is what exposed the fourth fault.
+`ArtworkHttp` paced MusicBrainz and nothing else, and `resolveStoreAlbumArtwork()` walked straight
+through a catalogue that had *errored*, so a 13-album library put roughly 2.2 requests a second on
+`itunes.apple.com/search`, was answered HTTP 429, burned all six rungs per album, and filed every
+one of them as "no music store carries this album". One store search is now in flight
+process-wide at least 2 s apart; `artworkStoreSearch()` pushes the next slot out by `Retry-After`
+or four times the interval on 429/503; a wait over 30 s is answered locally with a synthesized 503
+so a rate limit is never recorded as an absent cover; and the first catalogue that errors ends the
+ladder, with `OnlineAlbumArtService` parking the album for five minutes. Measured on a
+`VACUUM INTO` copy of the real library: 42 store searches in 87.6 s, minimum gap 1.7 s, no 429 and
+no 503 at all, and the probe reports `albums=13 artWith=4 artAgree=13 artOwnerWanted=4
+artOwnerFound=4`; the nine albums still blank are the sine-wave scan fixtures, which have no
+picture in a file, a folder or a store. Two harness facts. PowerShell 5.1's `-Include` is
+relative to the *parent* of a `-Recurse` path, so `cache\art\*` with `-Include *.jpg` matched
+nothing and the gate had been certifying an empty directory for a run. And
+`tests/device-music-import` isolates its cache with `qputenv("XDG_CACHE_HOME")`, which Windows
+ignores, so five `device-album-art` checks fail here for that reason alone - reproduced against a
+scratch build of HEAD's own `AlbumArtService.cpp`, which fails the identical five, so it is a
+Linux-only gate and not a regression. Gates on the relinked build: `tests\win-compat` 201 checks
+0 failures, `tests\win-usability` `launches=18 checks=123 failures=0 skips=0 killed=0`
+`OVERALL=ok`, `librarytool cover` 33 checks including the pacing arithmetic and "one unanswered
+catalogue is enough to learn it". Header-only edits still need `--clean-first` because Ninja's
+`deps = msvc` never matches this machine's localized `/showIncludes`. No device claim changes.
+
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow
 windows. Resizing an existing queue opens the island unless a builder is active;

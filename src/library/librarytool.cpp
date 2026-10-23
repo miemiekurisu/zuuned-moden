@@ -35,6 +35,7 @@
 #include "LibraryPaths.h"
 #include "LibraryScanner.h"
 #include "MusicIdentity.h"
+#include "MusicIdentityClient.h"
 #include "NetworkAccess.h"
 #include "PlaylistText.h"
 #include "VideoIdentity.h"
@@ -44,7 +45,12 @@
 #include <QCoreApplication>
 #include <QStringList>
 #include <QEventLoop>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
+#include <QUrl>
+#include <QUrlQuery>
 #include <QStandardPaths>
 #include <QFile>
 #include <QFileInfo>
@@ -1020,6 +1026,225 @@ static int runNetworkSelfTest() {
     return failed == 0 ? 0 : 1;
 }
 
+/*
+ * Album cover lookup, pinned offline.
+ *
+ * Asking a music store for a cover is the one lookup a library runs by itself,
+ * so it is the one most likely to be changed by accident, and neither Windows
+ * gate reaches a C++ header.  Every rule is answered here from a canned reply
+ * per catalogue: no socket is opened, and what the fetch counter saw is what
+ * proves the ladder stops early rather than whatever a live store happens to
+ * carry today.
+ */
+static int runCoverSelfTest() {
+    int failed = 0;
+    const auto check = [&failed](bool ok, const char *what) {
+        printf("  %s %s\n", ok ? "PASS" : "FAIL", what);
+        if (!ok)
+            failed++;
+    };
+    const auto eq = [&check](const char *what, const QString &got, const QString &expect) {
+        const bool ok = got == expect;
+        check(ok, what);
+        if (!ok)
+            printf("      got '%s' expected '%s'\n", got.toUtf8().constData(),
+                   expect.toUtf8().constData());
+    };
+
+    /* ---- the only answer a store may turn into a download ---- */
+    eq("cover url: a response names 100px and the local cache keeps more",
+       MusicIdentityClient::storeArtworkUrl(
+           QStringLiteral("https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/1a/2b/3c/disc/100x100bb.jpg")),
+       QStringLiteral("https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/1a/2b/3c/disc/600x600bb.jpg"));
+    check(MusicIdentityClient::storeArtworkUrl(
+              QStringLiteral("http://is1-ssl.mzstatic.com/image/thumb/x/100x100bb.jpg")).isEmpty(),
+          "cover url: plain http is not artwork");
+    check(MusicIdentityClient::storeArtworkUrl(
+              QStringLiteral("https://cdn.example.com/image/thumb/x/100x100bb.jpg")).isEmpty(),
+          "cover url: another host is not the store's CDN");
+    check(MusicIdentityClient::storeArtworkUrl(
+              QStringLiteral("https://mzstatic.com.example.net/x/100x100bb.jpg")).isEmpty(),
+          "cover url: a host that merely contains the CDN name is refused");
+    check(MusicIdentityClient::storeArtworkUrl(
+              QStringLiteral("https://is1-ssl.mzstatic.com/image/thumb/x/cover.png")).isEmpty(),
+          "cover url: a file name without the size pattern is not resized");
+
+    /* ---- which request the transport is allowed to queue ---- */
+    // The pacing lives in ArtworkHttp, which no injected fetch can see, so the
+    // rule that decides it is pinned here instead: the search endpoint waits,
+    // the picture it names does not, and neither is decided by a substring.
+    check(ArtworkHttp::isStoreSearch(QUrl(QStringLiteral(
+              "https://itunes.apple.com/search?media=music&entity=album&country=jp&term=Anri"))),
+          "pacing: a store search is the request a store rate limits");
+    check(!ArtworkHttp::isStoreSearch(QUrl(QStringLiteral(
+              "https://is1-ssl.mzstatic.com/image/thumb/Music/v4/1a/2b/3c/disc/600x600bb.jpg"))),
+          "pacing: the cover itself is one picture, not a search");
+    check(!ArtworkHttp::isStoreSearch(QUrl(
+              QStringLiteral("https://itunes.apple.com.example.net/search"))),
+          "pacing: a host that merely contains the store name is not the store");
+    check(!ArtworkHttp::isStoreSearch(QUrl(
+              "https://musicbrainz.org/ws/2/release-group/?fmt=json")),
+          "pacing: MusicBrainz keeps its own throttle rather than this one");
+
+    QTemporaryDir scratch;
+    check(scratch.isValid(), "cover: a scratch cache directory to keep the canned answers in");
+    if (!scratch.isValid())
+        return 1;
+
+    struct Catalogue {
+        QHash<QString, QByteArray> bodies;
+        bool failing = false;
+        int asked = 0;
+        QStringList order;
+    } catalogue;
+
+    const auto disc = [](const QString &artist, const QString &album, qint64 id,
+                         const QString &date,
+                         const QString &wrapper = QStringLiteral("collection")) {
+        QJsonObject object;
+        object.insert(QStringLiteral("wrapperType"), wrapper);
+        object.insert(QStringLiteral("kind"), QStringLiteral("album"));
+        object.insert(QStringLiteral("artistName"), artist);
+        object.insert(QStringLiteral("collectionName"), album);
+        // A store id arrives as a JSON number, which is the one shape a
+        // MusicBrainz id never takes; it has to survive as text.
+        object.insert(QStringLiteral("collectionId"), id);
+        object.insert(QStringLiteral("releaseDate"), date);
+        object.insert(QStringLiteral("artworkUrl100"),
+                      QStringLiteral("https://is1-ssl.mzstatic.com/image/thumb/Music/v4/%1/100x100bb.jpg").arg(id));
+        return QJsonValue(object);
+    };
+    const auto body = [](const QJsonArray &results) {
+        QJsonObject object;
+        object.insert(QStringLiteral("resultCount"), int(results.size()));
+        object.insert(QStringLiteral("results"), results);
+        return QJsonDocument(object).toJson(QJsonDocument::Compact);
+    };
+    const QByteArray nothing = body(QJsonArray());
+
+    MusicIdentityClient client([&catalogue, nothing](const QUrl &url, bool) {
+        ArtworkHttp::Response response;
+        const QString country = QUrlQuery(url).queryItemValue(QStringLiteral("country"));
+        ++catalogue.asked;
+        catalogue.order.append(country);
+        if (catalogue.failing) { response.status = 503; return response; }
+        response.status = 200;
+        response.body = catalogue.bodies.value(country, nothing);
+        return response;
+    }, scratch.path());
+    const auto reset = [&catalogue] {
+        catalogue = Catalogue();
+    };
+
+    /* ---- one exact record, found in the second catalogue ---- */
+    catalogue.bodies.insert(QStringLiteral("us"), body(QJsonArray{
+        disc(QStringLiteral("Pen-Dulum"), QStringLiteral("Watercolour"), 111, QStringLiteral("2004-05-05")),
+        disc(QStringLiteral("Cherish the Ladies"), QStringLiteral("Watercolour - EP"), 222,
+             QStringLiteral("2001-01-01"))}));
+    catalogue.bodies.insert(QStringLiteral("jp"), body(QJsonArray{
+        disc(QStringLiteral("Noriko Sakai"), QStringLiteral("Watercolour"), 1258492988,
+             QStringLiteral("2009-03-04"))}));
+    auto result = client.resolveStoreAlbumArtwork(QStringLiteral("Noriko Sakai"),
+                                                  QStringLiteral("Watercolour"));
+    eq("match: an American decoy does not stop the ladder", result.status, QStringLiteral("ready"));
+    eq("match: a numeric catalogue id becomes text",
+       result.identity.value(QStringLiteral("providerId")).toString(),
+       QStringLiteral("1258492988"));
+    eq("match: the catalogue that answered is recorded",
+       result.identity.value(QStringLiteral("country")).toString(), QStringLiteral("jp"));
+    eq("match: the picture is provenanced, not anonymous",
+       result.identity.value(QStringLiteral("provider")).toString(), QStringLiteral("store"));
+    check(result.imageUrl.endsWith(QStringLiteral("/600x600bb.jpg")),
+          "match: the cover downloaded is the larger render of the same picture");
+    eq("match: the ladder stopped where the record was", catalogue.order.join(QLatin1Char(',')),
+       QStringLiteral("us,jp"));
+    check(result.candidates.isEmpty(),
+          "match: store rows are never offered as Customize candidates");
+    reset();
+
+    /* ---- the first catalogue that carries it ends the search ---- */
+    catalogue.bodies.insert(QStringLiteral("us"), body(QJsonArray{
+        disc(QStringLiteral("EGOIST"), QStringLiteral("Voyage"), 555, QStringLiteral("2012-06-06"))}));
+    result = client.resolveStoreAlbumArtwork(QStringLiteral("EGOIST"), QStringLiteral("Voyage"));
+    eq("ladder: a hit in the first catalogue is the answer", result.status, QStringLiteral("ready"));
+    eq("ladder: no further catalogue is asked once one has matched",
+       catalogue.order.join(QLatin1Char(',')), QStringLiteral("us"));
+    reset();
+
+    /* ---- several editions of one record, one deterministic cover ---- */
+    catalogue.bodies.insert(QStringLiteral("us"), body(QJsonArray{
+        disc(QStringLiteral("EGOIST"), QStringLiteral("Anthology"), 300, QStringLiteral("2009-01-07")),
+        disc(QStringLiteral("EGOIST"), QStringLiteral("Anthology"), 200, QStringLiteral("2009-01-07")),
+        disc(QStringLiteral("EGOIST"), QStringLiteral("Anthology"), 100, QStringLiteral("2011-05-05"))}));
+    result = client.resolveStoreAlbumArtwork(QStringLiteral("EGOIST"), QStringLiteral("Anthology"));
+    eq("edition: earliest release wins, and the smallest id breaks a tie",
+       result.identity.value(QStringLiteral("providerId")).toString(), QStringLiteral("200"));
+    reset();
+
+    /* ---- a single is not an album ---- */
+    catalogue.bodies.insert(QStringLiteral("jp"), body(QJsonArray{
+        disc(QStringLiteral("Yura Hayashi"), QStringLiteral("Single"), 400, QStringLiteral("2015-02-02"),
+             QStringLiteral("track"))}));
+    result = client.resolveStoreAlbumArtwork(QStringLiteral("Yura Hayashi"), QStringLiteral("Single"));
+    // The row carries a cover and the exact name, and it is still refused: the
+    // store is describing a single, and single artwork is not this album's
+    // artwork.  "No cover available" is the honest verdict then - "needs a
+    // match" would send the user to Customize, where a store row cannot be
+    // picked anyway because only MusicBrainz offers anything there.
+    eq("wrapper: a matching track row is not an album cover", result.status,
+       QStringLiteral("noArtwork"));
+    check(result.imageUrl.isEmpty() && result.identity.isEmpty(),
+          "wrapper: a single's cover is never taken for the album's");
+    check(!result.reason.isEmpty(), "wrapper: the card can say the store had no album");
+    reset();
+
+    /* ---- rows everywhere, no name anywhere ---- */
+    for (const char *country : {"us", "jp", "tw", "hk", "gb", "de"})
+        catalogue.bodies.insert(QString::fromLatin1(country), body(QJsonArray{
+            disc(QStringLiteral("Someone Else"), QStringLiteral("Greatest"), 600,
+                 QStringLiteral("1999-01-01"))}));
+    result = client.resolveStoreAlbumArtwork(QStringLiteral("Kurisu Chan"), QStringLiteral("Greatest"));
+    eq("unmatched: a store full of near misses is a match to make, not a guess",
+       result.status, QStringLiteral("needsMatch"));
+    check(result.imageUrl.isEmpty() && result.identity.isEmpty(),
+          "unmatched: a near miss is never half-applied");
+    eq("unmatched: every catalogue is asked before giving up",
+       QString::number(catalogue.asked),
+       QStringLiteral("6"));
+    reset();
+
+    /* ---- nothing anywhere, which is terminal rather than retryable ---- */
+    result = client.resolveStoreAlbumArtwork(QStringLiteral("Kurisu Chan"), QStringLiteral("Unobtainium"));
+    eq("absent: an empty answer from every catalogue is no artwork", result.status,
+       QStringLiteral("noArtwork"));
+    check(!result.reason.isEmpty(), "absent: the card can say why it stayed blank");
+    reset();
+
+    /* ---- the store itself is unreachable ---- */
+    catalogue.failing = true;
+    result = client.resolveStoreAlbumArtwork(QStringLiteral("Kurisu Chan"), QStringLiteral("Offline"));
+    eq("outage: a store that never answers is not an album with no cover", result.status,
+       QStringLiteral("providerUnavailable"));
+    check(!result.reason.isEmpty(), "outage: the reason names the provider, not the album");
+    // The refusal came from the endpoint, not from one country's catalogue, so
+    // the five rungs behind it are the same question asked five more times.
+    // This is the assertion that keeps a rate limit from becoming a burst.
+    eq("outage: one unanswered catalogue is enough to learn it",
+       QString::number(catalogue.asked), QStringLiteral("1"));
+    reset();
+
+    /* ---- a library row that cannot identify anything ---- */
+    result = client.resolveStoreAlbumArtwork(QStringLiteral("Unknown Artist"), QStringLiteral("Untitled"));
+    eq("unknown: a placeholder name is never sent to a store", result.status,
+       QStringLiteral("needsMatch"));
+    eq("unknown: and not one request left the machine", QString::number(catalogue.asked),
+       QStringLiteral("0"));
+
+    printf("album cover self-test: %s (%d failures)\n",
+           failed == 0 ? "ALL PASS" : "FAILED", failed);
+    return failed == 0 ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
 #if defined(_WIN32)
@@ -1048,6 +1273,8 @@ int main(int argc, char **argv) {
         return runPathsSelfTest();
     if (mode == QLatin1String("net"))
         return runNetworkSelfTest();
+    if (mode == QLatin1String("cover"))
+        return runCoverSelfTest();
 
     const bool videoMode = mode == QLatin1String("videoscan");
     const bool photoMode = mode == QLatin1String("photoscan");
@@ -1061,7 +1288,8 @@ int main(int argc, char **argv) {
                 "  librarytool names\n"
                 "  librarytool customize\n"
                 "  librarytool paths\n"
-                "  librarytool net\n");
+                "  librarytool net\n"
+                "  librarytool cover\n");
         return 2;
     }
     const QString folder = arguments.at(2);

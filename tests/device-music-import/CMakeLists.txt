@@ -18,3 +18,12 @@ qt_add_executable(device-album-art album-art.cpp
 target_include_directories(device-album-art PRIVATE
     "${repo}/src/library" "${repo}/transcode")
 target_link_libraries(device-album-art PRIVATE Qt6::Core Qt6::Gui)
+
+# Album-art source precedence, gated against the real resolution order. The
+# order is a file-static function, so this target compiles the service source
+# rather than linking it - same shape as the September audit fixture it retires.
+qt_add_executable(album-art-precedence album-art-precedence.cpp
+    "${repo}/src/library/AlbumArtService.h")
+target_include_directories(album-art-precedence PRIVATE
+    "${repo}/src/library" "${repo}/transcode")
+target_link_libraries(album-art-precedence PRIVATE Qt6::Core Qt6::Gui)

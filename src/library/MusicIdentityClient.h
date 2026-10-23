@@ -24,6 +24,19 @@ public:
     MatchResult resolveArtistArtwork(const QString &name, const QVariantMap &context = {}) const;
     MatchResult resolveAlbumArtwork(const QString &artist, const QString &album,
                                    const QVariantMap &context = {}) const;
+    // Album cover from a music store catalogue. No key and no account are
+    // needed, the artwork link names its own size, and a bare artist plus
+    // album title is enough to ask - which is the whole library's case, since
+    // a saved MusicBrainz identity is the exception rather than the rule. The
+    // same exact artist-and-title agreement is required as anywhere else.
+    MatchResult resolveStoreAlbumArtwork(const QString &artist, const QString &album,
+                                         const QVariantMap &context = {}) const;
+    QVariantList searchStoreAlbums(const QString &album, const QString &artist,
+                                   const QString &country, QString *error = nullptr) const;
+    // A store artwork link carries the edge length in the file name and the
+    // search response only ever names a 100px thumbnail. Rewrite it to the next
+    // size the CDN really publishes, and refuse a link pointing anywhere else.
+    static QString storeArtworkUrl(const QString &raw);
 
     QVariantList searchAlbums(const QString &query, const QString &artistHint = {},
                               QString *error = nullptr, const QString &artistMbid = {}) const;

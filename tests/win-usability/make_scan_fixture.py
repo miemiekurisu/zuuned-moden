@@ -21,6 +21,10 @@ mangles.  A scan root is not a readdir result, and it used to fail on its own:
 the scan found nothing and still exited 0.  Three separate roots, scanned one at
 a time by the gate, so a root that works cannot mask one that does not.
 
+One album of the music tree gets a drawn ``Cover.jpg``.  "Why is my album tile empty"
+has two answers - bytes the user already owns, or a store - and a gate with no picture
+on disk at all cannot tell them apart, so it proved nothing about the local half.
+
 ``--photos <dir>`` puts an album of drawn JPEG frames in the same shape: one folder
 whose own name is Chinese.  Photos travel a different table and a different scanner
 branch than tracks, and until now nothing on Windows reached either of them from a
@@ -30,8 +34,8 @@ to survive a scan here are the bytes a real transfer depends on later.
     python make_scan_fixture.py <music-dir> [--ffmpeg <ffmpeg.exe>] [--force]
                                 [--extra-roots <dir>] [--photos <dir>]
 
-Prints ASCII key=value lines.  Exits 0 when all four tracks are on disk, plus the
-three extra roots and the two photos when they were asked for.
+Prints ASCII key=value lines.  Exits 0 when all four tracks and the one album cover are
+on disk, plus the three extra roots and the two photos when they were asked for.
 """
 
 import argparse
@@ -89,6 +93,7 @@ def main() -> int:
 
     extras = []
     shots = []
+    covers = []
 
     def place(dst, src, into=placed):
         os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -123,12 +128,22 @@ def main() -> int:
         run(a.ffmpeg, ["-f", "lavfi", "-i", "color=c=gray:s=64x48", "-frames:v", "1", frame])
         for name in ("Shot One.jpg", "Shot Two.jpg"):
             place(os.path.join(pr, CJK_PHOTO_FOLDER, name), frame, shots)
+
+    # The cover rides in the Chinese album folder because that folder is already
+    # the fixture's proof that a non-ASCII path survives a scan, and album art is
+    # read through the same narrow-path layer.  The seed profile answers both
+    # online lookups with "no", so a cover that reaches the running application can
+    # only have come out of this folder - which is the claim the gate asserts.
+    cover_src = os.path.join(tmp, "cover-art.jpg")
+    run(a.ffmpeg, ["-f", "lavfi", "-i", "color=c=0x993366:s=120x120", "-frames:v", "1", cover_src])
+    place(os.path.join(root, CJK_ALBUM, "Cover.jpg"), cover_src, covers)
     shutil.rmtree(tmp, ignore_errors=True)
 
     longest = max(placed, key=len)
     print("created=%d" % len(placed))
     print("extra_roots=%d" % len(extras))
     print("photos=%d" % len(shots))
+    print("album_covers=%d" % len(covers))
     print("longest_path_chars=%d" % len(longest))
     print("fixture=%s" % ascii(root)[1:-1])
     print("OVERALL=ok")

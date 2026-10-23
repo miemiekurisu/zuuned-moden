@@ -139,8 +139,23 @@ QVariantMap MprisService::buildMetadata() const {
                  QStringList{m_player->currentArtist()});
     if (!m_player->currentAlbum().isEmpty())
         m.insert(QStringLiteral("xesam:album"), m_player->currentAlbum());
-    const QString art =
-        artUrlFor(m_player->currentArtist(), m_player->currentAlbum());
+    // The picture belongs to the album, and the library keys its art cache by
+    // the album's owner - album artist where the queue item has one. The track
+    // artist is a different name for a compilation or for a file that came off
+    // a Zune that never learned its artist, and asking with it asks for a
+    // picture that is not this album's.
+    QString artArtist = m_player->currentArtist();
+    {
+        const int index = m_player->queueIndex();
+        const QVariantList queue = m_player->queue();
+        if (index >= 0 && index < queue.size()) {
+            const QString owner = queue.at(index).toMap()
+                .value(QStringLiteral("albumartist")).toString().trimmed();
+            if (!owner.isEmpty())
+                artArtist = owner;
+        }
+    }
+    const QString art = artUrlFor(artArtist, m_player->currentAlbum());
     if (!art.isEmpty())
         m.insert(QStringLiteral("mpris:artUrl"), art);
     return m;

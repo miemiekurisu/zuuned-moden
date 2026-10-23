@@ -62,7 +62,15 @@ OnlineAlbumArtService::OnlineAlbumArtService(QObject *parent)
                            + QStringLiteral("/art"), parent) {
     m_download = [](const QUrl &url) { return ArtworkHttp::getBody(url, false); };
     m_typedResolve = [](const QString &artist, const QString &album, const QVariantMap &context) {
-        const auto result = MusicIdentityClient().resolveAlbumArtwork(artist, album, context);
+        // Only a saved MusicBrainz identity justifies release-grade matching, and
+        // it is the only identity Customize can offer back. Everything else -
+        // which is every album the library has never been told about - asks a
+        // store, because a store answers from the two names the files already
+        // carry instead of requiring an id nobody has picked yet.
+        const MusicIdentityClient client;
+        const auto result = context.value(QStringLiteral("provider")).toString() == QLatin1String("musicbrainz")
+            ? client.resolveAlbumArtwork(artist, album, context)
+            : client.resolveStoreAlbumArtwork(artist, album, context);
         return QVariantMap{{"status", result.status}, {"reason", result.reason},
                            {"imageUrl", result.imageUrl}, {"identity", result.identity},
                            {"candidates", result.candidates}};

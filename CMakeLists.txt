@@ -586,6 +586,10 @@ qt_add_executable(librarytool
     src/library/librarytool.cpp
     src/library/LibraryDb.cpp
     src/library/LibraryScanner.cpp
+    # The cover self-test answers the real resolver, so the real client and its
+    # transport are linked in; the fetch the test injects never reaches them.
+    src/library/MusicIdentityClient.cpp
+    src/library/ArtworkHttp.cpp
     src/library/VideoNaming.cpp
     src/library/TmdbClient.cpp
     src/library/VideoMatcher.cpp

@@ -12,6 +12,7 @@
 #include <QMutex>
 #include <QMutexLocker>
 #include <QPointer>
+#include <QRegularExpression>
 #include <QSet>
 #include <QStandardPaths>
 #include <QThreadPool>
@@ -49,6 +50,36 @@ bool isImageSuffix(const QString &suffix) {
     return kExts.contains(suffix);
 }
 
+// Carry the bytes across without ever deleting the destination first. Both
+// callers stage into a live QTemporaryFile, and on Windows a name its owning
+// object still holds cannot be removed - not even after close() - so
+// remove() failed with a sharing violation and copy() then refused the existing
+// file. POSIX lets you unlink an open file, so the same lines have always
+// worked there: every folder cover and every device-sourced album picture
+// vanished on Windows alone. Reopening for writing is allowed, because the
+// holder shares reads and writes and withholds only deletion.
+bool copyBytes(const QString &src, const QString &dst) {
+    QFile input(src);
+    if (!input.open(QIODevice::ReadOnly))
+        return false;
+    QFile output(dst);
+    if (!output.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
+    const qint64 want = input.size();
+    qint64 copied = 0;
+    while (copied < want) {
+        const QByteArray chunk = input.read(64 * 1024);
+        if (chunk.isEmpty())
+            break;
+        if (output.write(chunk) != chunk.size())
+            return false;
+        copied += chunk.size();
+    }
+    output.flush();
+    output.close();
+    return copied == want && !input.error() && !output.error();
+}
+
 // Write a source image into the cache: JPEGs already ≤400px are copied
 // verbatim; everything else is decoded, downscaled to ≤400px, and
 // encoded as JPEG q90. (The mac copies verbatim and downscales at load
@@ -60,10 +91,8 @@ bool storeToCache(const QString &src, const QString &dst) {
     if (jpeg) {
         QImageReader probe(src);
         const QSize sz = probe.size(); // header read only, no decode
-        if (sz.isValid() && sz.width() <= 400 && sz.height() <= 400) {
-            QFile::remove(dst);
-            return QFile::copy(src, dst);
-        }
+        if (sz.isValid() && sz.width() <= 400 && sz.height() <= 400)
+            return copyBytes(src, dst);
     }
 
     QImage img(src);
@@ -74,55 +103,104 @@ bool storeToCache(const QString &src, const QString &dst) {
     return img.save(dst, "JPEG", 90);
 }
 
-// Resolution chain from the Swift: folder known-names → any folder
-// image → embedded via libav. Returns true when cachePath exists after.
+// The names a listener puts on a file on purpose. Order is the mac's.
+const char *const kKnownArtNames[] = {"cover", "folder", "artwork", "album",
+                                      "front"};
+
+// The extensions method 1 accepts: the mac only trusts a known name when it
+// carries a picture extension it can load directly.
+bool isArtSuffix(const QString &suffix) {
+    return suffix == QLatin1String("jpg") || suffix == QLatin1String("jpeg")
+        || suffix == QLatin1String("png");
+}
+
+// The first file in a folder listing whose basename is one of the known art
+// names, matched case-insensitively (which covers the Swift's lowercase and
+// Capitalized variants and then some).
+QString knownArtIn(const QFileInfoList &entries) {
+    for (const char *known : kKnownArtNames) {
+        for (const QFileInfo &fi : entries) {
+            if (fi.completeBaseName().compare(QLatin1String(known),
+                                              Qt::CaseInsensitive) == 0
+                && isArtSuffix(fi.suffix().toLower()))
+                return fi.absoluteFilePath();
+        }
+    }
+    return QString();
+}
+
+// The first loadable picture in a folder listing, whatever it is called.
+QString anyImageIn(const QFileInfoList &entries) {
+    for (const QFileInfo &fi : entries) {
+        if (isImageSuffix(fi.suffix().toLower()))
+            return fi.absoluteFilePath();
+    }
+    return QString();
+}
+
+// "CD1", "Disc 2", "disk_1", "LP 3": a disc subfolder of an album, which holds
+// no cover of its own because the album's picture sits one level up. The prefix
+// is required and the whole name has to be accounted for, so an album that is
+// itself named after a year or a volume - "Album 2024", "Vol 2" - is not a disc
+// folder and never inherits whatever its own parent happens to contain.
+bool isDiscFolder(const QString &name) {
+    static const QRegularExpression re(
+        QStringLiteral("^(?:cd|disc|disk|vinyl|lp|pt|part)[\\s._-]*[0-9]+$"),
+        QRegularExpression::CaseInsensitiveOption);
+    return re.match(name).hasMatch();
+}
+
+// Where an album's picture comes from, in order: a name chosen on purpose in
+// the track's own folder, that same name one level up when the folder is only a
+// disc, the picture embedded in the file itself, and last of all some image in
+// the folder that goes by no recognised name. The last two used to be the other
+// way round, which meant a scanned lyric sheet in with the lossless files beat
+// the real cover every track already carried. Returns true when cachePath
+// exists afterwards.
 bool resolveArt(const QString &trackFilepath, const QString &cachePath) {
     const QFileInfo trackInfo(trackFilepath);
     const QDir folder = trackInfo.dir();
 
-    if (folder.exists()) {
-        const QFileInfoList entries =
-            folder.entryInfoList(QDir::Files | QDir::Readable, QDir::Name);
+    QFileInfoList entries;
+    if (folder.exists())
+        entries = folder.entryInfoList(QDir::Files | QDir::Readable, QDir::Name);
 
-        // Method 1: known art basenames, in the mac's priority order,
-        // matched case-insensitively (covers the Swift's lowercase +
-        // Capitalized variants and then some).
-        static const char *kKnown[] = {"cover", "folder", "artwork", "album", "front"};
-        for (const char *known : kKnown) {
-            for (const QFileInfo &fi : entries) {
-                const QString base = fi.completeBaseName().toLower();
-                const QString suffix = fi.suffix().toLower();
-                if (base == QLatin1String(known)
-                    && (suffix == QLatin1String("jpg") || suffix == QLatin1String("jpeg")
-                        || suffix == QLatin1String("png"))) {
-                    if (storeToCache(fi.absoluteFilePath(), cachePath)) {
-                        fprintf(stderr, "[art] found folder art: %s\n",
-                                qUtf8Printable(fi.fileName()));
-                        return true;
-                    }
-                }
-            }
-        }
+    const QString own = knownArtIn(entries);
+    if (!own.isEmpty() && storeToCache(own, cachePath)) {
+        fprintf(stderr, "[art] found folder art: %s\n",
+                qUtf8Printable(QFileInfo(own).fileName()));
+        return true;
+    }
 
-        // Method 2: any image file in the folder
-        for (const QFileInfo &fi : entries) {
-            if (isImageSuffix(fi.suffix().toLower())) {
-                if (storeToCache(fi.absoluteFilePath(), cachePath)) {
-                    fprintf(stderr, "[art] found image in folder: %s\n",
-                            qUtf8Printable(fi.fileName()));
-                    return true;
-                }
+    if (isDiscFolder(folder.dirName())) {
+        QDir parent = folder;
+        if (parent.cdUp()) {
+            const QString above =
+                knownArtIn(parent.entryInfoList(QDir::Files | QDir::Readable,
+                                                QDir::Name));
+            if (!above.isEmpty() && storeToCache(above, cachePath)) {
+                fprintf(stderr,
+                        "[art] found album cover above disc folder: %s\n",
+                        qUtf8Printable(QFileInfo(above).fileName()));
+                return true;
             }
         }
     }
 
-    // Method 3: embedded art via in-process libav
+    // Embedded art, read by the libav that is already in the process.
     if (trackInfo.exists()
         && zuuned_extract_art(trackFilepath.toUtf8().constData(),
                               cachePath.toUtf8().constData(), 400) == 0
         && QFile::exists(cachePath)) {
         fprintf(stderr, "[art] extracted embedded art from: %s\n",
                 qUtf8Printable(trackInfo.fileName()));
+        return true;
+    }
+
+    const QString stray = anyImageIn(entries);
+    if (!stray.isEmpty() && storeToCache(stray, cachePath)) {
+        fprintf(stderr, "[art] found image in folder: %s\n",
+                qUtf8Printable(QFileInfo(stray).fileName()));
         return true;
     }
 

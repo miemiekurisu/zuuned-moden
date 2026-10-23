@@ -79,3 +79,35 @@ function groupAlbums(tracks) {
         a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
         || a.artArtist.localeCompare(b.artArtist, undefined, { sensitivity: "base" }))
 }
+
+// Who owns the only real picture the library already holds for a person: the
+// cover of one of their own albums, keyed by lowercased album artist. Both
+// album sources share this row shape - LibraryService's albumsList and
+// groupAlbums above - so the Artists pivot and an artist page agree, and
+// neither one asks a provider for anything.
+//
+// Which of an artist's albums supplies the picture is the whole question. One
+// that actually has cover art wins outright: a listener with a 40-track
+// compilation-less discography and art on one EP should not get an empty
+// circle because that EP is not their biggest release. Size only breaks the
+// tie, so a one-album artist still wears that album's cover. `hasArt`, when the
+// caller passes one, answers for an album row - omit it and every album is a
+// candidate, which is what a source without a cache to consult wants.
+function localArtOwners(albums, hasArt) {
+    const owners = {}
+    for (const album of albums || []) {
+        if (!album || !album.artAlbum) continue
+        const owner = String(album.artArtist || "").toLowerCase()
+        if (!owner) continue
+        const art = hasArt ? (hasArt(album) ? 1 : 0) : 1
+        const count = album.count || 0
+        const previous = owners[owner]
+        if (previous && (previous.art > art
+                         || (previous.art === art && previous.count >= count)))
+            continue
+        owners[owner] = { artist: album.artArtist || "", album: album.artAlbum,
+                          filepath: album.firstTrackPath || "",
+                          count: count, art: art }
+    }
+    return owners
+}

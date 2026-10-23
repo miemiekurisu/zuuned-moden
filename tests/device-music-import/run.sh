@@ -7,3 +7,4 @@ cmake -S "$import_test_source" -B "$import_test_build" -G Ninja
 cmake --build "$import_test_build" -j 4
 "$import_test_build/device-music-import"
 "$import_test_build/device-album-art"
+"$import_test_build/album-art-precedence"

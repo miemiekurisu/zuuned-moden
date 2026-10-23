@@ -216,15 +216,17 @@ The bash suites in `ci/check.sh` need pkg-config and a POSIX shell, so on
 Windows the library core is covered by the native tools instead:
 `build\librarytool.exe names`, `build\librarytool.exe customize` (the latter
 rebuilds a pre-Customize database and runs the real v0/v2 to v9 migration chain,
-including the pre-migration backup) and `build\librarytool.exe paths` - 62 checks
+including the pre-migration backup) and `build\librarytool.exe paths` - 73 checks
 over the filename, path-comparison, playlist-resolution and playlist-decoding rules
 the Windows port depends on plus the once-only rule for a watch folder that contains
 a junction, the reserved-stem and trailing-dot rule a playlist export needs, m3u written
 in UTF-16 with a BOM, and one path past 260 characters written twice - once through Qt
 and once through `_wfopen()`, which is the pair that pins the embedded manifest,
 with the expectations branched per platform so the same file gates a
-Linux run without changing a Linux answer. All three pass; none touches a
-device, and all three run inside `tests\win-usability\run.ps1`'s tools phase.
+Linux run without changing a Linux answer. `build\librarytool.exe cover` adds 33 checks that
+pin the album-art resolution order and the music-store request pacing without opening a
+socket, and `net` the transport identity. All five probes pass; none touches a
+device, and all five run inside `tests\win-usability\run.ps1`'s tools phase.
 
 Scanning is covered the same way, with a fixture built from the cases Windows
 historically gets wrong: a plain MP3, a WMA file named `.mp3`, a folder named in
@@ -263,7 +265,7 @@ real profile stayed untouched.
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 ```
 
-Expected: `launches=18 checks=116 failures=0 skips=0 killed=0` and `OVERALL=ok` -
+Expected: `launches=18 checks=123 failures=0 skips=0 killed=0` and `OVERALL=ok` -
 the check count is whatever the gate pins today and moves when a pin is added, so the
 number to hold it to is `failures=0`. It
 needs the same MSVC environment as the build and compiles its own capture tool into

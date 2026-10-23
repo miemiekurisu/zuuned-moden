@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Zuuned
+import "MusicIdentity.js" as MusicIdentity
 
 // App chrome — port of ContentView.swift: full-width rotated gradient
 // header, 3-column body (floating nav | content | floating device panel).
@@ -25,9 +26,21 @@ ApplicationWindow {
     // ribbon fades out (one object, never two). Narrow windows retire
     // the ribbon entirely; ◉ in the sidebar is the way back.
     property bool showNowPlaying: false
+    // The art cache is the album's, keyed by the album's owner - album artist
+    // where the source has one, which is exactly what the albums grid and the
+    // C++ album aggregation use. The track artist is a different name: a
+    // compilation, or a file that came off a Zune that never learned its
+    // artist, carries one that is not the album's, and asking with it asked
+    // for a different picture. Then the same cover art got extracted a second
+    // time under that second key, so one view had art and the other did not.
+    function playbackArtKey(item) {
+        const owner = (item.albumartist && item.albumartist.length > 0)
+                      ? item.albumartist : (item.artist || "")
+        return LibraryService.artKey(owner, item.album ?? "")
+    }
     function playbackArt(item) {
         if (item.spokenId) { void SpokenMediaService.revision; return SpokenMediaService.cover(item.spokenId) }
-        return LibraryService.artPaths[LibraryService.artKey(item.artist ?? "", item.album ?? "")] ?? ""
+        return LibraryService.artPaths[playbackArtKey(item)] ?? ""
     }
 
     Connections {
@@ -157,6 +170,79 @@ ApplicationWindow {
             agrees = ZPathText.display(String(wf[0].path)) === String(wf[0].displayPath) ? 1 : 0
         return { rows: rows, native: native, raw: raw, stored: stored, agrees: agrees }
     }
+    // QA harness: the artwork-identity proof.  The island, a queue row and the
+    // media-property report all ask for the album's picture, and they must ask
+    // with the album's owner - COALESCE(albumartist, artist), the one rule the
+    // albums grid and the C++ album aggregation use.  A row that also carries a
+    // track artist (a compilation, or a file pulled off a Zune that never
+    // learned its artist) used to ask with that name instead, which is a
+    // different cache key: the same cover got extracted twice, one view showed
+    // art and the other did not.  Proved here rather than in a screenshot
+    // because no gate reaches a QML function any other way, and proved without
+    // touching the player, so a gated run stays silent.
+    readonly property var qaArtProof: {
+        if (!qaProbe)
+            return null
+        const albums = LibraryService.albumsList
+        const paths = LibraryService.artPaths
+        let withArt = 0, agree = 0, decoySame = 0
+        for (let i = 0; i < albums.length; i++) {
+            const album = String(albums[i].artAlbum ?? "")
+            const owner = String(albums[i].artArtist ?? "")
+            const expected = String(paths[LibraryService.artKey(owner, album)] ?? "")
+            if (expected.length > 0)
+                withArt++
+            const row = { albumartist: owner, artist: "ZUUNED-QA-DECOY", album: album }
+            if (playbackArt(row) === expected)
+                agree++
+            if (playbackArt(row) === playbackArt({ albumartist: owner, album: album }))
+                decoySame++
+        }
+        // And the part that bites with no pictures on disk at all: name the key
+        // this function would ask with, for an invented album.  A row carrying
+        // both names must ask as its owner, and the answer must not be the key
+        // the decoy track artist would have produced.
+        // And the artist tile. A local library has no portrait file to read, so
+        // an artist wears the cover of one of their own albums, and which album
+        // supplies it is the whole rule: one that HAS a picture beats a bigger
+        // one that has none, and size only breaks the tie. Every album whose
+        // cover the cache holds must therefore land an artist tile on a cover,
+        // or the Artists page paints circles the library has art for.
+        const hasArt = album => String(paths[LibraryService.artKey(
+            String(album.artArtist ?? ""), String(album.artAlbum ?? ""))] ?? "") !== ""
+        const owners = MusicIdentity.localArtOwners(albums, hasArt)
+        let ownerWanted = 0, ownerFound = 0
+        for (let i = 0; i < albums.length; i++) {
+            if (!hasArt(albums[i]))
+                continue
+            ownerWanted++
+            const entry = owners[String(albums[i].artArtist ?? "").toLowerCase()]
+            if (entry && String(paths[LibraryService.artKey(
+                    String(entry.artist), String(entry.album))] ?? "") !== "")
+                ownerFound++
+        }
+        // The tie-break itself, proved on rows that need no pictures on disk.
+        const ranked = MusicIdentity.localArtOwners([
+            { artArtist: "Zed", artAlbum: "Small", count: 1 },
+            { artArtist: "zed", artAlbum: "Big", count: 9 }
+        ])
+        const preferring = MusicIdentity.localArtOwners([
+            { artArtist: "Ann", artAlbum: "Big", count: 9 },
+            { artArtist: "ANN", artAlbum: "Small", count: 1 }
+        ], album => album.artAlbum === "Small")
+        const rankOk = ranked.zed && ranked.zed.album === "Big" ? 1 : 0
+        const preferArtOk = preferring.ann && preferring.ann.album === "Small" ? 1 : 0
+        const ownerKey = LibraryService.artKey("ZUUNED-QA-OWNER", "ZUUNED-QA-ALBUM")
+        const asked = playbackArtKey({ albumartist: "ZUUNED-QA-OWNER",
+                                       artist: "ZUUNED-QA-DECOY",
+                                       album: "ZUUNED-QA-ALBUM" })
+        return { albums: albums.length, withArt: withArt, agree: agree,
+                 decoySame: decoySame, ownerWanted: ownerWanted,
+                 ownerFound: ownerFound, rankOk: rankOk, preferArtOk: preferArtOk,
+                 keyOwner: asked === ownerKey ? 1 : 0,
+                 keyDecoy: asked !== LibraryService.artKey("ZUUNED-QA-DECOY",
+                                                           "ZUUNED-QA-ALBUM") ? 1 : 0 }
+    }
     function reportQaState(when) {
         if (!qaProbe)
             return
@@ -179,7 +265,17 @@ ApplicationWindow {
             + " wfNative=" + qaPathProof.native
             + " wfRaw=" + qaPathProof.raw
             + " wfStored=" + qaPathProof.stored
-            + " wfLabel=" + qaPathProof.agrees)
+            + " wfLabel=" + qaPathProof.agrees
+            + " albums=" + qaArtProof.albums
+            + " artWith=" + qaArtProof.withArt
+            + " artAgree=" + qaArtProof.agree
+            + " artDecoy=" + qaArtProof.decoySame
+            + " artOwnerWanted=" + qaArtProof.ownerWanted
+            + " artOwnerFound=" + qaArtProof.ownerFound
+            + " artRankOk=" + qaArtProof.rankOk
+            + " artPreferArtOk=" + qaArtProof.preferArtOk
+            + " artKeyOwner=" + qaArtProof.keyOwner
+            + " artKeyDecoy=" + qaArtProof.keyDecoy)
     }
     // The window keeps reporting while a gate drives it, so a resize or a queue
     // change is visible in the log instead of needing a screenshot to infer.

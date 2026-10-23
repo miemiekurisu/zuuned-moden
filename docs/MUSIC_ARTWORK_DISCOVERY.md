@@ -6,9 +6,70 @@ notes below are historical. The artist/album follow-up is documented in
 software gates, with user acceptance and packaging pending.
 
 Automatic album covers come from local folder images and embedded artwork.
-Missing album covers now fall back to online lookup after all known local
-sources fail. Customize remains the explicit match/artwork chooser. Artist
-portraits use the online identity/artwork providers.
+Missing album covers fall back to music-store lookup after all known local
+sources fail, behind the ``albumCoverLookup`` switch. Customize remains the
+explicit match/artwork chooser. Artist portraits use the online
+identity/artwork providers; MusicBrainz identity lookup
+(``autoMetadataLookup``) ships off, so a portrait is fetched when something
+asks for it - see the October 24, 2026 section below for both switches.
+
+## October 24, 2026: the local resolution order, and a store asked at its own pace
+
+Reported on Windows as "the PC albums have no covers".  Album grouping, matching and cache identity
+were all correct: the application was losing or overriding a picture that was already there, and
+the lookup meant to cover a genuinely artless album then rate-limited itself into silence.  Four
+faults, every one of them pinned by a gate now.
+
+**Order.**  Where an album's picture comes from, first match wins:
+
+1. a file named ``cover``, ``folder``, ``artwork``, ``album`` or ``front`` - case-insensitive,
+   ``.jpg``, ``.jpeg`` or ``.png`` - in the track's own folder;
+2. that same known name one level up, when the track's folder is only a disc: matching
+   ``^(?:cd|disc|disk|vinyl|lp|pt|part)[\s._-]*[0-9]+$``, so ``CD1`` and ``Disc 2`` inherit the
+   album's picture while an album actually called ``Vol 2`` or ``Album 2024`` does not;
+3. the picture embedded in the audio file itself;
+4. last, any loadable image in the folder that goes by no recognised name.
+
+Steps 3 and 4 used to be the other way round, so a scanned lyric sheet dropped in beside the
+lossless files beat the real cover.  ``tests/device-music-import/album-art-precedence.cpp`` pins the
+whole order; ``librarytool cover`` pins the rungs it can reach without a socket.
+
+**Who owns the picture.**  Artist tiles and the player keyed art by the *track* artist, which is the
+album owner only until a compilation or a featured artist turns up - and for a local picture that
+key is a path an artist row does not have.  ``localArtOwners()`` in ``qml/MusicIdentity.js`` derives
+the owner per album, and ``qml/ArtistCard.qml``, ``qml/ArtistDetail.qml``, ``qml/MusicPage.qml`` and
+``qml/Main.qml`` ask for the owner's key with the album's own cover as the fallback.
+
+**A cache write that Windows would not perform.**  Publishing staged into a live
+``QTemporaryFile`` and then removed and re-copied the destination.  Windows will not delete a name
+its own living object still holds, so the verbatim-JPEG path returned false and a folder or
+device-sourced cover never reached the cache - on Windows alone, because POSIX unlinks open files.
+It streams into the destination now.  See `WINDOWS_COMPAT_AUDIT.md`, twelfth sweep.
+
+**Two switches instead of one.**  ``albumCoverLookup`` is the album-cover lookup and ships **on**;
+``autoMetadataLookup`` is the MusicBrainz identity lookup and ships **off**, artist portraits
+included.  A file that carries its own art still causes no request of any kind, and right-click
+remains how you ask about one album, artist or track.  With the album switch on and every local
+source having failed, the store ladder walks ``us, jp, tw, hk, gb, de``, accepts only an exact
+normalised artist+album match - earliest release date, then smallest id - and keeps only an
+``https`` URL on ``*.mzstatic.com``, widened to ``600x600`` in the URL itself.
+
+**Pacing, because a library is a burst.**  Every artless album used to fire its whole ladder at an
+endpoint that had never been throttled, and a catalogue that *errored* was walked through rather
+than believed, so a real library drew ``HTTP 429``, spent all six rungs per album, and recorded each
+error as an album with no cover.  One store search is in flight process-wide, at least two seconds
+apart; a 429 or 503 pushes the next slot out by ``Retry-After`` or by four times the interval; a
+wait over thirty seconds is answered locally with a synthesized 503 so a rate limit is never stored
+as an absent cover; and the first catalogue that errors ends the ladder, with the album parked for
+five minutes.
+
+**Measured.**  On a copy of a real 13-album library, run as its own profile against the built
+application: 42 store searches in 87.6 s, minimum gap 1.7 s, no 429 and no 503, every album landing
+a terminal verdict, and ``albums=13 artWith=4 artAgree=13 artOwnerWanted=4 artOwnerFound=4``.  Nine
+of those thirteen albums have no picture anywhere - they are the fixtures the scan gates generate -
+and they display blank, which is the correct answer and the one a "found it!" screenshot cannot
+show.  For an album a store does carry, the download is proven end to end: 33,762 bytes published
+into an isolated profile's art cache.
 
 ## October 1, 2026 correction
 

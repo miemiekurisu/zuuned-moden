@@ -69,6 +69,7 @@ Rectangle {
     function playbackItem() {
         return { filepath: track.filepath || "", title: track.title || "",
             artist: track.artist || "", album: track.album || "",
+            albumartist: track.albumartist || track.artist || "",
             libraryId: track.libraryId !== undefined ? track.libraryId : -1 }
     }
 

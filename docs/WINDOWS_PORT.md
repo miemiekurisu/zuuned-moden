@@ -1329,6 +1329,103 @@ network is a thing a user does to one item, not a thing that happens to a librar
 No device claim changes with either pass: still the one hand-tested Pavo Zune HD, and nothing on
 it has been heard.
 
+## The nineteenth pass: three ways to lose a cover, and a store that will not be rushed (2026-10-24)
+
+Asked, again, to fix the album covers on the PC side.  Nothing about album grouping, identity or
+cache keys was wrong: every album on this machine that *owns* a picture owns it correctly, and the
+application was losing or overriding that picture between the file and the screen.  Four faults,
+and the fourth was caused by fixing the first three.
+
+**A destination Windows refuses to delete.**  ``storeToCache()`` staged every picture into a live
+``QTemporaryFile`` and then published it with ``QFile::remove(dst)`` followed by ``QFile::copy(src,
+dst)``.  On Windows a name whose owning ``QTemporaryFile`` object is still alive cannot be
+removed - not after ``close()``, because the holder keeps the handle open - so ``remove()`` failed
+with a sharing violation and ``copy()`` then refused the file that was still there, and the branch
+returned false.  POSIX unlinks an open file without complaint, which is why the same nine lines
+have always worked on the Linux line.  The branch is the *verbatim JPEG* one, taken for any picture
+that is already a JPEG of 400 px or less, which is exactly what a ``folder.jpg`` and a
+device-supplied thumbnail normally are: album art whose source was a folder image or the device
+never reached the cache, on this platform alone.  ``copyBytes()`` opens the destination
+``WriteOnly | Truncate`` and streams into it, which the holder permits because it shares reads and
+writes and withholds only deletion.
+
+**An order that rewarded the wrong file.**  The local chain was known-names -> *any* image in the
+folder -> embedded picture, so a scanned lyric sheet or a band photo dropped in beside the lossless
+files beat the picture inside those files.  The order is now a known name (``cover``, ``folder``,
+``artwork``, ``album``, ``front``, case-insensitive, ``.jpg``/``.jpeg``/``.png``) in the track's own
+folder; that same known name one level up when the folder is only a disc; the embedded picture;
+and last of all an image that goes by no recognised name.  The disc rule is
+``^(?:cd|disc|disk|vinyl|lp|pt|part)[\s._-]*[0-9]+$`` - prefix required, whole name accounted for -
+so ``CD1`` and ``Disc 2`` inherit the album's picture while an album genuinely called ``Vol 2`` or
+``Album 2024`` is not a disc folder and never inherits whatever its own parent happens to hold.
+``tests/device-music-import/album-art-precedence.cpp`` pins all four rungs.
+
+**A key that belonged to the wrong entity.**  Artist tiles and the player asked for art keyed by
+*the track artist*.  For a local picture that key is also a path the artist row does not have, and
+it stops being the album owner at the first compilation or featured artist, so an album with a real
+cover painted nothing on the artist page that owns it.  ``localArtOwners()`` in
+``qml/MusicIdentity.js`` derives, per album, whose art that album owns, and ``qml/ArtistCard.qml``,
+``qml/ArtistDetail.qml``, ``qml/MusicPage.qml`` and ``qml/Main.qml`` ask for the owner's key and
+fall back to that album's own cover.  The usability gate asserts both halves now - every album
+resolves the same picture in the grid and in the player, and every album carrying a cover hands one
+to its artist tile.
+
+**What the fix then exposed.**  Nine of this machine's thirteen albums have no picture in a file,
+in a folder, or in a store: they are the sine-wave fixtures the scan gates generate, and they stay
+blank because blank is the truth.  For an album a store *does* carry, ``albumCoverLookup`` - a
+switch of its own, and unlike ``autoMetadataLookup`` it ships **on** - walks the
+``us, jp, tw, hk, gb, de`` catalogues, accepts only an exact normalised artist+album match
+(earliest release date, then smallest id), and keeps only an ``https`` URL on ``*.mzstatic.com``,
+rewriting the ``/NNNxNNNbb.jpg`` size token to ``600x600``.  MusicBrainz stays behind
+``autoMetadataLookup``, off, exactly as the eighteenth pass left it: a file that carries its own
+art causes no request, and right-click is still how you ask about one thing.
+
+**And then the store said no.**  An album with no local art is up to six catalogue requests, and a
+library issues them for every such album at once.  ``ArtworkHttp`` paced MusicBrainz and nothing
+else, so the library sized that burst measured about 2.2 requests a second on Apple's search
+endpoint; and ``resolveStoreAlbumArtwork()`` treated a catalogue that had *errored* the same as one
+that had answered nothing and kept descending the ladder, so a rate-limited album spent all six
+rungs.  ``HTTP 429`` arrived, every rung errored, each error was filed as "no music store carries
+this album", and the outcome was a library in which every store lookup had been tried and none had
+been believed.  Three changes, all in transport and ladder rather than in matching:
+
+- one store search in flight process-wide, at least 2 s apart, sleeping in 25 ms slices so
+  ``beginShutdown()`` still stops promptly;
+- on 429 or 503 the next slot moves out by ``Retry-After`` when the response carries one and by
+  four times the interval otherwise, and a request that would have to wait more than 30 s is
+  answered locally with a synthesized 503 - so a rate limit is *never* recorded as an album with no
+  cover, which is the difference between a retry later and a permanently wrong answer;
+- the first catalogue that errors ends the ladder, and ``OnlineAlbumArtService`` parks that album
+  for five minutes instead of spending five more requests on an outage it has already seen.
+
+``isStoreSearch()`` is public so ``librarytool cover`` can pin the rule without opening a socket;
+that self-test is 33 checks, and among them the pacing arithmetic and "one unanswered catalogue is
+enough to learn it", which asserts ``asked == 1``.
+
+Measured rather than reasoned.  A ``VACUUM INTO`` copy of the real library database with its
+customizations cleared, launched as its own profile on the built app and left alone:
+**42 store searches in 87.6 s, about 29 a minute, minimum gap 1.7 s, no 429 and no 503 at all**.
+Every album reached a terminal honest verdict - seven ``noArtwork ... (No music store carries this
+album.)`` and two ``needsMatch`` for the Unknown Artist, which was never sent anywhere - and the
+probe reported ``albums=13 artWith=4 artAgree=13 artOwnerWanted=4 artOwnerFound=4 wfNative=3
+wfRaw=0``.  The four albums that own art paint, on Albums and on Artists.  A store-only album was
+proven separately and end to end: 33,762 bytes of cover for one Anri album fetched into an isolated
+profile's cache and published through the same ``link()`` publisher the artist portraits use.  On
+the relinked build ``tests\win-compat`` answers ``201 checks, 0 failures, 0 skips`` and
+``tests\win-usability`` ``launches=18 checks=123 failures=0 skips=0 killed=0``, ``OVERALL=ok``.
+
+Two harness facts worth carrying.  PowerShell 5.1 resolves ``-Include`` against the *parent* of a
+``-Recurse`` path, so ``...\cache\art\*`` combined with ``-Include *.jpg`` matched nothing: the
+gate had been certifying an empty directory, in two places, and would have passed no matter what
+the application cached.  And ``tests\device-music-import`` cannot run on this platform at all - it
+isolates its artwork cache with ``qputenv("XDG_CACHE_HOME")``, which the Windows shell folders
+ignore - so five of its ``device-album-art`` checks fail here.  Those five were reproduced against
+a scratch build of HEAD's own ``AlbumArtService.cpp`` and came back identical, so they are a
+Linux-only gate with no Windows verdict in them, not something this pass broke.
+
+No device claim changes with this pass: still the one hand-tested Pavo Zune HD, still nothing on it
+heard, and the artwork it does supply to the application is a read.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and

@@ -439,6 +439,10 @@ private:
     // artist is carried by m_forceArtworkRetry instead, so the per-item
     // right-click works with the switch off. Local art extraction ignores it.
     bool onlineMetadataLookupEnabled() const;
+    // Settings -> Library "album covers from the music store". Default on, and
+    // album covers only: a portrait has no file to read and no store that sells
+    // one, so it stays behind the switch above.
+    bool albumCoverLookupEnabled() const;
     QVariantMap m_artistImages;
     QVariantMap m_albumArtworkStatus, m_artistArtworkStatus;
     QHash<QString, QVariantMap> m_albumMatchingEvidence;
