@@ -5,7 +5,9 @@ libzune is included as ordinary source, not a private Gitea submodule.
 
 MTPZ certificate/key material is deliberately absent. This source builds without
 embedded credentials. Zune authentication requires separately supplied local
-credentials in ~/.mtpz-data. Local library and playback do not require them.
+credentials, in ~/.mtpz-data on Linux and macOS or %USERPROFILE%\.mtpz-data on
+Windows. Local library and playback do not require them, and neither does reading a
+player; writing to one does.
 See [Building with Zune authentication](docs/BUILD_WITH_MTPZ.md) for obtaining
 the external data file and creating a local embedded-data header. No credential
 values are included in this source snapshot.
@@ -18,10 +20,14 @@ This snapshot is not represented as the exact source for those older binaries.
 Retain all original and third-party license notices. This export is a technical
 separation, not a conclusion about third-party redistribution rights.
 
-Build on Linux using the dependencies in README.md:
+Build instructions for both platforms this tree builds on live in BUILDING.md. On
+Linux that reduces to:
 
     cmake -B build -G Ninja
     cmake --build build
+
+On Windows, configure and build with the MSVC toolchain and pass `--clean-first` to the
+build step; BUILDING.md says why that flag is not optional here.
 
 The private visualizer is excluded from this public source and its build dependencies.
 Playback, the Now Playing island and video controls remain available.

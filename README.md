@@ -34,8 +34,10 @@ Hand-tested against one Pavo-generation Zune HD on the development machine:
 - **Enumeration and hotplug** - unplug and replug produced the same read twice.
 - **Reading the device** - `GetDeviceInfo`, the ZMDB scan, the device page browsed with
   album thumbnails fetched off the player.
-- **Authenticated transfers, both ways, through the ordinary controls** - music sent to
-  the player and a track pulled back into the local library, with byte readback.
+- **Authenticated transfers, both ways, through the ordinary controls** - two tracks sent
+  to the player, one of them on an album named in Chinese, and a track pulled back into the
+  local library with byte readback. A pull lands in the folder the library declares for
+  music, not in a directory of the app's own choosing.
 - **Local library on a Windows disk** - watch folders, native `E:\...` path display,
   non-ASCII file names, album artwork.
 
@@ -71,6 +73,11 @@ The full, current recipe is
 - load the MSVC environment (`vcvars64.bat`) before configuring - loading none, or the
   one belonging to a different Visual Studio, fails as a flood of bogus `std::thread`
   diagnostics or an `STL1001` static assert rather than as a linker error
+- MTPZ authentication data, unless you want the read-only case. This source ships no
+  credentials, so a build without them browses a player and answers `AccessDenied` or a
+  raw `0x200F` the moment it writes to one: the symptom reads like a platform fault and is
+  not one. Put the five-line file at `%USERPROFILE%\.mtpz-data`, which needs no rebuild, or
+  create `libzune\src\mtpz_keys.h` - [docs/BUILD_WITH_MTPZ.md](docs/BUILD_WITH_MTPZ.md)
 
 ```powershell
 git clone https://github.com/miemiekurisu/zuuned-modern.git
@@ -92,9 +99,12 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-compat\run.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests\win-usability\run.ps1
 ```
 
-They cover the POSIX-compatibility layer and launch every page, every settings tab and
-the command-line probes against isolated profiles. A green run of both says nothing at all
-about a Zune - that is deliberate, and is why the hardware evidence lives on
+They cover the POSIX-compatibility layer and launch every page, every settings tab, the
+filename and library probes, and the command-line tools against isolated profiles. A green
+run on 2026-10-24 reported `201 checks, 0 failures, 0 skips` and
+`launches=18 checks=132 failures=0`. Those counters move with the tree, so read them as a
+floor rather than an expectation. Neither gate says anything at all about a Zune - that is
+deliberate, and is why the hardware evidence lives on
 [docs/WINDOWS_PORT.md](docs/WINDOWS_PORT.md) instead.
 
 ## Building on Linux
@@ -127,6 +137,8 @@ packaging/windows/  WinUSB driver guide and check-driver.ps1
 tests/win-compat/    Windows compatibility gate (no device)
 tests/win-usability/ Windows launch and UI gate (no device)
 docs/WINDOWS_PORT.md what is and is not proven on Windows
+docs/WINDOWS_COMPAT_AUDIT.md the whole-tree Windows compatibility sweeps
+docs/FEATURE_COMPLETION.md the implementation backlog
 docs/ZUNE_CLIENT_FEATURES.md the original Zune software, feature by feature
 ```
 
@@ -135,9 +147,11 @@ docs/ZUNE_CLIENT_FEATURES.md the original Zune software, feature by feature
 Browse a Zune's library and transfer media to it over USB; enjoy a local music library
 with artists, albums, playlists and playback; organize videos, podcasts and audiobooks;
 edit metadata and artwork; build photo albums. Local playback and organization work with
-no player connected. The Windows port carries music in both
-directions against a player; photos and video have been sent from Windows without a byte of
-either coming back, and no Windows deletion has ever been done - see the status page.
+no player connected, and each kind of media has exactly one default destination folder -
+that folder shows the fact as a status on its row, the others offer it as a button. The
+Windows port carries music in both directions against a player; photos and video have been
+sent from Windows without a byte of either coming back, and no Windows deletion has ever
+been done - see the status page.
 
 ## License
 
