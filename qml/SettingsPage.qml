@@ -1539,10 +1539,22 @@ Item {
                             delegate: StatRow {
                                 required property var modelData
                                 label: ZPathText.display(modelData.folder)
-                                value: (modelData.videos > 0 ? modelData.videos + " video " : "")
-                                     + (modelData.photos > 0 ? modelData.photos + " photo " : "")
-                                     + (modelData.audio > 0 ? modelData.audio + " audio " : "")
-                                     + "held — type \"" + modelData.type + "\" skips them"
+                                readonly property string wrongKind:
+                                    (modelData.videos > 0 ? modelData.videos + " video " : "")
+                                    + (modelData.photos > 0 ? modelData.photos + " photo " : "")
+                                    + (modelData.audio > 0 ? modelData.audio + " audio " : "")
+                                readonly property string underFloor:
+                                    modelData.sizeSkipped > 0
+                                    ? modelData.sizeSkipped
+                                      + " video under the size floor — set as download folder"
+                                    : ""
+                                // Two complaints, because a folder that holds the
+                                // wrong kind of media and a folder whose size
+                                // guess said no are fixed by two different things.
+                                value: wrongKind
+                                     ? wrongKind + "held — type \"" + modelData.type + "\" skips them"
+                                       + (underFloor ? " · " + underFloor : "")
+                                     : underFloor
                                 valueColor: Theme.warning
                                 dot: Theme.warning
                             }

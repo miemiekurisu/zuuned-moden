@@ -676,8 +676,9 @@ everything and releasing it logged `purged 0 items` while keeping every row it o
 `isSkippedVideoFile()`'s 50 MB floor is `movies`-only now rather than "anything that is not
 tv/anime", so a folder typed `all` keeps a 20 MB clip. `LibraryScanner` also censuses, per root, the
 files its own declared type will not index and reports them as Settings -> Device warning rows plus
-one `[scan] ... will not index` log line - coded and compiled and **not claimed as sighted**, because
-no session log on this machine contains one and every root here is typed to match its contents. The
+one `[scan] ... will not index` log line - coded and compiled, and still with no live capture on this
+machine (every root here is typed to match its contents), though the signal carrying it has one since
+the pass below. The
 usability gate no longer seeds a settings ini at all, so it measures the shipping defaults instead of
 a value it wrote for itself. Gates: `tests\win-compat` 201 checks 0 failures, `tests\win-usability`
 `launches=18 checks=129 failures=0 skips=0 killed=0` `OVERALL=ok` - six above the nineteenth pass,
@@ -687,6 +688,26 @@ invariant. Harness fact worth keeping: the first run was `launches=3 checks=91 f
 failure `0xC0000135`, because Qt's bin was not on `PATH` and the gate's own `librarytool`,
 `devicetool` and `playertool` never started - a gate that cannot launch its own tools is not an
 application verdict. No device claim changes.
+
+**2026-10-24 Windows video floor pass:** the pass above narrowed `isSkippedVideoFile()`'s 50 MB floor to
+`movies`-only and that was still wrong where it mattered: the user's video folder *is* typed `movies`, so
+a 20,575,375-byte `Save to Library` wrote itself to `E:/Temp/testmusic/测试视频/测试视频.mp4`, the watcher
+fired, and the Videos page never showed it, with no log line anywhere. `VideoNaming::videoSkipReason()`
+answers `none`/`bonusName`/`sizeFloor` instead of a bool - a scan cannot report what it did not
+distinguish - and the floor no longer applies beneath `LibraryDb::importRoot("video")`, the folder
+downloads land in, because Zune video is small by nature and a pull the user asked for is not trailer
+debris; `trailer.mp4` is still refused everywhere and every other `movies` root keeps the 50 MB screen.
+Refusals are counted per root and reported as `[scan] ... holds N video file(s) under the size floor`, and
+as `sizeSkipped` on the `mediaTypeNotes` row Settings -> Device renders, because `videoMinSizeMB` is an
+ini key with no control. A refusal is counted after the unchanged-mtime fast-path on purpose: counted
+first, a folder whose video is on screen starts complaining the moment the default moves elsewhere.
+`librarytool videofloor` (19 checks, in the usability `tools` phase) plants two 2 KB clips in two movie
+folders and proves the marked one indexes, the other is refused and named once, and moving the mark
+indexes the file and retires the complaint rather than stacking one. Live: on the relaunched build the
+launch sweep indexed the 20 MB file that had been invisible since 02:43:14 - two video rows, a probed
+60,325 ms duration, no size-floor line for its folder. Nobody has watched it. Gates: `tests\win-compat`
+201 checks 0 failures, `tests\win-usability` `launches=18 checks=130 failures=0 skips=0 killed=0`
+`OVERALL=ok`, on a `--clean-first` relink after the header edit. No device claim changes.
 
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow

@@ -419,18 +419,19 @@ bool isSkippedDir(const QString &dirName) {
     return names.contains(dirName.toLower());
 }
 
-bool isSkippedVideoFile(const QString &filename, qint64 filesize,
-                        const QString &folderType, int minSizeOverrideMB) {
+VideoSkip videoSkipReason(const QString &filename, qint64 filesize,
+                          const QString &folderType, int minSizeOverrideMB,
+                          bool appDownload) {
     static const QSet<QString> stems = {
         QStringLiteral("sample"), QStringLiteral("trailer"),
         QStringLiteral("behindthescenes"), QStringLiteral("featurette"),
     };
     const QString stem = QFileInfo(filename.toLower()).completeBaseName();
     if (stems.contains(stem))
-        return true;
+        return VideoSkip::bonusName;
     if (stem.startsWith(QLatin1String("sample.")) || stem.startsWith(QLatin1String("sample-"))
         || stem.startsWith(QLatin1String("sample_")))
-        return true;
+        return VideoSkip::bonusName;
 
     // The 50MB floor is a MOVIE-folder rule: it is there to drop trailer and
     // clip debris in a folder the user declared to hold movies.  A folder typed
@@ -438,12 +439,27 @@ bool isSkippedVideoFile(const QString &filename, qint64 filesize,
     // is where a phone clip or a music video lands, and those are routinely
     // 20MB; under the old rule the floor deleted the only video in such a
     // library without saying so.  Only a folder that asks to be movies keeps it.
+    //
+    // Even there it screens guesses, not requests.  Everything the app pulled
+    // off a player into its own download folder is something the user asked for
+    // by right-clicking, and Zune video is small by nature - a device-sized
+    // transcode is a few MB - so the floor would have thrown away the app's own
+    // output.  A refusal that survives this is counted and named by the scan.
+    if (appDownload)
+        return VideoSkip::none;
     const bool movieLike = (folderType == QLatin1String("movies"));
     const qint64 minMB = minSizeOverrideMB > 0 ? minSizeOverrideMB : (movieLike ? 50 : 5);
     if (filesize > 0 && filesize < minMB * 1024 * 1024)
-        return true;
+        return VideoSkip::sizeFloor;
 
-    return false;
+    return VideoSkip::none;
+}
+
+bool isSkippedVideoFile(const QString &filename, qint64 filesize,
+                        const QString &folderType, int minSizeOverrideMB,
+                        bool appDownload) {
+    return videoSkipReason(filename, filesize, folderType, minSizeOverrideMB,
+                           appDownload) != VideoSkip::none;
 }
 
 } // namespace VideoNaming

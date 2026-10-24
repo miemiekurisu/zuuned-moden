@@ -1314,6 +1314,11 @@ Device evidence is unchanged: one hand-tested Pavo Zune HD.
   `tests\win-usability` beside `names`, `paths`, `vanish`, `customize` and `cover`, on the same
   reasoning as `librarytool paths` - a header-only or database-level rule is unreachable from a
   QML launch, so the tool is where it gets pinned.
+- `librarytool videofloor` is 19 checks and the only capture the video size floor has: which folder may
+  refuse a small video, the one folder that may not (the download destination, so a pull the user asked
+  for cannot be discarded as debris), and the note the scan owes for every file it did refuse.  Nothing
+  about the rule is Windows-specific, so it is pinned once, on both platforms, in the tool rather than in
+  a QML launch.
 - The profile-isolation pair in `tests\win-usability` reads the *real* profile before and
   after the run, so it gates the gate: it is only valid while nothing else is using that
   profile.  One run taken with a `build\zuuned.exe` left open from an earlier check failed on

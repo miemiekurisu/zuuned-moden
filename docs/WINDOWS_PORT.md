@@ -1503,8 +1503,9 @@ running and reports once per root - ``mediaTypeNotes`` to Settings -> Device as 
 the setting to change, and one log line reading ``[scan] <root> holds N video file(s) that the type
 "x" will not index - Settings > Library > treat as "all"``.  Coded, compiled, and **not sighted**:
 the last twelve session logs on this machine contain no such line, because every root here is typed
-to match what is in it.  It is a diagnostic with no capture, and it stays that way until somebody
-mistypes a folder on purpose.
+to match what is in it.  It had no capture when this pass closed, and the capture it has now comes from the
+next pass rather than from a mistyped folder - because the floor sitting beside this
+census was still eating a real download, quietly.
 
 **Two fixture faults found by writing the gate, not by running the app.**  The import-root checks
 first shared the database the counting checks had already filled, where the Chinese-named folder was
@@ -1532,6 +1533,56 @@ that cannot start its own tools is not an application verdict.
 
 No device claim changes with this pass: still the one hand-tested Pavo Zune HD, still nothing on it
 heard, and the artwork it does supply to the application is a read.
+
+## The twenty-first pass: a download that arrived and stayed invisible (2026-10-24)
+
+**The twentieth pass shipped a fix that still ate the user's file.**  At 02:43:13 a right-click
+``Save to Library`` on a device video logged ``[worker] extracting video 33554718 ->
+E:/Temp/testmusic/测试视频/测试视频.mp4`` and put 20,575,375 bytes on disk; the folder watcher fired
+six seconds later; and the Videos page went on showing the single 76 MB clip it had shown before, with
+nothing in any log explaining where 20 MB had gone.  The explanation was this pass's own rule:
+``isSkippedVideoFile()``'s 50 MB floor had just been narrowed to ``movies``-only, and this folder *is*
+typed ``movies``, which is the honest thing to call a folder of video.  Zune video is small by nature -
+the pull was 20.6 MB and a device-sized transcode is smaller still - so a floor written to drop trailer
+debris in a movie collection was refusing the application's own purpose.  A file the user asked for by
+right-clicking is not a guess about what a folder might hold.
+
+**A refusal answers with a reason now, and says itself out loud.**  ``VideoNaming::videoSkipReason()``
+returns ``none`` / ``bonusName`` / ``sizeFloor`` where the old function returned a bool, because a scan
+cannot report what it never distinguished, and ``isSkippedVideoFile()`` stays as the yes/no form of it.
+The floor does not apply beneath ``LibraryDb::importRoot("video")`` - the very folder downloads land in -
+while ``trailer.mp4`` is refused wherever it sits and every other ``movies`` folder keeps its 50 MB
+screen for the debris the floor was written against.  What the floor does refuse is counted per root and
+named: ``[scan] <root> holds N video file(s) under the size floor - Settings > Device > set as the
+download folder, or lower videoMinSizeMB``, with the same count on the ``mediaTypeNotes`` row Settings ->
+Device already renders.  ``videoMinSizeMB`` remains an ini key with no control anywhere, which is exactly
+why a refusal may no longer be swallowed.
+
+**The census forced one ordering fact.**  A refusal is counted *after* the unchanged-mtime fast-path.
+Counted before it, a folder whose video is plainly on the Videos page starts complaining the moment the
+download mark moves elsewhere - a warning that tells the user to repair something already working, which
+is worse than the silence it replaced.
+
+**The diagnostic has a capture, and it is a produced one.**  ``librarytool videofloor`` is 19 checks:
+seven on the rule itself (a 20 MB file refused in ``movies`` and kept as a download and kept in a folder
+typed ``all``; the 5 MB ``tv`` floor; ``videoMinSizeMB`` overriding the type; ``trailer.mp4`` at 900 MB
+still refused even as a download; a size nobody read being no reason to refuse) and twelve through one
+real ``LibraryScanner`` pass over two real folders holding two real 2 KB mp4s.  The marked folder indexes
+its clip, the unmarked folder does not and is named exactly once with a size complaint rather than a
+wrong-type one, and moving the mark indexes the other file *and* retires the first complaint instead of
+stacking a second.  The wrong-kind census of the twentieth pass still has no live capture on this
+machine - every root here is typed to match what it holds - but the signal carrying it does now.
+
+**And the file came back.**  On the relaunched build the launch sweep of 03:04:35.562 took in the file
+that had been sitting unseen since 02:43:14: ``videos`` went from one row to two, ``测试视频.mp4``
+carries a probed duration of 60,325 ms, and its folder logs no size-floor line because the floor is no
+longer allowed to answer for it.  Nobody has watched it.  A row and a duration are a read.
+
+**Gates.**  ``tests\win-compat`` answers ``201 checks, 0 failures, 0 skips`` and ``tests\win-usability``
+``launches=18 checks=130 failures=0 skips=0 killed=0``, ``OVERALL=ok``, against a build relinked with
+``--clean-first`` after the ``VideoNaming.h`` edit; the single check above the twentieth pass's 129 is
+``videofloor``, wired into the ``tools`` phase beside ``folders``.  No device claim changes with this
+pass: still the one hand-tested Pavo Zune HD, still nothing heard or seen on its screen.
 
 ## What is not proven here
 

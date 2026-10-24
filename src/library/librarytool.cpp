@@ -26,6 +26,11 @@
  *     Watch-folder self-test: what a folder owns when its name is not ASCII,
  *     and which folder a download is written into -- the one the user marked,
  *     else the first of that kind the library holds.
+ *
+ *   librarytool videofloor
+ *     Video refusal self-test: which video files a watch folder is allowed to
+ *     discard on size, the one folder it may never discard them in, and the
+ *     note the scan owes a user for every file it did discard.
  */
 /* Keep first on Windows: the compat shim declares the POSIX surface this
  * file uses (64-bit struct stat, dirent, poll, ...) and the console code page
@@ -54,6 +59,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
+#include <QVariantMap>
 #include <QUrl>
 #include <QUrlQuery>
 #include <QStandardPaths>
@@ -1317,6 +1323,165 @@ static int runFoldersSelfTest() {
     return failed ? 1 : 0;
 }
 
+// Which video files a watch folder may throw away, which one it may not, and
+// what it owes the user for the ones it did.
+//
+// The size floor is a guess: sub-50MB video inside a folder declared to hold
+// movies is usually trailer debris.  A guess is only tolerable when the scan
+// says out loud what it guessed away, and it was never aimed at a file the app
+// itself wrote into the folder that receives its downloads -- Zune video is
+// small by nature, so the floor was refusing the app's own purpose.  Both
+// halves need a walk that actually walked and a database that actually has rows,
+// because "this folder refused one file" is a fact about a scan, not about a
+// string.
+static int runVideoFloorSelfTest() {
+    int failed = 0;
+    const auto check = [&failed](bool ok, const char *what) {
+        printf("  %s %s\n", ok ? "PASS" : "FAIL", what);
+        if (!ok)
+            failed++;
+    };
+    using VideoNaming::VideoSkip;
+    const qint64 MB = 1024 * 1024;
+
+    check(VideoNaming::videoSkipReason("clip.mp4", 20 * MB, "movies", 0, false)
+              == VideoSkip::sizeFloor,
+          "floor: a movie folder really does throw away a 20 MB file on size");
+    check(VideoNaming::videoSkipReason("clip.mp4", 20 * MB, "movies", 0, true)
+              == VideoSkip::none,
+          "floor: the same file the app pulled off a player is kept");
+    check(VideoNaming::videoSkipReason("clip.mp4", 20 * MB, "all", 0, false)
+              == VideoSkip::none,
+          "floor: a folder that promised everything keeps a 20 MB clip");
+    check(VideoNaming::videoSkipReason("clip.mp4", 4 * MB, "tv", 0, false)
+              == VideoSkip::sizeFloor,
+          "floor: a tv folder keeps its own 5 MB floor");
+    check(VideoNaming::videoSkipReason("clip.mp4", 4 * MB, "tv", 1, false)
+              == VideoSkip::none,
+          "floor: videoMinSizeMB overrides whatever the type says");
+    check(VideoNaming::videoSkipReason("trailer.mp4", 900 * MB, "movies", 0, true)
+              == VideoSkip::bonusName,
+          "floor: no download exemption rescues a file named trailer");
+    check(VideoNaming::videoSkipReason("clip.mp4", 0, "movies", 0, false)
+              == VideoSkip::none,
+          "floor: a size nobody managed to read is not a reason to refuse");
+
+    // ── The same rules through one real walk of two real folders ──
+    QTemporaryDir scratch;
+    check(scratch.isValid(), "floor: scratch tree");
+    if (!scratch.isValid())
+        return 1;
+
+    const QString first = scratch.path() + QStringLiteral("/first-added");
+    const QString marked = scratch.path() + QStringLiteral("/marked-default");
+    const QString firstClip = first + QStringLiteral("/clip.mp4");
+    const QString markedClip = marked + QStringLiteral("/short.mp4");
+    const auto plant = [](const QString &path) {
+        if (!QDir().mkpath(QFileInfo(path).absolutePath()))
+            return false;
+        QFile f(path);
+        if (!f.open(QIODevice::WriteOnly))
+            return false;
+        f.write(QByteArray(2048, 'x'));
+        f.close();
+        return true;
+    };
+    check(plant(firstClip) && plant(markedClip),
+          "floor: two movie folders that each hold one real 2 KB file");
+
+    const QString dbPath = scratch.path() + QStringLiteral("/floor.db");
+    const auto mark = [&dbPath](const QString &path) {
+        LibraryDb db;
+        if (!db.open(dbPath))
+            return false;
+        for (const WatchFolder &f : db.watchFolders())
+            if (f.path == path)
+                return db.setImportDefault(f.id);
+        return false;
+    };
+    {
+        LibraryDb db;
+        if (!db.open(dbPath)) {
+            printf("  FAIL floor: db open: %s\n", db.lastError().toUtf8().constData());
+            return 1;
+        }
+        db.addWatchFolder(first, QStringLiteral("movies"));
+        db.addWatchFolder(marked, QStringLiteral("movies"));
+    }
+    // Marked rather than merely added first: the scan has to follow the folder
+    // the user chose, not whichever row happens to sort early.
+    check(mark(marked), "floor: the marked folder is the video download folder");
+
+    QVariantList notes;
+    {
+        LibraryScanner scanner;
+        scanner.setDbPath(dbPath);
+        QObject::connect(&scanner, &LibraryScanner::mediaTypeNotes,
+                         [&notes](const QVariantList &n) { notes = n; });
+        scanner.scan();
+    }
+
+    QHash<QString, QPair<qint64, qint64>> rows;
+    {
+        LibraryDb db;
+        if (!db.open(dbPath))
+            return 1;
+        rows = db.videoPathIndex();
+    }
+    check(rows.contains(markedClip),
+          "floor: the clip the app would have downloaded is indexed anyway");
+    check(!rows.contains(firstClip),
+          "floor: the same clip in the other movie folder is not");
+    check(rows.size() == 1, "floor: and nothing else about that walk was indexed");
+
+    QString complained;
+    int complainedAbout = 0;
+    int otherCounts = 0;
+    for (const QVariant &note : notes) {
+        const QVariantMap m = note.toMap();
+        complainedAbout++;
+        if (m.value(QStringLiteral("sizeSkipped")).toInt() > 0)
+            complained = m.value(QStringLiteral("folder")).toString();
+        otherCounts += m.value(QStringLiteral("videos")).toInt()
+            + m.value(QStringLiteral("photos")).toInt()
+            + m.value(QStringLiteral("audio")).toInt();
+    }
+    // The whole point of the note: a folder that holds a video and shows no
+    // video is otherwise indistinguishable from an empty folder, and this root
+    // holds nothing of the wrong kind, so only a refusal could ever name it.
+    check(complainedAbout == 1,
+          "floor: the refusing folder is named exactly once, the exempt one never");
+    check(complained == first, "floor: named by the folder that refused the file");
+    check(otherCounts == 0,
+          "floor: a size refusal is not filed as a wrong-type complaint");
+
+    // Move the mark and the complaint has to move with it -- which also proves
+    // the scan re-derives the folder every pass instead of remembering one.
+    const bool moved = mark(first);
+    QVariantList notesAgain;
+    {
+        LibraryScanner scanner;
+        scanner.setDbPath(dbPath);
+        QObject::connect(&scanner, &LibraryScanner::mediaTypeNotes,
+                         [&notesAgain](const QVariantList &n) { notesAgain = n; });
+        scanner.scan();
+    }
+    {
+        LibraryDb db;
+        if (db.open(dbPath))
+            rows = db.videoPathIndex();
+    }
+    check(moved, "floor: the mark can move to the other folder of the same kind");
+    check(rows.contains(firstClip) && rows.size() == 2,
+          "floor: and the file that folder used to refuse is indexed");
+    check(notesAgain.isEmpty(),
+          "floor: and the complaint goes away instead of accumulating a second one");
+
+    printf("videofloor self-test: %s (%d failures)\n",
+           failed == 0 ? "ALL PASS" : "FAILED", failed);
+    return failed ? 1 : 0;
+}
+
 static int runCoverSelfTest() {
     int failed = 0;
     const auto check = [&failed](bool ok, const char *what) {
@@ -1560,6 +1725,8 @@ int main(int argc, char **argv) {
         return runCoverSelfTest();
     if (mode == QLatin1String("folders"))
         return runFoldersSelfTest();
+    if (mode == QLatin1String("videofloor"))
+        return runVideoFloorSelfTest();
 
     const bool videoMode = mode == QLatin1String("videoscan");
     const bool photoMode = mode == QLatin1String("photoscan");

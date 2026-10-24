@@ -377,12 +377,16 @@ void LibraryScanner::scan() {
      * crawled for movie posters - so the walk stays as it is and the silence
      * goes instead: one counter per excluded kind, filled by the walk that is
      * already running, reported once per root.  A root is censused only by the
-     * walk that visits it and a root typed "all" excludes nothing, so no file
-     * is ever counted twice. */
+     * walk that visits it and a root typed "all" excludes nothing of another
+     * kind, so no file is ever counted twice. */
     struct Excluded {
         int videos = 0;
         int photos = 0;
         int audio = 0;
+        // Video of the right kind that the folder's size floor still refused.
+        // A different complaint from the three above and a different fix, so it
+        // keeps its own count rather than hiding inside `videos`.
+        int sizeRefused = 0;
     };
     QHash<QString, Excluded> excluded;
     QHash<QString, QString> rootType;   // normalized path -> declared type
@@ -420,6 +424,12 @@ void LibraryScanner::scan() {
     };
     const int videoMinSizeOverrideMB =
         QSettings().value(QStringLiteral("videoMinSizeMB"), 0).toInt();
+    // The one folder a video download is allowed to land in, per the rule in
+    // LibraryDb::importRoot().  Its contents are requests, not debris, so the
+    // size floor below is not allowed to refuse them; every other refusal this
+    // pass makes is counted and named instead of kept quiet about.
+    const QString videoDownloadRoot =
+        normalizePath(db.importRoot(QStringLiteral("video")));
 
     // ── Walk every root FIRST, collecting the work for all three media
     // kinds. The walks are cheap (enumerate + stat + mtime fast-path);
@@ -511,15 +521,27 @@ void LibraryScanner::scan() {
                         if (VideoNaming::isSkippedDir(parts[part])) { inSkippedDir = true; break; }
                     if (inSkippedDir)
                         return;
-                    if (VideoNaming::isSkippedVideoFile(fi.fileName(), fi.size(),
-                                                        root.type, videoMinSizeOverrideMB))
-                        return;
-                    if (db.isExcluded(path))
-                        return;
                     const qint64 mtime = fi.lastModified().toSecsSinceEpoch();
                     const auto known = index.constFind(path);
                     if (known != index.constEnd() && known->second == mtime)
                         return; // unchanged fast-path
+                    // The skip rules come after the unchanged fast-path on
+                    // purpose: a file the library already holds a row for is not
+                    // something the folder refused, so counting it as one would
+                    // tell a user to fix a folder that is already showing its
+                    // video on the Videos page.
+                    const bool appDownload = !videoDownloadRoot.isEmpty()
+                        && (path == videoDownloadRoot
+                            || path.startsWith(videoDownloadRoot + QLatin1Char('/')));
+                    const auto skip = VideoNaming::videoSkipReason(
+                        fi.fileName(), fi.size(), root.type,
+                        videoMinSizeOverrideMB, appDownload);
+                    if (skip == VideoNaming::VideoSkip::sizeFloor)
+                        excluded[root.path].sizeRefused++;
+                    if (skip != VideoNaming::VideoSkip::none)
+                        return;
+                    if (db.isExcluded(path))
+                        return;
                     VideoWork w;
                     w.filepath = path;
                     w.filename = fi.fileName();
@@ -828,19 +850,30 @@ void LibraryScanner::scan() {
         if (hide.videos) parts << QStringLiteral("%1 video file(s)").arg(hide.videos);
         if (hide.photos) parts << QStringLiteral("%1 photo file(s)").arg(hide.photos);
         if (hide.audio) parts << QStringLiteral("%1 audio file(s)").arg(hide.audio);
-        if (parts.isEmpty())
-            continue;
         const QString type = rootType.value(root);
-        fprintf(stderr,
-                "[scan] %s holds %s that the type \"%s\" will not index"
-                " - Settings > Library > treat as \"all\"\n",
-                qUtf8Printable(root), qUtf8Printable(parts.join(QStringLiteral(", "))),
-                qUtf8Printable(type));
+        if (!parts.isEmpty())
+            fprintf(stderr,
+                    "[scan] %s holds %s that the type \"%s\" will not index"
+                    " - Settings > Library > treat as \"all\"\n",
+                    qUtf8Printable(root), qUtf8Printable(parts.join(QStringLiteral(", "))),
+                    qUtf8Printable(type));
+        // The other complaint, with its own sentence because it has its own fix:
+        // here the folder's type is right and a size guess said no.  Marking the
+        // folder the download folder ends it; so does a lower videoMinSizeMB.
+        if (hide.sizeRefused)
+            fprintf(stderr,
+                    "[scan] %s holds %d video file(s) under the size floor"
+                    " - Settings > Device > set as the download folder,"
+                    " or lower videoMinSizeMB\n",
+                    qUtf8Printable(root), hide.sizeRefused);
+        if (parts.isEmpty() && hide.sizeRefused == 0)
+            continue;
         notes.append(QVariantMap{{QStringLiteral("folder"), root},
                                  {QStringLiteral("type"), type},
                                  {QStringLiteral("videos"), hide.videos},
                                  {QStringLiteral("photos"), hide.photos},
-                                 {QStringLiteral("audio"), hide.audio}});
+                                 {QStringLiteral("audio"), hide.audio},
+                                 {QStringLiteral("sizeSkipped"), hide.sizeRefused}});
     }
     emit mediaTypeNotes(notes);
 

@@ -71,10 +71,29 @@ QStringList movieQueries(const QString &filepath, const QString &filename);
 // convention (extras/featurettes/…).
 bool isSkippedDir(const QString &dirName);
 
-// True for sample/trailer stems or files under the per-folder-type size
-// floor (50MB only where the folder declares itself movies, 5MB for every
-// other type including "all"; minSizeOverrideMB > 0 wins).
+// Why a video file sitting in a watch folder is not going to be indexed.
+// `bonusName` is the Plex/Jellyfin naming convention (sample.mp4, trailer.mp4,
+// and their stems); `sizeFloor` is the per-folder-type minimum size (50MB only
+// where the folder declares itself movies, 5MB for every other type including
+// "all"; minSizeOverrideMB > 0 wins).  The reason is part of the answer because
+// a refusal the scan keeps to itself is indistinguishable from a folder that
+// holds nothing, and the two have different fixes.
+enum class VideoSkip { none, bonusName, sizeFloor };
+
+VideoSkip videoSkipReason(const QString &filename, qint64 filesize,
+                          const QString &folderType, int minSizeOverrideMB,
+                          bool appDownload);
+
+// Yes/no form, for callers with no use for the reason.
+//
+// `appDownload` exempts a file the app itself wrote into the folder that
+// receives its downloads.  The floor is a guess that sub-50MB video inside a
+// movie collection is trailer debris; a pull the user asked for is not debris,
+// and a download that lands on disk and then never appears on any page reads
+// exactly like a download that failed.  The name rules are NOT exempt: a file
+// called trailer.mp4 is a file called trailer.mp4 whoever copied it in.
 bool isSkippedVideoFile(const QString &filename, qint64 filesize,
-                        const QString &folderType, int minSizeOverrideMB);
+                        const QString &folderType, int minSizeOverrideMB,
+                        bool appDownload);
 
 } // namespace VideoNaming

@@ -1095,6 +1095,14 @@ if (Select-Phase 'tools') {
     $folders = Invoke-Proc -File $libraryTool -Arguments @('folders') -Timeout 600
     Check 'librarytool folders pins the import default and the non-ASCII folder prefix' `
         ($folders.Code -eq 0 -and $folders.Out -match 'ALL PASS \(0 failures\)') ('code=' + $folders.Code)
+    # A watch folder is allowed to discard a small video as trailer debris, and a
+    # scan that does so quietly is how a download looks lost.  Which folder may
+    # discard, which may not, and what the scan has to say either way is a fact
+    # about a completed walk, so it needs the scanner and a database rather than
+    # a screenshot - and a 2 KB fixture rather than a 50 MB one.
+    $videofloor = Invoke-Proc -File $libraryTool -Arguments @('videofloor') -Timeout 600
+    Check 'librarytool videofloor pins what a video folder may discard and what it must report' `
+        ($videofloor.Code -eq 0 -and $videofloor.Out -match 'ALL PASS \(0 failures\)') ('code=' + $videofloor.Code)
     # Album cover lookup ships off, so the rule that decides what a lookup sends
     # and what it is allowed to download is worth more than a screenshot.  The
     # self-test injects its transport and its cache directory and never opens a
