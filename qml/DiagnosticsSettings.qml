@@ -10,14 +10,14 @@ ColumnLayout {
 
     Text {
         Layout.fillWidth: true
-        text: "Debug report"
+        text: qsTr("Debug report")
         font.pixelSize: Theme.customizeHeadingSize
         font.weight: Font.Light
         color: Theme.textPrimary
     }
     Text {
         Layout.fillWidth: true
-        text: "Something acting up? Save a report and tell us what happened."
+        text: qsTr("Something acting up? Save a report and tell us what happened.")
         font.pixelSize: Theme.customizeBodySize
         color: Theme.textSecondary
         wrapMode: Text.WordWrap
@@ -25,8 +25,8 @@ ColumnLayout {
     Text {
         Layout.fillWidth: true
         text: DiagnosticsService.loggingAvailable
-              ? "Recent activity is saved on your computer."
-              : "Local logs are unavailable. You can still export system details."
+              ? qsTr("Recent activity is saved on your computer.")
+              : qsTr("Local logs are unavailable. You can still export system details.")
         font.pixelSize: Theme.customizeCaptionSize
         color: DiagnosticsService.loggingAvailable ? Theme.textSecondary : Theme.warning
         wrapMode: Text.WordWrap
@@ -69,7 +69,7 @@ ColumnLayout {
         ReportButton {
             objectName: "diagnosticsExportButton"
             primary: true
-            text: DiagnosticsService.busy ? "saving report…" : "export debug report ↗"
+            text: DiagnosticsService.busy ? qsTr("saving report…") : qsTr("export debug report ↗")
             enabled: !DiagnosticsService.busy
             onClicked: {
                 reportDialog.selectedFile = DiagnosticsService.suggestedReportUrl()
@@ -77,20 +77,20 @@ ColumnLayout {
             }
         }
         ReportButton {
-            text: "open logs"
+            text: qsTr("open logs")
             enabled: DiagnosticsService.loggingAvailable
             onClicked: DiagnosticsService.openLogFolder()
         }
         ReportButton {
             objectName: "diagnosticsOpenReportButton"
-            text: "open report ↗"
+            text: qsTr("open report ↗")
             visible: DiagnosticsService.lastReportUrl.toString().length > 0
             onClicked: Qt.openUrlExternally(DiagnosticsService.lastReportUrl)
         }
     }
     Text {
         Layout.fillWidth: true
-        text: "Reports include recent logs and system details. Common credentials and home paths are masked; media names may remain. Review before sharing."
+        text: qsTr("Reports include recent logs and system details. Common credentials and home paths are masked; media names may remain. Review before sharing.")
         font.pixelSize: Theme.customizeCaptionSize
         color: Theme.textDim
         wrapMode: Text.WordWrap
@@ -98,7 +98,7 @@ ColumnLayout {
     FileDialog {
         id: reportDialog
         objectName: "diagnosticsSaveDialog"
-        title: "Save a ZUUNED debug report"
+        title: qsTr("Save a ZUUNED debug report")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "txt"
         nameFilters: ["Debug reports (*.txt)"]

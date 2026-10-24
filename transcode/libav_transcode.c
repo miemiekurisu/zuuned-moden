@@ -32,6 +32,7 @@
 #include <libavutil/pixdesc.h>
 #include <libavutil/mathematics.h>
 #include <libavutil/dict.h>
+#include <libavutil/avutil.h>
 #include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
 #include <libavutil/hwcontext.h>
@@ -53,6 +54,7 @@ static volatile int g_transcode_abort = 0;
 
 void zuuned_transcode_abort(void)       { g_transcode_abort = 1; }
 void zuuned_transcode_clear_abort(void) { g_transcode_abort = 0; }
+int  zuuned_transcode_abort_requested(void) { return g_transcode_abort; }
 
 /* ---- Hardware decode toggle ----
  * Default ON. The sync engine mirrors the Settings "hwDecode" flag here
@@ -122,7 +124,47 @@ char *zuuned_transcode_audio(const char *input_path, const char *album_artist,
 char *zuuned_transcode_audio_with_disc(const char *input_path, const char *album_artist,
                                       int disc_number, zuuned_progress_cb progress, void *userdata)
 {
+    /* The historical entry point, and deliberately still MP3 320 kbps CBR:
+     * spoken media and every existing caller land here.  Settings reaches the
+     * other targets through zuuned_transcode_audio_ex(). */
+    return zuuned_transcode_audio_ex(input_path, album_artist, disc_number,
+                                     ZUUNED_AUDIO_MP3, 320, 0, progress, userdata);
+}
+
+int zuuned_audio_encoder_available(int target)
+{
+    if (target == ZUUNED_AUDIO_MP3)
+        return 1;   /* LAME is linked in, there is nothing to look up */
+    if (target != ZUUNED_AUDIO_WMA)
+        return 0;
+    return (avcodec_find_encoder_by_name("wmav2") ||
+            avcodec_find_encoder(AV_CODEC_ID_WMAV2)) ? 1 : 0;
+}
+
+const char *zuuned_ffmpeg_version(void)
+{
+    return av_version_info();
+}
+
+char *zuuned_transcode_audio_ex(const char *input_path, const char *album_artist,
+                                int disc_number, int target, int bitrate_kbps, int vbr,
+                                zuuned_progress_cb progress, void *userdata)
+{
     if (!input_path) return NULL;
+    if (target != ZUUNED_AUDIO_MP3 && target != ZUUNED_AUDIO_WMA) return NULL;
+
+    /* WMA is another encoder in another container, and it lives in its own
+     * file; this one stays MP3. */
+    if (target == ZUUNED_AUDIO_WMA) {
+        char *wma_path = make_temp_path(input_path, "audio", "wma");
+        if (!wma_path) return NULL;
+        char *made = zuuned_audio_encode_wma(input_path, album_artist, disc_number,
+                                             bitrate_kbps, wma_path, progress, userdata);
+        free(wma_path);
+        return made;
+    }
+
+    const int bitrate = (bitrate_kbps >= 32 && bitrate_kbps <= 320) ? bitrate_kbps : 320;
 
     char *output_path = make_temp_path(input_path, "audio", "mp3");
     if (!output_path) return NULL;
@@ -184,10 +226,25 @@ char *zuuned_transcode_audio_with_disc(const char *input_path, const char *album
     }
     lame_set_in_samplerate(lame, out_sample_rate);
     lame_set_num_channels(lame, 2);
-    lame_set_VBR(lame, vbr_off);    /* CBR mode */
-    lame_set_brate(lame, 320);       /* 320 kbps */
     lame_set_quality(lame, 2);       /* High quality */
-    lame_set_bWriteVbrTag(lame, 0);  /* No Xing header (we write ID3 manually) */
+    if (vbr) {
+        /* In VBR modes LAME reads brate as the ceiling it may spend, not the
+         * rate it aims at, so "320 VBR" means LAME's own quality target capped
+         * at 320 kbps.  This mode is NOT offered in Settings, and the reason is
+         * measured rather than assumed: no VBR header reaches the file (see the
+         * lame_mp3_tags_fid note below), so a VBR encode here seeks by guesswork
+         * - a 272 s encode from a real file probed as 388 s while decoding to the
+         * correct 272.17 s.  Constant bit rate needs no such header and stays the
+         * only MP3 mode the application hands a player. */
+        lame_set_VBR(lame, vbr_default);
+        lame_set_brate(lame, bitrate);
+        lame_set_VBR_quality(lame, 2.0f);
+        lame_set_bWriteVbrTag(lame, 1);
+    } else {
+        lame_set_VBR(lame, vbr_off);    /* CBR mode */
+        lame_set_brate(lame, bitrate);
+        lame_set_bWriteVbrTag(lame, 0);  /* No Xing header (we write ID3 manually) */
+    }
     if (lame_init_params(lame) < 0) {
         fprintf(stderr, LOG_PREFIX " lame_init_params failed\n");
         goto cleanup;
@@ -223,7 +280,16 @@ char *zuuned_transcode_audio_with_disc(const char *input_path, const char *album
             continue;
         }
 
-        if (avcodec_send_packet(dec_ctx, pkt) < 0) {
+        /* EAGAIN means the decoder is full, not that the packet is unusable:
+         * drain and retry the same packet. Falling through to `continue` here
+         * drops the packet and loses its audio in silence. */
+        int send_ret = avcodec_send_packet(dec_ctx, pkt);
+        if (send_ret == AVERROR(EAGAIN)) {
+            while (avcodec_receive_frame(dec_ctx, frame) == 0)
+                av_frame_unref(frame);
+            send_ret = avcodec_send_packet(dec_ctx, pkt);
+        }
+        if (send_ret < 0) {
             av_packet_unref(pkt);
             continue;
         }
@@ -297,6 +363,20 @@ char *zuuned_transcode_audio_with_disc(const char *input_path, const char *album
     {
         int final_bytes = lame_encode_flush(lame, mp3_buf, sizeof(mp3_buf));
         if (final_bytes > 0) fwrite(mp3_buf, 1, final_bytes, fout);
+    }
+
+    /* Tried and recorded so it is not retried blind: this call does NOT produce a
+     * Xing/Info header on this LAME.  LAME reserves the tag slot inside the first
+     * frame at lame_init_params() time, and it only does that when it already owns
+     * the output FILE* - which it never does here, because frames go to a buffer and
+     * a hand-built ID3v2.3 pass rewrites the file afterwards.  With and without this
+     * call the finished file contains no "Xing" and no "Info" anywhere, so a VBR
+     * encode cannot seek by time and VBR stays out of the shipped options.  Doing it
+     * properly means writing the Xing frame (frame count, byte count, 100-byte TOC)
+     * in here ourselves, which is its own change with its own test. */
+    if (vbr) {
+        fflush(fout);
+        lame_mp3_tags_fid(lame, fout);
     }
 
     fclose(fout);
@@ -418,7 +498,8 @@ char *zuuned_transcode_audio_with_disc(const char *input_path, const char *album
 
     ret = 0;
     if (progress) progress(1.0f, userdata);
-    fprintf(stderr, LOG_PREFIX " audio transcode OK: %s\n", output_path);
+    fprintf(stderr, LOG_PREFIX " audio transcode OK: %s (%d kbps %s)\n", output_path,
+            bitrate, vbr ? "VBR" : "CBR");
 
 cleanup:
     if (pkt) av_packet_free(&pkt);

@@ -1770,3 +1770,63 @@ What is still not proven, said plainly: no USB handle was opened anywhere in thi
 `zune_arm_photo()` has never met a player, photo transfer to a device is still unproven on
 Windows, and the audio round trip was not re-run because the Zune HD is still in the wedge
 recorded above. `ffmpeg` is still not bundled, so Method 2 needs it on `PATH`.
+**2026-10-25 Chinese build, and why a working card looked empty:** the interface is
+translated from a file and nowhere else - `i18n/zh_CN.tsv` is the only place a
+sentence the user reads is written, `python i18n/audit.py` fails the tree when it
+finds one typed into a property or a C++ literal, and the catalogue now stands at
+1493 translatable sources, 1493 with Chinese, `lrelease` 0 unfinished. Wording is
+not the only thing in the file, so a language line is either
+`source ~=> Chinese` or `Context!source ~=> Chinese`; the prefix counts only when it
+names a `<context>` that exists, and beats a bare line for that context. All 29
+scoped lines are pivot bars, because `Albums` is 专辑 beside Artists and 相册 beside
+photo Folders - and `Albums` deliberately has three scoped lines and no bare one, so
+a fourth `Albums` in a new file reports `MISSING: NewFile!Albums` instead of
+quietly inheriting the wrong word. What never enters the catalogue is an identity
+token: `pivots.tabs`, the `--settings-tab Device` argument,
+`picker.mode = current.toLowerCase()` and `page.filter === "all"` compare the same
+bytes they always did, and only the painted label is Chinese.
+
+`Settings -> Device` printed the six labels of the 这台 Zune card and none of the
+six values, which reads exactly like an unwired feature; `DeviceService` was
+answering. The tab was **2263 logical pixels wide**. `StackLayout` sizes every child
+to the implicit width of the widest child and lets it overflow its own bounds, so the
+widest row in any one of the five tabs widened all five, and a right-aligned value
+was being painted at `mapx ~ 2200`, off the window, which no screenshot of a window
+that tall can show. Measured rather than reasoned about, with a headless `qml.exe`
+repro (a 300 px stack, one child at 4800): a Layout child cannot opt out -
+`width: stack.width` is clobbered, `implicitWidth: 300` is ignored, a filler
+`Item { Layout.preferredWidth: stack.width }` cannot cap a `max()` - while
+`anchors.left/right/top` inside a plain `Item` take the Item's width and are immune
+to content. `qml/SettingsPage.qml` therefore holds its five tab bodies in a plain
+`Item` selected by `visible`, each anchored, with `implicitHeight` the max of the
+five; `PhaseNote` wraps and fills instead of asking for its own width, which is what
+let a single long note widen a tab at all. Verified on a window that fits the screen
+(`MoveWindow 300,0,1300,1720` yields the honest `1416x1147`; a negative Y produces an
+off-screen black band and is not evidence), where 名称, 型号, 序列号, 存储,
+音乐/视频/照片 and 电池 all render right-aligned inside the frame. Two habits
+carry out of this: a `--qa-probe` line printed from inside the app beats a tall
+screenshot, and `QT_FORCE_STDERR_LOGGING=1` is not optional when driving `qml.exe`
+or the output is simply lost.
+
+Nothing here touched a player: the Zune HD was browsed read-only, and no sync, pull,
+deletion, eject or audio playback was triggered in this pass, so no device claim
+changes. One wording defect is recorded and left alone - the 转码加速 note still says
+NVDEC, then VAAPI, then software, and VAAPI has no meaning on Windows.
+The gate that certifies the settings page was itself broken, and it failed for a
+reason that had nothing to do with the application: `tests/win-usability/run.ps1`
+put Qt and ffmpeg on `PATH` only inside `Start-Zuuned` and the single-instance
+rival, so every tool check - `Invoke-Proc -File $libraryTool`, `transcodetool`,
+`devicetool`, `playertool` - inherited whatever shell happened to call the gate.
+From a baseline shell that names none of them each child died at `0xC0000135`
+(`DLL_NOT_FOUND`) before printing a line, 27 checks failed, the seed library was
+never built, and the page, five-settings-tab, compact and spoken cases skipped
+themselves on "no seed library" against an app that was fine. One line, next to the
+`msvc-env.ps1` load, prepends `$QtDir\bin` and the ffmpeg directory once, because a
+gate must not pass or fail on its caller's shell; `tests/win-compat` loads no Qt and
+needed no change. Same tree before and after: `checks=93 failures=27 skips=6`, then
+`launches=18 checks=132 failures=0 skips=0 killed=0` - 39 checks higher because six
+cases that had been skipping now actually run - with `tests/win-compat` at
+`201 checks, 0 failures, 0 skips` and `python i18n/audit.py` at `AUDIT=ok`. The run
+happened with the Zune HD attached, so the app's own hotplug browsed it inside every
+isolated profile; the diagnostics that recorded are all reads (`get_object_info`,
+`get_object_prop_value`, thumbnails), and no send, deletion or eject was triggered.

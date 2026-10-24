@@ -19,7 +19,7 @@ Item {
         const info = DeviceService.trackInfo(itemId)
         return Object.assign({}, info, {
             itemId: itemId, libraryId: -1, filepath: "",
-            title: info.title || ("track " + itemId)
+            title: info.title || qsTr("track %1").arg(itemId)
         })
     }
     function saveMember(itemId) {
@@ -58,12 +58,13 @@ Item {
                 Layout.preferredWidth: 104
                 Layout.alignment: Qt.AlignVCenter
                 tabs: ["Playlists"]
+                labels: [qsTr("Playlists")]
             }
             Item { Layout.fillWidth: true }
             Text {
                 text: root.openPlaylist === null
-                    ? DeviceService.playlistsList.length + " playlists"
-                    : (root.openPlaylist.trackIds ?? []).length + " tracks"
+                    ? qsTr("%1 playlists").arg(DeviceService.playlistsList.length)
+                    : qsTr("%1 tracks").arg((root.openPlaylist.trackIds ?? []).length)
                 font.pixelSize: 12
                 color: Theme.textDim
             }
@@ -71,7 +72,7 @@ Item {
                 visible: root.openPlaylist === null
                 // UX-2: playlists are born in the LIBRARY (the builder
                 // tray) and sync over — no more create-on-zune sheet.
-                text: "+ new playlist (in your library)"
+                text: qsTr("+ new playlist (in your library)")
                 font.pixelSize: 13
                 color: newPlArea.containsMouse ? Theme.activePink : Theme.pink
                 MouseArea {
@@ -275,7 +276,7 @@ Item {
                             anchors.left: devCassette.left
                             anchors.top: devCassette.bottom
                             anchors.topMargin: 4
-                            text: devTape.modelData.count + " tracks"
+                            text: qsTr("%1 tracks").arg(devTape.modelData.count)
                             font.pixelSize: 10
                             color: Theme.textDim
                         }
@@ -287,8 +288,8 @@ Item {
                 visible: DeviceService.playlistsList.length === 0
                 anchors.centerIn: parent
                 text: DeviceService.connected
-                    ? "no playlists on this zune yet — make one!"
-                    : "connect a zune to browse its playlists"
+                    ? qsTr("no playlists on this zune yet — make one!")
+                    : qsTr("connect a zune to browse its playlists")
                 font.pixelSize: 14
                 color: Theme.textDim
             }
@@ -330,7 +331,7 @@ Item {
         id: plMenu
         property var target: null
         ZuneMenuItem {
-            text: "Delete from Zune"
+            text: qsTr("Delete from Zune")
             enabled: DeviceService.connected
             onTriggered: {
                 if (!DeviceService.connected) return

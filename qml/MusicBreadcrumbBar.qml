@@ -38,7 +38,7 @@ Item {
             Text {
                 id: backLabel
                 anchors.centerIn: parent
-                text: "‹ back"
+                text: qsTr("‹ back")
                 font.pixelSize: 14
                 font.weight: Font.Light
                 color: Theme.textSecondary

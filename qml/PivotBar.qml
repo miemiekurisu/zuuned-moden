@@ -7,6 +7,16 @@ Item {
 
     property var tabs: []
     property string current: tabs.length > 0 ? tabs[0] : ""
+    // Optional display labels, parallel to `tabs` (2026-10-24).  `tabs` stays the
+    // identity -- `current`, a host's own comparisons and `--settings-tab Device`
+    // all keep answering in English -- so a page can write its tabs in another
+    // language without inventing a second vocabulary for the same five buttons.
+    property var labels: []
+
+    function labelFor(name) {
+        const i = tabs.indexOf(name)
+        return i >= 0 && i < labels.length && labels[i].length > 0 ? labels[i] : name
+    }
 
     implicitHeight: row.implicitHeight + Theme.spaceSm
     // The tabs' NATURAL width. The Row draws at its own size and this
@@ -33,7 +43,7 @@ Item {
 
                 Text {
                     id: tabLabel
-                    text: tab.modelData.toLowerCase()
+                    text: root.labelFor(tab.modelData).toLowerCase()
                     font.pixelSize: 15
                     font.weight: Font.Light
                     color: tab.active ? Theme.textPrimary

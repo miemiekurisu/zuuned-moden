@@ -398,10 +398,11 @@ Item {
                         color: Theme.orange
                     }
                     Text {
-                        text: (page.series.seasonCount ?? 1)
-                              + ((page.series.seasonCount ?? 1) === 1
-                                 ? " season" : " seasons")
-                              + " · " + (page.series.episodeCount ?? 0) + " eps"
+                        text: qsTr("%1 · %2 eps")
+                              .arg((page.series.seasonCount ?? 1) === 1
+                                   ? qsTr("%1 season").arg(page.series.seasonCount ?? 1)
+                                   : qsTr("%1 seasons").arg(page.series.seasonCount ?? 1),
+                                   page.series.episodeCount ?? 0)
                         font.pixelSize: 11
                         color: Theme.textSecondary
                     }
@@ -410,7 +411,7 @@ Item {
             ColumnLayout {
                 Text {
                     visible: !page.deviceMode
-                    text: "customize"
+                    text: qsTr("customize")
                     font.pixelSize: 12; color: Theme.textDim
                     MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                         onClicked: { if (!page.deviceMode) page.customizeRequested(page.seriesKey) } }
@@ -424,7 +425,7 @@ Item {
             }
             Text {
                 visible: !page.deviceMode
-                text: "▶ next up"
+                text: qsTr("▶ next up")
                 font.pixelSize: 12
                 color: nextUpNarrowArea.containsMouse
                        ? Theme.activePink : Theme.pink
@@ -545,11 +546,11 @@ Item {
                         color: Theme.textSecondary
                     }
                     Text {
-                        text: "· " + (page.series.seasonCount ?? 1)
-                              + ((page.series.seasonCount ?? 1) === 1
-                                 ? " season" : " seasons")
-                              + " · " + (page.series.episodeCount ?? 0)
-                              + " episodes"
+                        text: "· " + qsTr("%1 · %2 episodes")
+                              .arg((page.series.seasonCount ?? 1) === 1
+                                   ? qsTr("%1 season").arg(page.series.seasonCount ?? 1)
+                                   : qsTr("%1 seasons").arg(page.series.seasonCount ?? 1),
+                                   page.series.episodeCount ?? 0)
                         font.pixelSize: 11
                         color: Theme.textSecondary
                     }
@@ -564,7 +565,7 @@ Item {
 
                     Text {
                         visible: !page.deviceMode
-                        text: "customize"
+                        text: qsTr("customize")
                         font.pixelSize: 12
                         color: fixArea.containsMouse
                                ? Theme.textSecondary : Theme.textDim
@@ -586,7 +587,7 @@ Item {
                     }
                     Text {
                         visible: !page.deviceMode
-                        text: "▶ next up"
+                        text: qsTr("▶ next up")
                         font.pixelSize: 12
                         color: nextUpArea.containsMouse
                                ? Theme.activePink : Theme.pink
@@ -665,9 +666,9 @@ Item {
                     }
 
                     Text {
-                        text: page.episodes.length + " episodes"
-                              + (page.onZuneCount > 0
-                                 ? " · " + page.onZuneCount + " on zune" : "")
+                        text: qsTr("%1 episodes%2").arg(page.episodes.length)
+                          .arg(page.onZuneCount > 0
+                          ? qsTr(" · %1 on zune").arg(page.onZuneCount) : "")
                         font.pixelSize: 11
                         color: Theme.textDim
                     }
@@ -676,7 +677,7 @@ Item {
 
                     Text {
                         visible: !page.narrow && !page.deviceMode
-                        text: "mark watched"
+                        text: qsTr("mark watched")
                         font.pixelSize: 12
                         color: markArea.containsMouse
                                ? Theme.textSecondary : Theme.textDim
@@ -692,7 +693,7 @@ Item {
                     Text {
                         visible: DeviceService.connected
                         // Device: pull the whole season to library.
-                        text: page.deviceMode ? "⤓ save season" : "+ sync season"
+                        text: page.deviceMode ? qsTr("⤓ save season") : qsTr("+ sync season")
                         font.pixelSize: 12
                         color: syncSeasonArea.containsMouse
                                ? Theme.activePink : Theme.pink
@@ -741,7 +742,7 @@ Item {
                     }
                     Text {
                         visible: !page.deviceMode
-                        text: "▶ play season"
+                        text: qsTr("▶ play season")
                         font.pixelSize: 12
                         color: playSeasonArea.containsMouse
                                ? Theme.activePink : Theme.pink
@@ -833,7 +834,7 @@ Item {
                                     spacing: Theme.spaceXs
                                     Text {
                                         visible: epCard.row.episode > 0
-                                        text: "EPISODE " + epCard.row.episode
+                                        text: qsTr("EPISODE %1").arg(epCard.row.episode)
                                         font.pixelSize: 9
                                         font.bold: true
                                         font.letterSpacing: 1.5
@@ -843,7 +844,7 @@ Item {
                                     // hover verbs: queue + watched toggle
                                     Text {
                                         visible: epCard.hovering && DeviceService.connected
-                                        text: page.deviceMode ? "save" : "to zune"
+                                        text: page.deviceMode ? "save" : qsTr("to zune")
                                         font.pixelSize: 10
                                         color: qArea.containsMouse
                                                ? Theme.activePink : Theme.pink
@@ -885,10 +886,9 @@ Item {
                                     Text {
                                         visible: epCard.row.durationMs > 0
                                                  || epCard.row.episodeRuntime > 0
-                                        text: epCard.row.durationMs > 0
-                                            ? Math.floor(epCard.row.durationMs
-                                                         / 60000) + " min"
-                                            : epCard.row.episodeRuntime + " min"
+                                        text: qsTr("%1 min").arg(epCard.row.durationMs > 0
+                                            ? Math.floor(epCard.row.durationMs / 60000)
+                                            : epCard.row.episodeRuntime)
                                         font.pixelSize: 10
                                         color: Theme.textSecondary
                                     }
@@ -1033,10 +1033,9 @@ Item {
                                     Text {
                                         visible: epRow.row.durationMs > 0
                                                  || epRow.row.episodeRuntime > 0
-                                        text: epRow.row.durationMs > 0
-                                            ? Math.floor(epRow.row.durationMs
-                                                         / 60000) + " min"
-                                            : epRow.row.episodeRuntime + " min"
+                                        text: qsTr("%1 min").arg(epRow.row.durationMs > 0
+                                            ? Math.floor(epRow.row.durationMs / 60000)
+                                            : epRow.row.episodeRuntime)
                                         font.pixelSize: 10
                                         color: Theme.textSecondary
                                     }
@@ -1051,7 +1050,7 @@ Item {
                             }
                             Text {
                                 visible: epRow.hovering && DeviceService.connected
-                                text: page.deviceMode ? "save" : "to zune"
+                                text: page.deviceMode ? "save" : qsTr("to zune")
                                 font.pixelSize: 11
                                 color: qRowArea.containsMouse
                                        ? Theme.activePink : Theme.pink
@@ -1098,31 +1097,31 @@ Item {
     ZuneMenu {
         id: seasonMenu
         ZuneMenuItem {
-            text: "Play Season"
+            text: qsTr("Play Season")
             visible: !page.deviceMode
             height: visible ? implicitHeight : 0
             onTriggered: page.playSeason()
         }
         ZuneMenuItem {
-            text: page.deviceMode ? "Save Season to Library" : "Queue Season for Zune"
+            text: page.deviceMode ? qsTr("Save Season to Library") : qsTr("Queue Season for Zune")
             visible: DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: page.transferSeason()
         }
         ZuneMenuItem {
-            text: "Customize Season…"
+            text: qsTr("Customize Season…")
             visible: !page.deviceMode
             height: visible ? implicitHeight : 0
             onTriggered: { if (!page.deviceMode) page.customizeEpisodesRequested(page.currentEpisodes()) }
         }
         ZuneMenuItem {
-            text: "Mark Season Watched"
+            text: qsTr("Mark Season Watched")
             visible: !page.deviceMode
             height: visible ? implicitHeight : 0
             onTriggered: page.markWatched(page.currentEpisodes(), true)
         }
         ZuneMenuItem {
-            text: page.deviceMode ? "Delete Season from Zune" : "Delete Season from Library"
+            text: page.deviceMode ? qsTr("Delete Season from Zune") : qsTr("Delete Season from Library")
             visible: !page.deviceMode || DeviceService.connected
             height: visible ? implicitHeight : 0
             danger: true
@@ -1133,25 +1132,25 @@ Item {
     ZuneMenu {
         id: seriesMenu
         ZuneMenuItem {
-            text: "Play"
+            text: qsTr("Play")
             visible: !page.deviceMode
             height: visible ? implicitHeight : 0
             onTriggered: page.playNextUp()
         }
         ZuneMenuItem {
-            text: page.deviceMode ? "Save Series to Library" : "Queue Series for Zune"
+            text: page.deviceMode ? qsTr("Save Series to Library") : qsTr("Queue Series for Zune")
             visible: DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: page.transferSeries()
         }
         ZuneMenuItem {
-            text: "Customize…"
+            text: qsTr("Customize…")
             visible: !page.deviceMode
             height: visible ? implicitHeight : 0
             onTriggered: { if (!page.deviceMode) page.customizeRequested(page.seriesKey) }
         }
         ZuneMenuItem {
-            text: page.deviceMode ? "Delete Series from Zune" : "Delete Series from Library"
+            text: page.deviceMode ? qsTr("Delete Series from Zune") : qsTr("Delete Series from Library")
             visible: !page.deviceMode || DeviceService.connected
             height: visible ? implicitHeight : 0
             danger: true
@@ -1168,38 +1167,38 @@ Item {
         objectName: "episodeMenu"
         property var ep: ({})
         ZuneMenuItem {
-            text: "Play"
+            text: qsTr("Play")
             visible: !page.deviceMode
             height: visible ? implicitHeight : 0
             onTriggered: page.playEpisode(epMenu.ep)
         }
         ZuneMenuItem {
-            text: "Queue for Zune"
+            text: qsTr("Queue for Zune")
             visible: !page.deviceMode && DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: page.transferEpisode(epMenu.ep)
         }
         ZuneMenuItem {
-            text: "Customize…"
+            text: qsTr("Customize…")
             objectName: "episodeCustomize"
             visible: !page.deviceMode
             height: visible ? implicitHeight : 0
             onTriggered: page.customizeEpisode(epMenu.ep)
         }
         ZuneMenuItem {
-            text: epMenu.ep.watched === true ? "Mark Unwatched" : "Mark Watched"
+            text: epMenu.ep.watched === true ? qsTr("Mark Unwatched") : qsTr("Mark Watched")
             visible: !page.deviceMode
             height: visible ? implicitHeight : 0
             onTriggered: page.markWatched([epMenu.ep], !(epMenu.ep.watched === true))
         }
         ZuneMenuItem {
-            text: "Save to Library"
+            text: qsTr("Save to Library")
             visible: page.deviceMode && DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: page.transferEpisode(epMenu.ep)
         }
         ZuneMenuItem {
-            text: "Rename on Zune…"
+            text: qsTr("Rename on Zune…")
             visible: page.deviceMode && DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: {
@@ -1207,7 +1206,7 @@ Item {
             }
         }
         ZuneMenuItem {
-            text: page.deviceMode ? "Delete from Zune" : "Delete from Library"
+            text: page.deviceMode ? qsTr("Delete from Zune") : qsTr("Delete from Library")
             visible: !page.deviceMode || DeviceService.connected
             height: visible ? implicitHeight : 0
             danger: true

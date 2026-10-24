@@ -173,7 +173,7 @@ FocusScope {
         height: width
         z: 1
         text: "×"
-        Accessible.name: "Close now playing"
+        Accessible.name: qsTr("Close now playing")
         contentItem: Text {
             text: closeButton.text
             font.pixelSize: Theme.spaceXl
@@ -184,7 +184,7 @@ FocusScope {
         }
         background: Item {}
         ToolTip.visible: hovered
-        ToolTip.text: "Close now playing"
+        ToolTip.text: qsTr("Close now playing")
         ToolTip.delay: Theme.locationTooltipDelay
         onClicked: island.closeRequested()
     }
@@ -200,7 +200,7 @@ FocusScope {
             Layout.alignment: Qt.AlignHCenter
             Layout.minimumHeight: Theme.spaceXxl
             verticalAlignment: Text.AlignVCenter
-            text: "PLAYED"
+            text: qsTr("PLAYED")
             font.pixelSize: 9
             font.bold: true
             font.letterSpacing: 2
@@ -388,7 +388,7 @@ FocusScope {
         Text {
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: Theme.spaceSm
-            text: "UP NEXT"
+            text: qsTr("UP NEXT")
             font.pixelSize: 9
             font.bold: true
             font.letterSpacing: 2
@@ -431,7 +431,7 @@ FocusScope {
             Item { Layout.fillWidth: true }
             Text {
                 visible: !island.spoken
-                text: "save as playlist"
+                text: qsTr("save as playlist")
                 font.pixelSize: 11
                 color: saveQArea.containsMouse ? Theme.orange : Theme.textSecondary
                 MouseArea {

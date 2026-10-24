@@ -10,6 +10,7 @@
 #include "library/MusicIdentity.h"
 #include "library/VideoIdentity.h"
 #include "sync/RecoveryIdentity.h"
+#include "UiText.h"
 
 #include <QDir>
 #include <QProcess>
@@ -27,6 +28,13 @@ DeviceService::DeviceService(QObject *parent, bool watchDevice) : QObject(parent
     m_artCacheDir = Zuuned::ProfilePaths::writableLocation(QStandardPaths::CacheLocation)
                     + QStringLiteral("/art");
     QDir().mkpath(m_artCacheDir);
+
+    // Every player this machine has talked to.  It has to exist before the
+    // first connection: onBreachDone() records the player it just opened, and
+    // with nothing here that was a null dereference on connect - the crash an
+    // attached Zune produced about fifteen seconds after launch - and
+    // Settings -> Device read properties off a null deviceHistory.
+    m_deviceHistory = new DeviceHistory(this);
 
     m_worker = new DeviceWorker;
     m_worker->moveToThread(&m_workerThread);
@@ -256,7 +264,7 @@ void DeviceService::onZuneArrived() {
     if (m_awaitingDisconnect) {
         // Post-sync: the device may be re-indexing — do NOT breach into
         // it (mac connectDevice guards on awaitingDisconnect).
-        m_status = QStringLiteral("Sync complete — unplug the Zune to apply changes");
+        m_status = UiText::tr("Sync complete — unplug the Zune to apply changes");
         emit stateChanged();
         return;
     }
@@ -287,13 +295,13 @@ void DeviceService::onZuneLeft() {
         emit workerSever();
     }
     clearDeviceState();
-    m_status = QStringLiteral("Zune unplugged");
+    m_status = UiText::tr("Zune unplugged");
     emit stateChanged();
 }
 
 void DeviceService::onZuneBlocked(const QString &detail) {
     const QString next = detail.isEmpty()
-                             ? QStringLiteral("plugged in, but unusable")
+                             ? UiText::tr("plugged in, but unusable")
                              : detail;
     const bool changed = next != m_usbBlockDetail;
     m_usbBlockDetail = next;
@@ -310,7 +318,7 @@ void DeviceService::onZuneBlocked(const QString &detail) {
     // open and a retry loop would just be noise.
     m_blockedPresence = true;
     m_devicePresent = true;
-    m_status = QStringLiteral("Zune plugged in, but no driver zuuned can use");
+    m_status = UiText::tr("Zune plugged in, but no driver zuuned can use");
     emit stateChanged();
     if (changed)
         emit usbAccessChanged();
@@ -331,7 +339,7 @@ void DeviceService::onZuneUnblocked() {
     // presence back - the wording below holds either way.
     m_devicePresent = false;
     m_awaitingDisconnect = false;
-    m_status = QStringLiteral("Waiting for a Zune…");
+    m_status = UiText::tr("Waiting for a Zune…");
     emit stateChanged();
 }
 
@@ -383,7 +391,7 @@ void DeviceService::breach() {
     if (m_busy || m_connected)
         return;
     m_busy = true;
-    m_status = QStringLiteral("Connecting (breach + MTPZ auth)…");
+    m_status = UiText::tr("Connecting (breach + MTPZ auth)…");
     emit stateChanged();
     emit workerBreach();
 }
@@ -474,6 +482,11 @@ void DeviceService::onBreachDone(const DeviceWorker::BreachData &r) {
         m_trackCount = r.tracks.size();
         m_albumCount = r.albumCount;
         m_artistCount = r.artistCount;
+        // Remember the player, not just this session.  A serial is the only
+        // thing that tells two players of the same model apart, and libzune
+        // answers no firmware version, so a row carries no firmware field.
+        m_deviceHistory->record(m_serial, m_name, modelName(), m_family,
+                               m_capacityGB);
         m_artistsList = r.artists;
         m_albumsList = r.albums;
         m_genresList = r.genres;
@@ -526,8 +539,8 @@ void DeviceService::sever() {
         return;
     m_connected = false;
     clearDeviceState();
-    m_status = m_devicePresent ? QStringLiteral("Disconnected (Zune still plugged in)")
-                               : QStringLiteral("Waiting for a Zune…");
+    m_status = m_devicePresent ? UiText::tr("Disconnected (Zune still plugged in)")
+                               : UiText::tr("Waiting for a Zune…");
     emit stateChanged();
     emit workerSever();
 }
@@ -536,7 +549,7 @@ void DeviceService::onSeverDone() {
     if (m_ejecting) {
         m_ejecting = false;
         m_awaitingDisconnect = false;  // auto-detect may reconnect now (mac)
-        m_status = QStringLiteral("Disconnected — the Zune is re-indexing");
+        m_status = UiText::tr("Disconnected — the Zune is re-indexing");
         emit stateChanged();
         // On Linux the re-index re-enumerates the player and zuneArrived()
         // does the rest.  A Zune on Windows keeps its WinUSB interface the
@@ -553,7 +566,7 @@ void DeviceService::setAwaitingDisconnect(bool v) {
         return;
     m_awaitingDisconnect = v;
     if (v)
-        m_status = QStringLiteral("Sync complete — eject to apply changes");
+        m_status = UiText::tr("Sync complete — eject to apply changes");
     emit stateChanged();
 }
 
@@ -571,7 +584,7 @@ void DeviceService::scheduleReprobeAfterReindex() {
         return;
     }
     const int delay = kDelaysMs[m_reprobeAttempt];
-    m_status = QStringLiteral("Disconnected — the Zune is re-indexing, reconnecting in %1s")
+    m_status = UiText::tr("Disconnected — the Zune is re-indexing, reconnecting in %1s")
                    .arg(delay / 1000);
     emit stateChanged();
     fprintf(stderr, "[device] re-index reconnect: attempt %d of %d in %dms\n",
@@ -605,7 +618,7 @@ void DeviceService::eject() {
     m_ejecting = true;
     m_connected = false;
     clearDeviceState();
-    m_status = QStringLiteral("Finalizing — device will re-index…");
+    m_status = UiText::tr("Finalizing — device will re-index…");
     emit stateChanged();
     emit workerFinalize();
 }
@@ -620,7 +633,7 @@ void DeviceService::finalizeAndRelease() {
     m_ejecting = true;  // reuse the finalize → sever chain
     m_connected = false;
     clearDeviceState();
-    m_status = QStringLiteral("Sync complete — the Zune is re-indexing…");
+    m_status = UiText::tr("Sync complete — the Zune is re-indexing…");
     emit stateChanged();
     emit workerFinalize();
 }
@@ -899,15 +912,15 @@ void DeviceService::beginPull(const QString &noun, int total, int existing) {
     m_pullTotal = qMax(0, total);
     m_pulling = m_pullTotal > 0;
     if (m_pulling) {
-        m_status = QStringLiteral("Pulling %1 %2%3 from your Zune…")
+        m_status = UiText::tr("Pulling %1 %2%3 from your Zune…")
                        .arg(m_pullTotal)
                        .arg(m_pullNoun, m_pullTotal == 1 ? QString()
                                                          : QStringLiteral("s"));
     } else if (m_pullExisting > 0) {
         // Nothing to extract — everything dropped was already owned.
         m_status = m_pullExisting == 1
-            ? QStringLiteral("That %1's already in your library").arg(m_pullNoun)
-            : QStringLiteral("%1 %2s already in your library")
+            ? UiText::tr("That %1's already in your library").arg(m_pullNoun)
+            : UiText::tr("%1 %2s already in your library")
                   .arg(m_pullExisting).arg(m_pullNoun);
         emit pullToast(m_status);
     }
@@ -928,7 +941,7 @@ void DeviceService::notePullDone(bool ok) {
     // Batch complete — an honest summary: pulled, failed, already-had.
     m_pulling = false;
     const int okCount = m_pullTotal - m_pullFailed;
-    QString msg = QStringLiteral("Pulled %1 %2%3 to library")
+    QString msg = UiText::tr("Pulled %1 %2%3 to library")
                       .arg(okCount)
                       .arg(m_pullNoun, okCount == 1 ? QString()
                                                     : QStringLiteral("s"));
@@ -1013,18 +1026,14 @@ bool DeviceService::usbAccessFixable() const {
 
 QString DeviceService::usbAccessTitle() const {
     if (!m_usbBlockDetail.isEmpty())
-        return QStringLiteral("your zune is plugged in but windows cannot use it");
-    return QStringLiteral("your zune needs a USB permission rule");
+        return tr("your zune is plugged in but windows cannot use it");
+    return tr("your zune needs a USB permission rule");
 }
 
 QString DeviceService::usbAccessDetail() const {
     if (!m_usbBlockDetail.isEmpty())
-        return QStringLiteral("windows has not bound a driver zuuned can reach. give it "
-                              "WinUSB or libusbK with the Zadig utility, then replug. "
-                              "the device id below is what to pick there - zuuned never "
-                              "installs a driver itself.");
-    return QStringLiteral("one click installs it — you'll get your system's "
-                          "password prompt, no terminal needed.");
+        return tr("windows has not bound a driver zuuned can reach. give it WinUSB or libusbK with the Zadig utility, then replug. the device id below is what to pick there - zuuned never installs a driver itself.");
+    return tr("one click installs it — you'll get your system's password prompt, no terminal needed.");
 }
 
 QString DeviceService::usbAccessCommand() const {
@@ -1044,14 +1053,13 @@ void DeviceService::installUdevRule() {
     if (!udevRulesApply()) {
         // No udev and no pkexec on Windows: name what actually fixes it.
         emit udevRuleInstalled(false,
-            QStringLiteral("Windows needs a WinUSB driver for the Zune rather "
-                           "than a udev rule - install WinUSB with Zadig, then replug"));
+            UiText::tr("Windows needs a WinUSB driver for the Zune rather than a udev rule - install WinUSB with Zadig, then replug"));
         return;
     }
 
     const QString script = UdevSetup::installScript(UdevSetup::rules());
     if (script.isEmpty()) {
-        emit udevRuleInstalled(false, QStringLiteral("USB rule is missing from this build"));
+        emit udevRuleInstalled(false, UiText::tr("USB rule is missing from this build"));
         return;
     }
 
@@ -1063,14 +1071,13 @@ void DeviceService::installUdevRule() {
             emit udevRuleChanged();
             emit usbAccessChanged();
             emit udevRuleInstalled(true,
-                QStringLiteral("USB rule installed — replug the Zune if it "
-                               "doesn't connect"));
+                UiText::tr("USB rule installed — replug the Zune if it doesn't connect"));
         } else {
             // 126/127 = pkexec dismissed / no auth agent.
             emit udevRuleInstalled(false,
                 (code == 126 || code == 127)
-                    ? QStringLiteral("cancelled — run the command shown instead")
-                    : QStringLiteral("couldn't install the rule (exit %1)")
+                    ? UiText::tr("cancelled — run the command shown instead")
+                    : UiText::tr("couldn't install the rule (exit %1)")
                           .arg(code));
         }
         proc->deleteLater();
@@ -1078,7 +1085,7 @@ void DeviceService::installUdevRule() {
     connect(proc, &QProcess::errorOccurred, this, [this, proc](QProcess::ProcessError error) {
         if (error != QProcess::FailedToStart) return;
         emit udevRuleInstalled(false,
-            QStringLiteral("pkexec not available — run the command shown"));
+            UiText::tr("pkexec not available — run the command shown"));
         proc->deleteLater();
     });
     proc->start(QStringLiteral("pkexec"),
@@ -1115,14 +1122,14 @@ void DeviceService::rebuildPodcastDeviceStatus() {
         const auto id = RecoveryIdentity::objectId(row.value("itemId"));
         if (!id || id == 0xffffffffu || ids.contains(id) || m_podcastDeviceStatus.contains(key)) {
             m_podcastDeviceStatus.clear(); m_podcastMembershipKnown = false;
-            m_podcastStatusWarning = QStringLiteral("Podcast source identities are ambiguous; device badges are unavailable.");
+            m_podcastStatusWarning = UiText::tr("Podcast source identities are ambiguous; device badges are unavailable.");
             return;
         }
         ids.insert(id);
         if (!row.value("sourceKnown", !key.first.isEmpty() && !key.second.isEmpty()).toBool()
             || key.first.isEmpty() || key.second.isEmpty()) {
             m_podcastMembershipKnown = false;
-            m_podcastStatusWarning = QStringLiteral("Some podcast source identities are unavailable; device badges may be incomplete.");
+            m_podcastStatusWarning = UiText::tr("Some podcast source identities are unavailable; device badges may be incomplete.");
             continue;
         }
         m_podcastDeviceStatus.insert(key, row);
@@ -1180,7 +1187,7 @@ void DeviceService::refreshSpokenMedia() {
     m_spokenRequested = true;
     if (m_busy || m_purging || m_pulling || m_syncActive || m_ejecting || m_awaitingDisconnect) {
         m_spokenReadDeferred = true;
-        m_spokenMediaError = QStringLiteral("Wait for the current device operation, then refresh.");
+        m_spokenMediaError = UiText::tr("Wait for the current device operation, then refresh.");
         emit spokenMediaChanged();
         return;
     }
@@ -1218,14 +1225,14 @@ void DeviceService::purgeSpokenItems(const QString &kind, const QVariantList &it
     if (!m_connected || busy() || m_pulling || m_syncActive || m_ejecting || m_awaitingDisconnect)
         return;
     if (m_serial.isEmpty()) {
-        m_spokenMediaError = QStringLiteral("The Zune has no readable serial number. Reconnect before deleting.");
+        m_spokenMediaError = UiText::tr("The Zune has no readable serial number. Reconnect before deleting.");
         emit spokenMediaChanged();
         return;
     }
     if ((kind != QStringLiteral("podcast") && kind != QStringLiteral("audiobook")) || itemIds.isEmpty())
         return;
     if (kind == QStringLiteral("audiobook") && !audiobookBrowseSupported()) {
-        m_spokenMediaError = QStringLiteral("Audiobook browsing is not supported on this Zune model yet. Nothing was deleted.");
+        m_spokenMediaError = UiText::tr("Audiobook browsing is not supported on this Zune model yet. Nothing was deleted.");
         emit spokenMediaChanged();
         return;
     }
@@ -1241,7 +1248,7 @@ void DeviceService::purgeSpokenItems(const QString &kind, const QVariantList &it
     for (const auto &value : itemIds) {
         const quint32 id = RecoveryIdentity::objectId(value);
         if (!id || id == 0xffffffffu || !known.contains(id)) {
-            m_spokenMediaError = QStringLiteral("The selection changed. Refresh the Zune and select it again.");
+            m_spokenMediaError = UiText::tr("The selection changed. Refresh the Zune and select it again.");
             emit spokenMediaChanged();
             return;
         }
@@ -1351,7 +1358,7 @@ void DeviceService::onPurgeDone(int okCount, int failCount,
         ? QStringLiteral("%1 GB").arg(freed / 1e9, 0, 'f', 1)
         : QStringLiteral("%1 MB").arg(qRound(freed / 1e6));
     m_status = failCount == 0
-        ? (freed > 0 ? QStringLiteral("Deleted %1 item(s) — freed %2")
+        ? (freed > 0 ? UiText::tr("Deleted %1 item(s) — freed %2")
                            .arg(okCount).arg(freedStr)
                      : QStringLiteral("Deleted %1 item(s)").arg(okCount))
         : QStringLiteral("Deleted %1, failed %2").arg(okCount).arg(failCount);

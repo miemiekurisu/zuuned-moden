@@ -25,14 +25,14 @@ Popup {
         spacing: Theme.spaceMd
         RowLayout {
             Layout.fillWidth: true
-            Text { text: sheet.book ? "A PLACE FOR EVERY STORY." : "FOLLOW THE SIGNAL."; font.family: Theme.displayFamily; font.pixelSize: Theme.spokenTitle; color: Theme.activePink; Layout.fillWidth: true; wrapMode: Text.Wrap }
+            Text { text: sheet.book ? qsTr("A PLACE FOR EVERY STORY.") : qsTr("FOLLOW THE SIGNAL."); font.family: Theme.displayFamily; font.pixelSize: Theme.spokenTitle; color: Theme.activePink; Layout.fillWidth: true; wrapMode: Text.Wrap }
             SpokenButton { text: "×"; enabled: !sheet.saving; onClicked: sheet.close() }
         }
-        Text { Layout.fillWidth: true; text: sheet.book ? "Import one book. Review its identity and order all its files before saving." : "Paste the show’s RSS address. Preview it first, then choose what to download."; color: Theme.textSecondary; font.pixelSize: Theme.spokenBody; wrapMode: Text.Wrap }
+        Text { Layout.fillWidth: true; text: sheet.book ? qsTr("Import one book. Review its identity and order all its files before saving.") : qsTr("Paste the show’s RSS address. Preview it first, then choose what to download."); color: Theme.textSecondary; font.pixelSize: Theme.spokenBody; wrapMode: Text.Wrap }
         RowLayout {
             visible: !sheet.book; Layout.fillWidth: true
-            ZuneSearchField { id: feedUrl; objectName: "spokenFeedUrl"; Layout.fillWidth: true; placeholderText: "https://… / feed.rss"; onTextEdited: sheet.previewReady = false }
-            SpokenButton { text: "preview"; enabled: !SpokenMediaService.busy && feedUrl.text.trim().length > 0; onClicked: SpokenMediaService.previewFeed(feedUrl.text.trim()) }
+            ZuneSearchField { id: feedUrl; objectName: "spokenFeedUrl"; Layout.fillWidth: true; placeholderText: qsTr("https://… / feed.rss"); onTextEdited: sheet.previewReady = false }
+            SpokenButton { text: qsTr("preview"); enabled: !SpokenMediaService.busy && feedUrl.text.trim().length > 0; onClicked: SpokenMediaService.previewFeed(feedUrl.text.trim()) }
         }
         RowLayout {
             visible: !sheet.book && sheet.previewReady && SpokenMediaService.preview.kind === "show"
@@ -43,18 +43,19 @@ Popup {
             ColumnLayout { Layout.fillWidth: true
                 Text { text: SpokenMediaService.preview.title ?? ""; color: Theme.textPrimary; font.pixelSize: Theme.spokenTitle; Layout.fillWidth: true; elide: Text.ElideRight }
                 Text { text: SpokenMediaService.preview.author ?? ""; color: Theme.textSecondary; font.pixelSize: Theme.spokenBody }
-                Text { text: (SpokenMediaService.preview.episodes ?? []).length + " episodes · manual downloads"; color: Theme.textDim; font.pixelSize: Theme.spokenCaption }
+                Text { text: qsTr("%1 episodes · manual downloads")
+                  .arg((SpokenMediaService.preview.episodes ?? []).length); color: Theme.textDim; font.pixelSize: Theme.spokenCaption }
             }
         }
         ColumnLayout {
             visible: sheet.book
             Layout.fillWidth: true
-            Label { text: "book title"; color: Theme.textSecondary }
-            ZuneSearchField { id: bookTitle; Layout.fillWidth: true; placeholderText: "Book title" }
-            Label { text: "author / narrator"; color: Theme.textSecondary }
+            Label { text: qsTr("book title"); color: Theme.textSecondary }
+            ZuneSearchField { id: bookTitle; Layout.fillWidth: true; placeholderText: qsTr("Book title") }
+            Label { text: qsTr("author / narrator"); color: Theme.textSecondary }
             RowLayout { Layout.fillWidth: true
-                ZuneSearchField { id: author; Layout.fillWidth: true; placeholderText: "Author" }
-                ZuneSearchField { id: narrator; Layout.fillWidth: true; placeholderText: "Narrator" }
+                ZuneSearchField { id: author; Layout.fillWidth: true; placeholderText: qsTr("Author") }
+                ZuneSearchField { id: narrator; Layout.fillWidth: true; placeholderText: qsTr("Narrator") }
             }
         }
         ListView {
@@ -75,11 +76,11 @@ Popup {
         Text { text: SpokenMediaService.busy ? SpokenMediaService.status + "…" : ""; color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
         RowLayout {
             Layout.fillWidth: true
-            SpokenButton { text: "cancel"; enabled: !sheet.saving; onClicked: sheet.close() }
+            SpokenButton { text: qsTr("cancel"); enabled: !sheet.saving; onClicked: sheet.close() }
             Item { Layout.fillWidth: true }
             SpokenButton {
                 objectName: "spokenSaveImport"
-                text: sheet.saving ? "saving…" : sheet.book ? "add book" : "subscribe"
+                text: sheet.saving ? "saving…" : sheet.book ? qsTr("add book") : "subscribe"
                 enabled: !SpokenMediaService.busy && !sheet.saving && (sheet.book ? sheet.orderedParts.length > 0 && bookTitle.text.trim().length > 0 : sheet.previewReady && SpokenMediaService.preview.kind === "show")
                 onClicked: {
                     sheet.saving = true

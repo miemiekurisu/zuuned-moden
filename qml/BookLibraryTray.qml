@@ -51,20 +51,20 @@ Item {
     ColumnLayout {
         anchors.fill: parent; anchors.margins: Theme.spaceMd; spacing: Theme.spaceSm
         enabled: !BookTrayState.locked
-        Text { text: BookTrayState.context.id ? "EDITING LIBRARY" : "NEW AUDIOBOOK LIBRARY"; color: Theme.orange; font.pixelSize: Theme.customizeCaptionSize; font.bold: true }
+        Text { text: BookTrayState.context.id ? qsTr("EDITING LIBRARY") : qsTr("NEW AUDIOBOOK LIBRARY"); color: Theme.orange; font.pixelSize: Theme.customizeCaptionSize; font.bold: true }
         TextField {
             id: libraryName
             objectName: "bookTrayName"
             Layout.fillWidth: true
             text: BookTrayState.name
-            placeholderText: "Library name"
+            placeholderText: qsTr("Library name")
             maximumLength: 500
             color: Theme.textPrimary; placeholderTextColor: Theme.textDim
             font.pixelSize: Theme.customizeHeadingSize; padding: Theme.spaceSm
             background: Rectangle { color: Theme.cardBg; radius: Theme.radiusSm; border.color: libraryName.activeFocus ? Theme.orange : Theme.borderLight }
             onTextEdited: BookTrayState.name = text
         }
-        Text { text: BookTrayState.bookIds.length + " books · reading order"; color: Theme.textSecondary; font.pixelSize: Theme.customizeCaptionSize }
+        Text { text: qsTr("%1 books · reading order").arg(BookTrayState.bookIds.length); color: Theme.textSecondary; font.pixelSize: Theme.customizeCaptionSize }
         ListView {
             id: members
             objectName: "bookTrayMembers"
@@ -125,7 +125,7 @@ Item {
                             Layout.preferredWidth: Theme.spaceXxl
                             Layout.preferredHeight: Theme.spaceXxxl
                             enabled: index === 2 || (index === 0 ? member.index > 0 : member.index + 1 < BookTrayState.bookIds.length)
-                            Accessible.name: index === 0 ? "Move book earlier" : index === 1 ? "Move book later" : "Remove book from library draft"
+                            Accessible.name: index === 0 ? qsTr("Move book earlier") : index === 1 ? qsTr("Move book later") : qsTr("Remove book from library draft")
                             contentItem: Text { text: modelData; color: enabled ? Theme.textPrimary : Theme.textDim; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                             background: Rectangle { color: parent.hovered ? Theme.cardHover : Theme.transparent; radius: Theme.radiusSm }
                             onClicked: index === 2 ? BookTrayState.removeAt(member.index) : BookTrayState.move(member.index, member.index + (index === 0 ? -1 : 1))
@@ -136,18 +136,18 @@ Item {
             Text {
                 anchors.centerIn: parent; width: parent.width - Theme.spaceLg
                 visible: members.count === 0
-                text: "Drag books here, or use + while browsing.\nArrange them in your reading order."
+                text: qsTr("Drag books here, or use + while browsing.\nArrange them in your reading order.")
                 wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
                 color: Theme.textDim; font.pixelSize: Theme.customizeBodySize
             }
         }
         Text { Layout.fillWidth: true; visible: !!BookTrayState.error; text: BookTrayState.error; wrapMode: Text.WordWrap; color: Theme.error; font.pixelSize: Theme.customizeCaptionSize }
-        SpokenButton { objectName: "bookTrayDelete"; visible: !!BookTrayState.context.id; text: "delete library…"; flat: true; onClicked: BookTrayState.requestDelete() }
+        SpokenButton { objectName: "bookTrayDelete"; visible: !!BookTrayState.context.id; text: qsTr("delete library…"); flat: true; onClicked: BookTrayState.requestDelete() }
         RowLayout {
             Layout.fillWidth: true
-            SpokenButton { objectName: "bookTrayCancel"; text: "cancel"; onClicked: BookTrayState.requestDiscard() }
+            SpokenButton { objectName: "bookTrayCancel"; text: qsTr("cancel"); onClicked: BookTrayState.requestDiscard() }
             Item { Layout.fillWidth: true }
-            SpokenButton { objectName: "bookTraySave"; text: BookTrayState.saving ? "saving…" : "save library"; highlighted: true; enabled: !!BookTrayState.name.trim() && !SpokenMediaService.busy; onClicked: BookTrayState.save() }
+            SpokenButton { objectName: "bookTraySave"; text: BookTrayState.saving ? "saving…" : qsTr("save library"); highlighted: true; enabled: !!BookTrayState.name.trim() && !SpokenMediaService.busy; onClicked: BookTrayState.save() }
         }
     }
     Item {
@@ -170,10 +170,10 @@ Item {
         MouseArea { anchors.fill: parent }
         ColumnLayout {
             anchors.centerIn: parent; width: parent.width - Theme.spaceXxl; spacing: Theme.spaceLg
-            Text { Layout.fillWidth: true; text: BookTrayState.deleteConfirmation ? "Delete this library?" : "Discard this library draft?"; wrapMode: Text.WordWrap; color: Theme.textPrimary; font.pixelSize: Theme.customizeHeadingSize }
-            Text { Layout.fillWidth: true; text: BookTrayState.deleteConfirmation ? "Your books and files stay in your collection." : "Your unsaved changes will be lost."; wrapMode: Text.WordWrap; color: Theme.textSecondary; font.pixelSize: Theme.customizeBodySize }
-            SpokenButton { objectName: "bookTrayKeepEditing"; text: "keep editing"; onClicked: { BookTrayState.cancelDiscard(); BookTrayState.deleteConfirmation = false } }
-            SpokenButton { objectName: "bookTrayConfirm"; text: BookTrayState.deleteConfirmation ? "delete library" : "discard draft"; enabled: !SpokenMediaService.busy; onClicked: BookTrayState.deleteConfirmation ? BookTrayState.confirmDelete() : BookTrayState.confirmDiscard() }
+            Text { Layout.fillWidth: true; text: BookTrayState.deleteConfirmation ? qsTr("Delete this library?") : qsTr("Discard this library draft?"); wrapMode: Text.WordWrap; color: Theme.textPrimary; font.pixelSize: Theme.customizeHeadingSize }
+            Text { Layout.fillWidth: true; text: BookTrayState.deleteConfirmation ? qsTr("Your books and files stay in your collection.") : qsTr("Your unsaved changes will be lost."); wrapMode: Text.WordWrap; color: Theme.textSecondary; font.pixelSize: Theme.customizeBodySize }
+            SpokenButton { objectName: "bookTrayKeepEditing"; text: qsTr("keep editing"); onClicked: { BookTrayState.cancelDiscard(); BookTrayState.deleteConfirmation = false } }
+            SpokenButton { objectName: "bookTrayConfirm"; text: BookTrayState.deleteConfirmation ? qsTr("delete library") : qsTr("discard draft"); enabled: !SpokenMediaService.busy; onClicked: BookTrayState.deleteConfirmation ? BookTrayState.confirmDelete() : BookTrayState.confirmDiscard() }
         }
     }
 }

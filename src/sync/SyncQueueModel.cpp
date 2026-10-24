@@ -1,6 +1,7 @@
 #include "SyncQueueModel.h"
 
 #include <QUuid>
+#include "../UiText.h"
 
 QVariant SyncQueueModel::data(const QModelIndex &index, int role) const {
     if (!index.isValid() || index.row() >= m_entries.size())
@@ -158,7 +159,7 @@ QVariantList SyncQueueModel::groupSummary() const {
         if (e.type == "podcast-removal") {
             kind = "podcast-removals";
             title = e.album.isEmpty() ? QStringLiteral("Played podcasts") : e.album;
-            subtitle = "remove from Zune";
+            subtitle = UiText::tr("remove from Zune");
         } else if (e.type == "audiobook") {
             kind = "audiobooks"; title = e.album; subtitle = "audiobook";
         } else if (e.type == "podcast") {
@@ -522,7 +523,7 @@ QString SyncQueueModel::addPodcastRemoval(const QVariantMap &episode) {
     entry.album = episode.value("album", episode.value("showTitle")).toString();
     entry.videoPosterPath = episode.value("posterPath").toString();
     entry.status = "pending-removal";
-    entry.statusNote = "Will remove on sync";
+    entry.statusNote = UiText::tr("Will remove on sync");
     entry.podcast = episode;
     const auto id = entry.entryId;
     insertGrouped(std::move(entry));

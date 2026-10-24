@@ -9,6 +9,7 @@
 #include <QSet>
 #include <QTimer>
 #include <algorithm>
+#include "UiText.h"
 
 namespace {
 QString seriesKey(const QString &name) {
@@ -244,16 +245,16 @@ int VideoTitleRepair::selectedCount() const {
 
 QString VideoTitleRepair::blockedReason() const {
     if (!m_device || !m_device->property("connected").toBool())
-        return QStringLiteral("Connect your Zune to review its titles.");
+        return UiText::tr("Connect your Zune to review its titles.");
     if (!qobject_cast<LibraryService *>(m_library.data()))
-        return QStringLiteral("Your library is not available.");
+        return UiText::tr("Your library is not available.");
     if (!m_sync)
-        return QStringLiteral("Transfer status is not available.");
+        return UiText::tr("Transfer status is not available.");
     if (m_device->property("busy").toBool() || m_device->property("purging").toBool()
         || m_device->property("pulling").toBool() || m_sync->property("isSyncing").toBool())
-        return QStringLiteral("Finish the current device operation before changing titles.");
+        return UiText::tr("Finish the current device operation before changing titles.");
     if (m_previewGeneration != m_generation)
-        return QStringLiteral("Refresh the preview before applying titles.");
+        return UiText::tr("Refresh the preview before applying titles.");
     return {};
 }
 
@@ -336,7 +337,7 @@ void VideoTitleRepair::sendNext() {
         if (now.isEmpty() || now.value(QStringLiteral("snapshot")) != row.value(QStringLiteral("snapshot"))
             || now.value(QStringLiteral("after")) != row.value(QStringLiteral("after"))
             || now.value(QStringLiteral("libraryId")) != row.value(QStringLiteral("libraryId"))) {
-            setRowStatus(index, QStringLiteral("skipped"), QStringLiteral("This item changed. Refresh to review it again."));
+            setRowStatus(index, QStringLiteral("skipped"), UiText::tr("This item changed. Refresh to review it again."));
             ++m_skipped;
             continue;
         }
@@ -347,7 +348,7 @@ void VideoTitleRepair::sendNext() {
         if (!QMetaObject::invokeMethod(m_device, "renameItem", Qt::DirectConnection,
             Q_ARG(quint32, id), Q_ARG(QString, title))) {
             m_current = -1;
-            setRowStatus(index, QStringLiteral("failed"), QStringLiteral("Could not request the title change."));
+            setRowStatus(index, QStringLiteral("failed"), UiText::tr("Could not request the title change."));
             ++m_failed;
             continue;
         }
@@ -362,7 +363,7 @@ void VideoTitleRepair::onRenameFinished(quint32 itemId, const QString &newName, 
     if (row.value(QStringLiteral("itemId")).toUInt() != itemId
         || row.value(QStringLiteral("after")).toString() != newName) return;
     setRowStatus(m_current, ok ? QStringLiteral("saved") : QStringLiteral("failed"),
-        ok ? QString() : QStringLiteral("Your Zune could not save this title."));
+        ok ? QString() : UiText::tr("Your Zune could not save this title."));
     if (ok) ++m_updated;
     else ++m_failed;
     m_current = -1;
@@ -380,10 +381,10 @@ void VideoTitleRepair::onStateChanged() {
     }
     if (m_busy && !connected) {
         if (m_current >= 0) {
-            setRowStatus(m_current, QStringLiteral("failed"), QStringLiteral("Disconnected before the change was confirmed."));
+            setRowStatus(m_current, QStringLiteral("failed"), UiText::tr("Disconnected before the change was confirmed."));
             m_current = -1; ++m_failed;
         }
-        stopRemaining(QStringLiteral("Your Zune disconnected. Refresh the preview after reconnecting."));
+        stopRemaining(UiText::tr("Your Zune disconnected. Refresh the preview after reconnecting."));
     }
     emit changed();
 }
@@ -391,7 +392,7 @@ void VideoTitleRepair::onStateChanged() {
 void VideoTitleRepair::finish() {
     m_busy = false;
     if (m_error.isEmpty() && (m_failed || m_skipped))
-        m_error = QStringLiteral("%1 saved · %2 failed · %3 skipped. Refresh to review the remaining titles.")
+        m_error = UiText::tr("%1 saved · %2 failed · %3 skipped. Refresh to review the remaining titles.")
             .arg(m_updated).arg(m_failed).arg(m_skipped);
     emit changed();
     emit finished(m_updated, m_failed, m_skipped);

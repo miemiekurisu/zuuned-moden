@@ -269,12 +269,13 @@ Item {
                 Layout.preferredWidth: implicitWidth
                 Layout.alignment: Qt.AlignVCenter
                 tabs: ["Folders", "Albums"]
+                labels: [qsTr("Folders"), qsTr("Albums")]
                 current: root.pivot
                 onCurrentChanged: if (current !== root.pivot) root.switchPivot(current)
             }
             AlbumButton {
                 objectName: "newPhotoAlbum"
-                title: root.openCustomId > 0 ? "New subalbum" : "New album"
+                title: root.openCustomId > 0 ? qsTr("New subalbum") : qsTr("New album")
                 visible: root.pivot === "Albums"
                 onClicked: PhotoTrayState.openNew(root.openCustomId)
             }
@@ -282,9 +283,10 @@ Item {
             Text {
                 visible: root.width > Theme.spaceHuge * 16
                 text: !root.inAlbum
-                    ? root.shownAlbums.length + (root.pivot === "Albums" ? " albums · " : " folders · ")
-                      + LibraryService.photoCount + " photos"
-                    : root.albumPhotos.length + " photos"
+                    ? (root.pivot === "Albums"
+                       ? qsTr("%1 albums · %2 photos") : qsTr("%1 folders · %2 photos"))
+                      .arg(root.shownAlbums.length).arg(LibraryService.photoCount)
+                    : qsTr("%1 photos").arg(root.albumPhotos.length)
                 font.pixelSize: 12
                 color: Theme.textDim
             }
@@ -323,7 +325,7 @@ Item {
                 height: parent.height
                 spacing: Theme.spaceSm
                 AlbumButton {
-                    title: "‹ back"
+                    title: qsTr("‹ back")
                     anchors.verticalCenter: parent.verticalCenter
                     onClicked: root.goToCustom(root.albumTrail.length > 1 ? root.albumTrail[root.albumTrail.length - 2].id : 0)
                 }
@@ -353,17 +355,17 @@ Item {
             spacing: Theme.spaceMd
             AlbumButton {
                 objectName: "addAlbumPhotos"
-                title: "Edit / Add photos"
+                title: qsTr("Edit / Add photos")
                 onClicked: root.pickLibraryPhotos()
             }
             AlbumButton {
-                title: "Album options"
+                title: qsTr("Album options")
                 onClicked: {
                     libAlbumMenu.target = root.customAlbums.find(a => a.id === root.openCustomId)
                     libAlbumMenu.popup()
                 }
             }
-            Text { visible: root.width > Theme.spaceHuge * 14; text: "Photos in this album only"; color: Theme.textDim }
+            Text { visible: root.width > Theme.spaceHuge * 14; text: qsTr("Photos in this album only"); color: Theme.textDim }
         }
 
         Flow {
@@ -375,24 +377,24 @@ Item {
             visible: root.inAlbum || root.selectedCount > 0
             AlbumButton {
                 objectName: "photoSelectionToggle"
-                title: root.selecting ? "Done selecting" : "Select photos"
+                title: root.selecting ? qsTr("Done selecting") : qsTr("Select photos")
                 onClicked: { root.selecting = !root.selecting; root.forceActiveFocus() }
             }
             AlbumButton {
                 objectName: "photoSelectAll"
-                title: "Select all"
+                title: qsTr("Select all")
                 visible: root.inAlbum
                 onClicked: { root.selectAllPhotos(); root.forceActiveFocus() }
             }
             AlbumButton {
                 objectName: "photoSelectionClear"
-                title: "Clear " + root.selectedCount
+                title: qsTr("Clear %1").arg(root.selectedCount)
                 visible: root.selectedCount > 0
                 onClicked: root.clearSelection()
             }
             AlbumButton {
                 objectName: "photoSelectionAdd"
-                title: "Add " + root.selectedCount + " photos"
+                title: qsTr("Add %1 photos").arg(root.selectedCount)
                 kind: "primary"
                 visible: root.selectedCount > 0
                 onClicked: root.addToDraft(root.selectedRows)
@@ -536,10 +538,10 @@ Item {
                     Text {
                         text: {
                             const oz = albumCard.modelData.onZune ?? 0
-                            const base = albumCard.modelData.count + " photos"
+                            const base = qsTr("%1 photos").arg(albumCard.modelData.count)
                             return DeviceService.connected && oz > 0
                                 && oz < albumCard.modelData.count
-                                ? base + " · " + oz + " on zune"
+                                ? base + " · " + qsTr("%1 on zune").arg(oz)
                                 : base
                         }
                         font.pixelSize: 11
@@ -658,7 +660,8 @@ Item {
                     objectName: "folderPhotoAdd"
                     armed: PhotoTrayState.building
                     ToolTip.visible: hovered
-                    ToolTip.text: PhotoTrayState.building ? "Add photos to album draft" : "Queue photos for device"
+                    ToolTip.text: PhotoTrayState.building ? qsTr("Add photos to album draft")
+                                    : qsTr("Queue photos for device")
                     visible: PhotoTrayState.building || DeviceService.connected
                     anchors.top: parent.top
                     anchors.right: parent.right
@@ -687,8 +690,8 @@ Item {
             Text {
                 visible: root.shownAlbums.length === 0
                 anchors.centerIn: parent
-                text: root.pivot === "Albums" ? "Create an album, then browse folders and drag or select photos"
-                    : "no photos yet — add a photo watch folder in settings"
+                text: root.pivot === "Albums" ? qsTr("Create an album, then browse folders and drag or select photos")
+                    : qsTr("no photos yet — add a photo watch folder in settings")
                 font.pixelSize: 14
                 color: Theme.textDim
             }
@@ -725,8 +728,8 @@ Item {
                 wrapMode: Text.Wrap
                 objectName: "photoAlbumEmptyState"
                 text: root.openCustomId > 0
-                    ? "No photos in this album yet. Choose Add photos to select from your library."
-                    : "No photos in this folder"
+                    ? qsTr("No photos in this album yet. Choose Add photos to select from your library.")
+                    : qsTr("No photos in this folder")
                 color: Theme.textDim
             }
             delegate: Rectangle {
@@ -782,7 +785,8 @@ Item {
                     objectName: "libraryPhotoAdd"
                     armed: PhotoTrayState.building
                     ToolTip.visible: hovered
-                    ToolTip.text: PhotoTrayState.building ? "Add photo to album draft" : "Queue photo for device"
+                    ToolTip.text: PhotoTrayState.building ? qsTr("Add photo to album draft")
+                                    : qsTr("Queue photo for device")
                     visible: PhotoTrayState.building || DeviceService.connected
                     z: 1
                     anchors.top: parent.top
@@ -907,7 +911,8 @@ Item {
                 }
                 return true
             }))
-        readonly property string title: mode === "move" ? "Move photo album" : "Delete photo album"
+        readonly property string title: mode === "move" ? qsTr("Move photo album")
+                                              : qsTr("Delete photo album")
         function save() {
             let result
             if (mode === "delete") result = LibraryService.deletePhotoAlbum(target.id)
@@ -940,7 +945,7 @@ Item {
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
                 color: Theme.textSecondary
-                text: "Delete this album and all its subalbums? Photos stay in your library and on disk."
+                text: qsTr("Delete this album and all its subalbums? Photos stay in your library and on disk.")
             }
             Label {
                 visible: albumEditor.error !== ""
@@ -951,11 +956,11 @@ Item {
             }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
-                AlbumButton { objectName: "photoAlbumCancel"; title: "Cancel"; onClicked: albumEditor.close() }
+                AlbumButton { objectName: "photoAlbumCancel"; title: qsTr("Cancel"); onClicked: albumEditor.close() }
                 AlbumButton {
                     objectName: "photoAlbumSave"
                     kind: "primary"
-                    title: albumEditor.mode === "delete" ? "Delete albums" : "Save"
+                    title: albumEditor.mode === "delete" ? qsTr("Delete albums") : qsTr("Save")
                     onClicked: albumEditor.save()
                 }
             }
@@ -967,30 +972,30 @@ Item {
         id: libPhotoMenu
         property var target: null
         ZuneMenuItem {
-            text: "Queue for Device"
+            text: qsTr("Queue for Device")
             visible: DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: root.queuePhotos([libPhotoMenu.target],
                                           root.openAlbumName)
         }
         ZuneMenuItem {
-            text: "Add to photo album…"
+            text: qsTr("Add to photo album…")
             onTriggered: root.addToDraft([libPhotoMenu.target])
         }
         ZuneMenuItem {
-            text: "Edit album membership…"
+            text: qsTr("Edit album membership…")
             visible: root.openCustomId > 0
             height: visible ? implicitHeight : 0
             onTriggered: root.editCustomAlbum(root.openCustomId, false)
         }
         ZuneMenuItem {
-            text: "Arrange album…"
+            text: qsTr("Arrange album…")
             visible: root.openCustomId > 0
             height: visible ? implicitHeight : 0
             onTriggered: root.editCustomAlbum(root.openCustomId, false)
         }
         ZuneMenuItem {
-            text: "Remove from Library"
+            text: qsTr("Remove from Library")
             onTriggered: LibraryService.deletePhotos([libPhotoMenu.target.id])
         }
     }
@@ -998,7 +1003,7 @@ Item {
         id: libAlbumMenu
         property var target: null
         ZuneMenuItem {
-            text: "Queue Album for Device"
+            text: qsTr("Queue Album for Device")
             visible: DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: root.queuePhotos(
@@ -1006,31 +1011,31 @@ Item {
                 libAlbumMenu.target.name)
         }
         ZuneMenuItem {
-            text: "Add photos to album…"
+            text: qsTr("Add photos to album…")
             onTriggered: {
                 root.addToDraft(root.photosFor(libAlbumMenu.target))
             }
         }
         ZuneMenuItem {
-            text: "Edit album…"
+            text: qsTr("Edit album…")
             visible: libAlbumMenu.target !== null && libAlbumMenu.target.id !== undefined
             height: visible ? implicitHeight : 0
             onTriggered: root.editCustomAlbum(libAlbumMenu.target.id, false)
         }
         ZuneMenuItem {
-            text: "Move album…"
+            text: qsTr("Move album…")
             visible: libAlbumMenu.target !== null && libAlbumMenu.target.id !== undefined
             height: visible ? implicitHeight : 0
             onTriggered: root.editAlbum("move", libAlbumMenu.target)
         }
         ZuneMenuItem {
-            text: "Delete album and subalbums…"
+            text: qsTr("Delete album and subalbums…")
             visible: libAlbumMenu.target !== null && libAlbumMenu.target.id !== undefined
             height: visible ? implicitHeight : 0
             onTriggered: root.editAlbum("delete", libAlbumMenu.target)
         }
         ZuneMenuItem {
-            text: "Remove Folder Photos from Library"
+            text: qsTr("Remove Folder Photos from Library")
             visible: libAlbumMenu.target !== null && libAlbumMenu.target.id === undefined
             height: visible ? implicitHeight : 0
             onTriggered: LibraryService.deletePhotos(

@@ -37,6 +37,7 @@
 #include <cmath>
 #include <deque>
 #include <sys/stat.h>
+#include "../UiText.h"
 
 namespace ArtworkPrint {
 namespace {
@@ -203,9 +204,9 @@ struct Job {
     std::shared_ptr<void> sourceLease;
 };
 
-Pipeline::Output failure(const char *message)
+Pipeline::Output failure(QString message)
 {
-    return {{}, QString::fromUtf8(message), {}};
+    return {{}, std::move(message), {}};
 }
 
 Pipeline::Output prepare(const std::shared_ptr<Cache> &cache, const std::shared_ptr<Job> &job)
@@ -215,15 +216,15 @@ Pipeline::Output prepare(const std::shared_ptr<Cache> &cache, const std::shared_
     // same-size replacement even when the caller restores an old mtime.
     for (int attempt = 0; attempt < 3 && !job->cancelled; ++attempt) {
         const Stamp before = stamp(job->path);
-        if (before.size < 0) return failure("Artwork is unavailable. Choose the image again.");
-        if (before.size == 0) return failure("Artwork is empty. Choose another image.");
-        if (before.size > maxEncodedBytes) return failure("Artwork is too large to process. Choose an image under 32 MB.");
+        if (before.size < 0) return failure(UiText::tr("Artwork is unavailable. Choose the image again."));
+        if (before.size == 0) return failure(UiText::tr("Artwork is empty. Choose another image."));
+        if (before.size > maxEncodedBytes) return failure(UiText::tr("Artwork is too large to process. Choose an image under 32 MB."));
         const auto canonicalSource = QFileInfo(job->path).canonicalFilePath();
         auto sourceLease = pin(cache, canonicalSource);
         QFile source(job->path);
-        if (!source.open(QIODevice::ReadOnly)) return failure("Artwork could not be read. Check the file is available.");
+        if (!source.open(QIODevice::ReadOnly)) return failure(UiText::tr("Artwork could not be read. Check the file is available."));
         const QByteArray bytes = source.read(maxEncodedBytes + 1);
-        if (source.error() != QFileDevice::NoError) return failure("Artwork could not be read. Try again.");
+        if (source.error() != QFileDevice::NoError) return failure(UiText::tr("Artwork could not be read. Try again."));
         source.close();
         if (!(before == stamp(job->path)) || bytes.size() != before.size) continue;
         if (job->cancelled) return {};
@@ -256,7 +257,7 @@ Pipeline::Output prepare(const std::shared_ptr<Cache> &cache, const std::shared_
         {
             QMutexLocker diskLock(&cache->diskMutex);
             if (QFileInfo(outputPath).isSymLink())
-                return failure("Artwork cache contains an invalid link. Clear the print cache and try again.");
+                return failure(UiText::tr("Artwork cache contains an invalid link. Clear the print cache and try again."));
             const QImage image = readCached(outputPath);
             cached = !image.isNull();
             if (cached) {
@@ -282,18 +283,18 @@ Pipeline::Output prepare(const std::shared_ptr<Cache> &cache, const std::shared_
                 const QSize size = reader.size();
                 if (size.isEmpty() || qint64(size.width()) * size.height() > maxSourcePixels
                     || size.width() > 32768 || size.height() > 32768)
-                    return failure("Artwork has invalid or oversized dimensions. Choose another image.");
+                    return failure(UiText::tr("Artwork has invalid or oversized dimensions. Choose another image."));
                 if (size.width() > canonicalEdge || size.height() > canonicalEdge)
                     reader.setScaledSize(size.scaled(canonicalEdge, canonicalEdge, Qt::KeepAspectRatio));
                 image = reader.read();
-                if (image.isNull()) return failure("Artwork could not be decoded. Choose another image.");
+                if (image.isNull()) return failure(UiText::tr("Artwork could not be decoded. Choose another image."));
                 if (image.width() > canonicalEdge || image.height() > canonicalEdge)
                     image = image.scaled(canonicalEdge, canonicalEdge, Qt::KeepAspectRatio, Qt::SmoothTransformation);
                 remember(cache, sourceKey, image);
             }
             if (job->cancelled) return {};
             rendered = cache->renderer(image, job->options).image;
-            if (rendered.isNull()) return failure("Artwork treatment could not be created. Try another image.");
+            if (rendered.isNull()) return failure(UiText::tr("Artwork treatment could not be created. Try another image."));
             remember(cache, resultKey, rendered);
         }
         if (job->cancelled) return {};
@@ -301,24 +302,24 @@ Pipeline::Output prepare(const std::shared_ptr<Cache> &cache, const std::shared_
         {
             QMutexLocker diskLock(&cache->diskMutex);
             if (!QDir().mkpath(cache->config.cacheDirectory))
-                return failure("Artwork cache could not be created. Check available disk space.");
+                return failure(UiText::tr("Artwork cache could not be created. Check available disk space."));
             if (QFileInfo(outputPath).isSymLink())
-                return failure("Artwork cache contains an invalid link. Clear the print cache and try again.");
+                return failure(UiText::tr("Artwork cache contains an invalid link. Clear the print cache and try again."));
             // Even if an input is itself inside this cache, never replace it.
             const Stamp destination = stamp(outputPath);
             if (outputPath == canonicalSource || (destination.size >= 0
                 && destination.device == before.device && destination.inode == before.inode))
-                return failure("Artwork cache conflicts with its source. Choose another cache image.");
+                return failure(UiText::tr("Artwork cache conflicts with its source. Choose another cache image."));
             QSaveFile output(outputPath);
             if (!output.open(QIODevice::WriteOnly))
-                return failure("Artwork cache could not be written. Check available disk space.");
+                return failure(UiText::tr("Artwork cache could not be written. Check available disk space."));
             QImageWriter writer(&output, "png");
-            if (!writer.write(rendered)) return failure("Artwork cache could not be written. Check available disk space.");
+            if (!writer.write(rendered)) return failure(UiText::tr("Artwork cache could not be written. Check available disk space."));
             if (job->cancelled || !(before == stamp(job->path))) {
                 output.cancelWriting();
                 continue;
             }
-            if (!output.commit()) return failure("Artwork cache could not be saved. Check available disk space.");
+            if (!output.commit()) return failure(UiText::tr("Artwork cache could not be saved. Check available disk space."));
             prune(cache);
         }
         if (job->cancelled) return {};
@@ -326,7 +327,7 @@ Pipeline::Output prepare(const std::shared_ptr<Cache> &cache, const std::shared_
         return {QUrl::fromLocalFile(outputPath), {}, std::move(outputLease)};
     }
     return job->cancelled ? Pipeline::Output{}
-        : failure("Artwork changed while loading. Try again once the file is ready.");
+        : failure(UiText::tr("Artwork changed while loading. Try again once the file is ready."));
 }
 
 } // namespace
@@ -383,7 +384,7 @@ public:
             });
             watcher->setFuture(QtConcurrent::run(&pool, [cache = cache, job] {
                 try { return prepare(cache, job); }
-                catch (...) { return failure("Artwork treatment could not be created. Try again."); }
+                catch (...) { return failure(UiText::tr("Artwork treatment could not be created. Try again.")); }
             }));
         }
         if (trimRequested && active == 0 && pending.empty()) {

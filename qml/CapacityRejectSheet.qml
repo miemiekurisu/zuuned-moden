@@ -54,7 +54,7 @@ Popup {
             Layout.margins: Theme.spaceLg
             spacing: Theme.spaceSm
             Text {
-                text: "DIDN'T FIT ON THE ZUNE"
+                text: qsTr("DIDN'T FIT ON THE ZUNE")
                 font.pixelSize: 11
                 font.bold: true
                 font.letterSpacing: 1.5
@@ -82,12 +82,12 @@ Popup {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.spaceLg
             Layout.rightMargin: Theme.spaceLg
-            text: "once the current queue syncs, the zune will only have ~"
-                  + sheet.fmtGB(leftAfter) + " of its "
-                  + sheet.fmtGB(sheet.freeGB) + " free space left — "
-                  + "not enough for "
-                  + (sheet.rejectedItems.length === 1
-                     ? "this:" : "these " + sheet.rejectedItems.length + " items:")
+            text: qsTr("once the current queue syncs, the zune will only have ~%1 of its %2 free space left — not enough for %3")
+                  .arg(sheet.fmtGB(leftAfter))
+                  .arg(sheet.fmtGB(sheet.freeGB))
+                  .arg(
+                       sheet.rejectedItems.length === 1
+                       ? qsTr("this:") : qsTr("these %1 items:").arg(sheet.rejectedItems.length))
             font.pixelSize: 12
             font.weight: Font.Light
             color: Theme.textSecondary
@@ -100,9 +100,9 @@ Popup {
             Layout.leftMargin: Theme.spaceLg
             Layout.rightMargin: Theme.spaceLg
             Layout.topMargin: Theme.spaceXxs
-            text: "(" + sheet.addedCount + " item"
-                  + (sheet.addedCount === 1 ? "" : "s")
-                  + " from this add did fit and got queued)"
+            text: sheet.addedCount === 1
+              ? qsTr("(1 item from this add did fit and got queued)")
+              : qsTr("(%1 items from this add did fit and got queued)").arg(sheet.addedCount)
             font.pixelSize: 11
             font.weight: Font.Light
             color: Theme.textDim
@@ -146,8 +146,7 @@ Popup {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.spaceLg
             Layout.rightMargin: Theme.spaceLg
-            text: "free up space (delete from the device) or trim the queue, "
-                  + "then queue these again"
+            text: qsTr("free up space (delete from the device) or trim the queue, then queue these again")
             font.pixelSize: 11
             color: Theme.textDim
             wrapMode: Text.WordWrap
@@ -156,7 +155,7 @@ Popup {
         DetailActionButton {
             Layout.margins: Theme.spaceLg
             Layout.fillWidth: true
-            title: "got it"
+            title: qsTr("got it")
             kind: "primary"
             onClicked: sheet.close()
         }

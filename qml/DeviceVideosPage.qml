@@ -184,6 +184,8 @@ Item {
                     Math.max(implicitWidth, root.width - 300))
                 Layout.minimumWidth: implicitWidth
                 tabs: ["Movies", "TV Shows", "Anime", "Music Videos", "Other"]
+                labels: [qsTr("Movies"), qsTr("TV Shows"), qsTr("Anime"),
+                         qsTr("Music Videos"), qsTr("Other")]
                 current: root.currentTab
                 onCurrentChanged: {
                     root.currentTab = current
@@ -195,11 +197,11 @@ Item {
 
             Button {
                 id: titleRepairAction
-                text: "titles…"
+                text: qsTr("titles…")
                 enabled: DeviceService.connected && !SyncEngine.isSyncing
                     && !DeviceService.busy && !DeviceService.pulling && !DeviceService.purging
                 padding: Theme.spaceSm
-                Accessible.name: "Use library titles on your Zune"
+                Accessible.name: qsTr("Use library titles on your Zune")
                 contentItem: Text {
                     text: titleRepairAction.text
                     font.pixelSize: Theme.customizeBodySize
@@ -213,8 +215,8 @@ Item {
             Text {
                 Layout.alignment: Qt.AlignVCenter
                 visible: root.width > 1060
-                text: root.movieVideos.length + " movies, "
-                      + root.seriesList.length + " tv shows"
+                text: qsTr("%1 movies, %2 tv shows")
+                  .arg(root.movieVideos.length).arg(root.seriesList.length)
                 font.pixelSize: 11
                 font.weight: Font.Light
                 color: Theme.textDim
@@ -252,12 +254,12 @@ Item {
                          && root.openSeries === null
                 Text {
                     Layout.alignment: Qt.AlignHCenter
-                    text: root.searchText !== "" ? "nothing matches"
-                        : root.currentTab === "Movies" ? "no movies on this zune"
-                        : root.currentTab === "TV Shows" ? "no tv shows on this zune"
-                        : root.currentTab === "Anime" ? "no anime on this zune"
-                        : root.currentTab === "Music Videos" ? "no music videos on this zune"
-                        : "nothing filed under other on this zune"
+                    text: root.searchText !== "" ? qsTr("nothing matches")
+                        : root.currentTab === "Movies" ? qsTr("no movies on this zune")
+                        : root.currentTab === "TV Shows" ? qsTr("no tv shows on this zune")
+                        : root.currentTab === "Anime" ? qsTr("no anime on this zune")
+                        : root.currentTab === "Music Videos" ? qsTr("no music videos on this zune")
+                        : qsTr("nothing filed under other on this zune")
                     font.pixelSize: 14
                     font.weight: Font.Light
                     color: Theme.textSecondary
@@ -265,10 +267,9 @@ Item {
                 Text {
                     Layout.alignment: Qt.AlignHCenter
                     visible: root.searchText === ""
-                    text: "queue " + (root.currentTab === "TV Shows"
-                                      || root.currentTab === "Anime"
-                                      ? "episodes" : root.currentTab.toLowerCase())
-                          + " from your library and sync to fill this shelf"
+                    text: qsTr("queue %1 from your library and sync to fill this shelf")
+                      .arg(root.currentTab === "TV Shows" || root.currentTab === "Anime"
+                      ? qsTr("episodes") : root.currentTab.toLowerCase())
                     font.pixelSize: 11
                     color: Theme.textDim
                 }
@@ -384,8 +385,8 @@ Item {
                             .sort((a, b) => Number(a) - Number(b))
                             .map(s => ({
                                 id: "season" + s,
-                                label: Number(s) > 0 ? "Season " + s : "Specials",
-                                sublabel: bySeason[s].length + " eps",
+                                label: Number(s) > 0 ? qsTr("Season %1").arg(s) : qsTr("Specials"),
+                                sublabel: qsTr("%1 eps").arg(bySeason[s].length),
                                 children: bySeason[s]
                             }))
                         deviceEpisodePicker.openAt(parent, parent.modelData.name,
@@ -451,12 +452,12 @@ Item {
             radius: Theme.radiusLg
         }
         ZuneMenuItem {
-            text: "Save to Library"
+            text: qsTr("Save to Library")
             enabled: DeviceService.connected
             onTriggered: root.saveOne(deviceVideoMenu.target)
         }
         ZuneMenuItem {
-            text: "Rename on Zune…"
+            text: qsTr("Rename on Zune…")
             enabled: DeviceService.connected
             onTriggered: {
                 if (DeviceService.connected) renameSheet.openFor(
@@ -464,7 +465,7 @@ Item {
             }
         }
         ZuneMenuItem {
-            text: "Delete from Device"
+            text: qsTr("Delete from Device")
             danger: true
             enabled: DeviceService.connected
             onTriggered: { if (DeviceService.connected) DeviceService.purgeItems([deviceVideoMenu.target.itemId]) }
@@ -481,7 +482,7 @@ Item {
             radius: Theme.radiusLg
         }
         ZuneMenuItem {
-            text: "Save All Episodes to Library"
+            text: qsTr("Save All Episodes to Library")
             enabled: DeviceService.connected
             onTriggered: {
                 for (const ep of deviceSeriesMenu.target.episodes)
@@ -489,7 +490,7 @@ Item {
             }
         }
         ZuneMenuItem {
-            text: "Delete Series from Device"
+            text: qsTr("Delete Series from Device")
             danger: true
             enabled: DeviceService.connected
             onTriggered: { if (DeviceService.connected) DeviceService.purgeItems(

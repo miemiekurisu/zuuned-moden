@@ -172,15 +172,23 @@ ApplicationWindow {
                 stored++
             if (wf[i].importDefault === true)
                 defs++
-            // The status text a row paints comes from this string, so the flag
-            // and the words must be the same fact: a default has a label naming
-            // the kinds it receives, a non-default has nothing and shows a
-            // button instead.  A stray "default" on a row that receives nothing
-            // would send a download somewhere the user never chose.
-            const dl = String(wf[i].defaultLabel ?? "")
-            if (dl.length > 0)
+            // The status a row paints is composed from this list, so the flag
+            // and the status must be the same fact: a default has kinds it
+            // receives, a non-default has none and shows a button instead.
+            // A stray "default" on a row that receives nothing would send a
+            // download somewhere the user never chose.  The words themselves
+            // are wording and come from the language file, so what is proved
+            // here is that the row and the flag agree.
+            // Counted by length rather than through Array.isArray(): a
+            // container that reaches QML as something other than an Array
+            // must not be counted as "no kinds", because that reads here as
+            // agreement while the row paints the wrong words.  Anything
+            // shapeless leaves n at -1, which fails the count loudly.
+            const kinds = wf[i].defaultKinds
+            const n = (kinds && typeof kinds.length === "number") ? kinds.length : -1
+            if (n > 0)
                 labels++
-            if ((wf[i].importDefault === true) === (dl.length > 0))
+            if ((wf[i].importDefault === true) === (n > 0))
                 labelAgree++
         }
         if (rows > 0)
@@ -631,13 +639,15 @@ ApplicationWindow {
     readonly property real islandFullHeight:
         height - 110 - (Theme.spaceHuge + Theme.spaceMd) - 60 - Theme.spaceXxl
     readonly property var pageTitles: ({
-        music: "music", videos: "videos", photos: "photos", podcasts: "podcasts", audiobooks: "audiobooks",
-        settings: "settings",
-        deviceMusic: "device music", deviceVideos: "device videos",
+        music: qsTr("music"), videos: qsTr("videos"), photos: qsTr("photos"),
+        podcasts: qsTr("podcasts"), audiobooks: qsTr("audiobooks"),
+        settings: qsTr("settings"),
+        deviceMusic: qsTr("device music"), deviceVideos: qsTr("device videos"),
         // "photos" everywhere (Orson 2026-09-07): the OG Zune said
         // "pictures", but the library sidebar says photos — one word
-        devicePictures: "photos", devicePlaylists: "playlists",
-        devicePodcasts: "device podcasts", deviceAudiobooks: "device audiobooks"
+        devicePictures: qsTr("photos"), devicePlaylists: qsTr("playlists"),
+        devicePodcasts: qsTr("device podcasts"),
+        deviceAudiobooks: qsTr("device audiobooks")
     })
 
     EnvironmentBackground {
@@ -1533,7 +1543,7 @@ ApplicationWindow {
         property string label
         Text {
             anchors.centerIn: parent
-            text: parent.label + " — coming soon"
+            text: qsTr("%1 — coming soon").arg(parent.label)
             color: Theme.textGhost
             font.family: Theme.displayFamily
             font.pixelSize: 26

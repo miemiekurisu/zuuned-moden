@@ -135,7 +135,7 @@ Item {
                         spacing: -Theme.spaceMd
                         // 1 · "welcome to" fades in at the top.
                         GradientText {
-                            text: "welcome to"
+                            text: qsTr("welcome to")
                             font.family: Theme.displayFamily
                             font.pixelSize: 30
                             tracking: 1
@@ -200,9 +200,8 @@ Item {
                             // W15: promise the flow — folders, then make-it-
                             // yours, then the tour (mixtapes are the showpiece).
                             Layout.topMargin: Theme.spaceSm
-                            text: "your zune, at home on "
-                                  + (Qt.platform.os === "windows" ? "windows." : "linux.")
-                                  + "\nfolders first, then make it yours, then a quick tour."
+                            text: qsTr("your zune, at home on %1\nfolders first, then make it yours, then a quick tour.")
+                                  .arg(Qt.platform.os === "windows" ? "Windows." : "Linux.")
                             font.pixelSize: 14
                             font.weight: Font.Light
                             lineHeight: 1.35
@@ -220,9 +219,9 @@ Item {
                             }
                             Text {
                                 text: DeviceService.connected
-                                    ? (DeviceService.modelName !== ""
-                                       ? DeviceService.modelName : "Zune") + " detected"
-                                    : "Zune detected — connecting…"
+                                    ? qsTr("%1 detected").arg(DeviceService.modelName !== ""
+                                       ? DeviceService.modelName : "Zune")
+                                    : qsTr("Zune detected — connecting…")
                                 font.pixelSize: 12
                                 font.weight: Font.Light
                                 color: DeviceService.connected ? Theme.green : Theme.textSecondary
@@ -230,7 +229,7 @@ Item {
                         }
                         PinkCta {
                             Layout.topMargin: Theme.spaceLg
-                            label: "get started"
+                            label: qsTr("get started")
                             onActivated: root.step = root.stepMusic
                         }
                     }
@@ -241,14 +240,13 @@ Item {
                     spacing: Theme.spaceLg
 
                     Text {
-                        text: "where's your music?"
+                        text: qsTr("where's your music?")
                         font.pixelSize: 36
                         font.weight: Font.ExtraLight
                         color: Theme.textPrimary
                     }
                     Text {
-                        text: "point us at your music folder — we start scanning it "
-                              + "right away so it's ready by the time you're done."
+                        text: qsTr("point us at your music folder — we start scanning it right away so it's ready by the time you're done.")
                         font.pixelSize: 13
                         font.weight: Font.Light
                         color: Theme.textDim
@@ -269,14 +267,14 @@ Item {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             spacing: 0
-                            FolderTypeSection { title: "Music"; type: "music" }
+                            FolderTypeSection { title: qsTr("Music"); type: "music" }
                         }
                     }
                     ManualPathRow { typeModel: ["music"] }
 
                     PinkCta {
                         Layout.topMargin: Theme.spaceSm
-                        label: "next"
+                        label: qsTr("next")
                         enabled: root.countFor(["music"]) > 0
                         onActivated: root.step = root.stepVideo
                     }
@@ -287,14 +285,13 @@ Item {
                     spacing: Theme.spaceLg
 
                     Text {
-                        text: "movies, shows & more"
+                        text: qsTr("movies, shows & more")
                         font.pixelSize: 36
                         font.weight: Font.ExtraLight
                         color: Theme.textPrimary
                     }
                     Text {
-                        text: "the rest of what the Zune plays. add what you have, "
-                              + "skip the rest — only what you point at gets scanned."
+                        text: qsTr("the rest of what the Zune plays. add what you have, skip the rest — only what you point at gets scanned.")
                         font.pixelSize: 13
                         font.weight: Font.Light
                         color: Theme.textDim
@@ -315,13 +312,13 @@ Item {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             spacing: 0
-                            FolderTypeSection { title: "Movies"; type: "movies" }
+                            FolderTypeSection { title: qsTr("Movies"); type: "movies" }
                             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.border }
-                            FolderTypeSection { title: "TV Shows"; type: "tv" }
+                            FolderTypeSection { title: qsTr("TV Shows"); type: "tv" }
                             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.border }
-                            FolderTypeSection { title: "Anime"; type: "anime" }
+                            FolderTypeSection { title: qsTr("Anime"); type: "anime" }
                             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.border }
-                            FolderTypeSection { title: "Other"; type: "other" }
+                            FolderTypeSection { title: qsTr("Other"); type: "other" }
                         }
                     }
                     ManualPathRow { typeModel: ["movies", "tv", "anime", "other"] }
@@ -331,7 +328,7 @@ Item {
                         Layout.topMargin: Theme.spaceXs
                         spacing: Theme.spaceSm
                         Text {
-                            text: "POSTER SOURCE"
+                            text: qsTr("POSTER SOURCE")
                             font.pixelSize: 9
                             font.weight: Font.Bold
                             font.letterSpacing: 1
@@ -361,10 +358,10 @@ Item {
                                 }
                             }
                             SegBtn { label: "TMDB"; tag: "tmdb" }
-                            SegBtn { label: "Fanart.tv"; tag: "fanart" }
+                            SegBtn { label: qsTr("Fanart.tv"); tag: "fanart" }
                         }
                         Text {
-                            text: "source used for movie & tv artwork — changeable in settings later."
+                            text: qsTr("source used for movie & tv artwork — changeable in settings later.")
                             font.pixelSize: 11
                             font.weight: Font.Light
                             color: Theme.textDim
@@ -384,14 +381,13 @@ Item {
                     spacing: Theme.spaceLg
 
                     Text {
-                        text: "your photos?"
+                        text: qsTr("your photos?")
                         font.pixelSize: 36
                         font.weight: Font.ExtraLight
                         color: Theme.textPrimary
                     }
                     Text {
-                        text: "last folder — your image gallery, synced to the "
-                              + "Zune's picture library."
+                        text: qsTr("last folder — your image gallery, synced to the Zune's picture library.")
                         font.pixelSize: 13
                         font.weight: Font.Light
                         color: Theme.textDim
@@ -412,13 +408,13 @@ Item {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             spacing: 0
-                            FolderTypeSection { title: "Photos"; type: "photos" }
+                            FolderTypeSection { title: qsTr("Photos"); type: "photos" }
                         }
                     }
                     ManualPathRow { typeModel: ["photos"] }
 
                     Text {
-                        text: "you can always add more folders later in settings."
+                        text: qsTr("you can always add more folders later in settings.")
                         font.pixelSize: 11
                         font.weight: Font.Light
                         color: Theme.textDim
@@ -436,7 +432,7 @@ Item {
 
                 ColumnLayout {
                     spacing: Theme.spaceXl
-                    Text { text: "your podcasts?"; font.pixelSize: Theme.spokenDetailTitleSize; font.weight: Font.ExtraLight; color: Theme.textPrimary }
+                    Text { text: qsTr("your podcasts?"); font.pixelSize: Theme.spokenDetailTitleSize; font.weight: Font.ExtraLight; color: Theme.textPrimary }
                     PodcastPreferences {
                         Layout.fillWidth: true
                         autoQueue: root.draftPodcastQueue
@@ -448,7 +444,7 @@ Item {
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: "Add and star shows in Podcasts after setup. You can change these choices later in Settings → Library."
+                        text: qsTr("Add and star shows in Podcasts after setup. You can change these choices later in Settings → Library.")
                         wrapMode: Text.WordWrap; color: Theme.textDim; font.pixelSize: Theme.spokenCaption
                     }
                     PinkCta {
@@ -460,26 +456,26 @@ Item {
 
                 ColumnLayout {
                     spacing: Theme.spaceXl
-                    Text { text: "your audiobooks?"; font.pixelSize: Theme.spokenDetailTitleSize; font.weight: Font.ExtraLight; color: Theme.textPrimary }
+                    Text { text: qsTr("your audiobooks?"); font.pixelSize: Theme.spokenDetailTitleSize; font.weight: Font.ExtraLight; color: Theme.textPrimary }
                     Text {
                         Layout.fillWidth: true
-                        text: "Bring one book or a collection of book folders. Review titles and part order before importing. Your files stay in place; books transfer as a whole when you add them to the Zune queue."
+                        text: qsTr("Bring one book or a collection of book folders. Review titles and part order before importing. Your files stay in place; books transfer as a whole when you add them to the Zune queue.")
                         wrapMode: Text.WordWrap; color: Theme.textSecondary; font.pixelSize: Theme.spokenBody
                     }
                     SpokenButton {
                         objectName: "onboardingImportAudiobooks"
-                        text: "import audiobook folder…"
+                        text: qsTr("import audiobook folder…")
                         enabled: !SpokenMediaService.busy
                         onClicked: audiobookFolderImport.begin()
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: root.importedBooks ? "Your books have been imported." : "No books yet? You can skip this step."
+                        text: root.importedBooks ? qsTr("Your books have been imported.") : qsTr("No books yet? You can skip this step.")
                         wrapMode: Text.WordWrap; color: Theme.textSecondary; font.pixelSize: Theme.spokenBody
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: "Import more books later in Settings → Library. Run the import again when you add files; audiobook folders are not watched automatically."
+                        text: qsTr("Import more books later in Settings → Library. Run the import again when you add files; audiobook folders are not watched automatically.")
                         wrapMode: Text.WordWrap; color: Theme.textDim; font.pixelSize: Theme.spokenCaption
                     }
                     PinkCta {
@@ -521,14 +517,13 @@ Item {
                     }
 
                     Text {
-                        text: "pick your player"
+                        text: qsTr("pick your player")
                         font.pixelSize: 36
                         font.weight: Font.ExtraLight
                         color: Theme.textPrimary
                     }
                     Text {
-                        text: "how now-playing spins while a track plays. "
-                              + "switch anytime in settings."
+                        text: qsTr("how now-playing spins while a track plays. switch anytime in settings.")
                         font.pixelSize: 13
                         font.weight: Font.Light
                         color: Theme.textDim
@@ -570,7 +565,7 @@ Item {
                                 }
                                 Text {
                                     Layout.alignment: Qt.AlignHCenter
-                                    text: "disc"
+                                    text: qsTr("disc")
                                     font.pixelSize: 18
                                     font.weight: Font.Light
                                     color: Theme.textPrimary
@@ -579,7 +574,7 @@ Item {
                                     Layout.alignment: Qt.AlignHCenter
                                     Layout.fillWidth: true
                                     horizontalAlignment: Text.AlignHCenter
-                                    text: "album art on a CD, edge glows with the track."
+                                    text: qsTr("album art on a CD, edge glows with the track.")
                                     font.pixelSize: 11
                                     font.weight: Font.Light
                                     color: Theme.textDim
@@ -625,7 +620,7 @@ Item {
                                 }
                                 Text {
                                     Layout.alignment: Qt.AlignHCenter
-                                    text: "vinyl"
+                                    text: qsTr("vinyl")
                                     font.pixelSize: 18
                                     font.weight: Font.Light
                                     color: Theme.textPrimary
@@ -634,7 +629,7 @@ Item {
                                     Layout.alignment: Qt.AlignHCenter
                                     Layout.fillWidth: true
                                     horizontalAlignment: Text.AlignHCenter
-                                    text: "a grooved record, poster on the label, trail seeks."
+                                    text: qsTr("a grooved record, poster on the label, trail seeks.")
                                     font.pixelSize: 11
                                     font.weight: Font.Light
                                     color: Theme.textDim
@@ -651,7 +646,7 @@ Item {
 
                     PinkCta {
                         Layout.topMargin: Theme.spaceMd
-                        label: "next"
+                        label: qsTr("next")
                         onActivated: root.step = root.stepBackdrop
                     }
                 }
@@ -667,14 +662,13 @@ Item {
                     readonly property bool hasImage: AppSettings.backgroundImagePath.length > 0
 
                     Text {
-                        text: "pick a backdrop"
+                        text: qsTr("pick a backdrop")
                         font.pixelSize: 36
                         font.weight: Font.ExtraLight
                         color: Theme.textPrimary
                     }
                     Text {
-                        text: "behind the whole app. keep it clean, or drop in your "
-                              + "own image — dimmed so text stays readable."
+                        text: qsTr("behind the whole app. keep it clean, or drop in your own image — dimmed so text stays readable.")
                         font.pixelSize: 13
                         font.weight: Font.Light
                         color: Theme.textDim
@@ -715,10 +709,10 @@ Item {
                             anchors.centerIn: parent
                             visible: !backdropStep.hasImage
                             text: AppSettings.backdropPreset === "grime"
-                                  ? "grime — deepens while a zune is docked"
+                                  ? qsTr("grime — deepens while a zune is docked")
                                   : AppSettings.backdropPreset === "dusk"
-                                    ? "dusk — quiet purple fade"
-                                    : "default ambient"
+                                    ? qsTr("dusk — quiet purple fade")
+                                    : qsTr("default ambient")
                             font.pixelSize: 13
                             font.weight: Font.Light
                             color: Theme.textDim
@@ -726,10 +720,10 @@ Item {
                     }
 
                     SegRow {
-                        options: [{ label: "None", value: "none" },
-                                  { label: "Grime", value: "grime" },
-                                  { label: "Dusk", value: "dusk" },
-                                  { label: "Your image…", value: "image" }]
+                        options: [{ label: qsTr("None"), value: "none" },
+                                  { label: qsTr("Grime"), value: "grime" },
+                                  { label: qsTr("Dusk"), value: "dusk" },
+                                  { label: qsTr("Your image…"), value: "image" }]
                         current: backdropStep.hasImage ? "image"
                                                        : AppSettings.backdropPreset
                         onPicked: function(v) {
@@ -749,7 +743,7 @@ Item {
                         visible: backdropStep.hasImage
                         spacing: Theme.spaceMd
                         Text {
-                            text: "DIMNESS"
+                            text: qsTr("DIMNESS")
                             font.pixelSize: 9
                             font.weight: Font.Bold
                             font.letterSpacing: 1
@@ -766,7 +760,7 @@ Item {
                     PinkCta {
                         Layout.topMargin: Theme.spaceSm
                         // Every preset, including None, is a valid choice.
-                        label: "next"
+                        label: qsTr("next")
                         onActivated: root.step = root.stepFont
                     }
                 }
@@ -776,14 +770,13 @@ Item {
                     spacing: Theme.spaceLg
 
                     Text {
-                        text: "pick your title face"
+                        text: qsTr("pick your title face")
                         font.pixelSize: 36
                         font.weight: Font.ExtraLight
                         color: Theme.textPrimary
                     }
                     Text {
-                        text: "the loud face on identity moments — the wordmark, "
-                              + "page titles, now-playing. body text stays clean."
+                        text: qsTr("the loud face on identity moments — the wordmark, page titles, now-playing. body text stays clean.")
                         font.pixelSize: 13
                         font.weight: Font.Light
                         color: Theme.textDim
@@ -813,14 +806,14 @@ Item {
 
                     SegRow {
                         options: [{ label: "Permanent Marker", value: "permanentMarker" },
-                                  { label: "Specimen Alien", value: "specimenAlien" }]
+                                  { label: qsTr("Specimen Alien"), value: "specimenAlien" }]
                         current: AppSettings.headerFont
                         onPicked: function(v) { AppSettings.headerFont = v }
                     }
 
                     PinkCta {
                         Layout.topMargin: Theme.spaceSm
-                        label: "next"
+                        label: qsTr("next")
                         onActivated: root.step = root.stepWalk
                     }
                 }
@@ -840,7 +833,7 @@ Item {
 
                     Text {
                         Layout.alignment: Qt.AlignHCenter
-                        text: "three ways, both directions"
+                        text: qsTr("three ways, both directions")
                         font.pixelSize: 30
                         font.weight: Font.ExtraLight
                         color: Theme.textPrimary
@@ -855,17 +848,14 @@ Item {
                             Layout.fillWidth: true
                             spacing: 2
                             Text {
-                                text: "Drag it — the pillar you drop on is the action"
+                                text: qsTr("Drag it — the pillar you drop on is the action")
                                 font.pixelSize: 15
                                 font.weight: Font.Light
                                 color: Theme.textPrimary
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: "onto the Zune → queues it for the next sync. "
-                                      + "onto the library → saves it into your library. "
-                                      + "the target pillar lights up so you always know "
-                                      + "which side you're working."
+                                text: qsTr("onto the Zune → queues it for the next sync. onto the library → saves it into your library. the target pillar lights up so you always know which side you're working.")
                                 font.pixelSize: 12
                                 font.weight: Font.Light
                                 color: Theme.textDim
@@ -894,7 +884,7 @@ Item {
                             anchors.left: libPanel.left
                             anchors.bottom: libPanel.top
                             anchors.bottomMargin: 3
-                            text: walkStep.phase === 1 ? "device music" : "music"
+                            text: walkStep.phase === 1 ? qsTr("device music") : "music"
                             font.family: Theme.displayFamily
                             font.pixelSize: 16
                             rotation: -2
@@ -907,7 +897,7 @@ Item {
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.leftMargin: Theme.spaceMd
-                            title: "LIBRARY"
+                            title: qsTr("LIBRARY")
                             sections: ["music", "videos", "photos", "podcasts", "audiobooks", "playlists"]
                             accent: Theme.green
                             dropLabel: "＋ add to library"
@@ -921,7 +911,7 @@ Item {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.rightMargin: Theme.spaceMd
-                            title: "ZUNE"
+                            title: qsTr("ZUNE")
                             battery: true
                             sections: ["music", "videos", "pictures", "podcasts", "audiobooks", "playlists"]
                             accent: Theme.pink
@@ -1001,8 +991,8 @@ Item {
                     Text {
                         Layout.alignment: Qt.AlignHCenter
                         text: walkStep.phase === 0
-                              ? "browsing your library → drag onto the Zune to sync it over"
-                              : "browsing the Zune → drag onto the library to save it in"
+                              ? qsTr("browsing your library → drag onto the Zune to sync it over")
+                              : qsTr("browsing the Zune → drag onto the library to save it in")
                         font.pixelSize: 12
                         font.weight: Font.Light
                         color: walkStep.phase === 0 ? Theme.pink : Theme.green
@@ -1017,15 +1007,14 @@ Item {
                             Layout.fillWidth: true
                             spacing: 2
                             Text {
-                                text: "The corner button"
+                                text: qsTr("The corner button")
                                 font.pixelSize: 15
                                 font.weight: Font.Light
                                 color: Theme.textPrimary
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: "hover any card or row and tap the glass ＋. the "
-                                      + "▾ opens a picker to grab just some parts."
+                                text: qsTr("hover any card or row and tap the glass ＋. the ▾ opens a picker to grab just some parts.")
                                 font.pixelSize: 12
                                 font.weight: Font.Light
                                 color: Theme.textDim
@@ -1042,7 +1031,7 @@ Item {
                             border.color: Theme.border
                             Text {
                                 anchors.centerIn: parent
-                                text: "album"
+                                text: qsTr("album")
                                 font.pixelSize: 11
                                 color: Theme.textDim
                             }
@@ -1073,16 +1062,14 @@ Item {
                             Layout.fillWidth: true
                             spacing: 2
                             Text {
-                                text: "Right-click anything"
+                                text: qsTr("Right-click anything")
                                 font.pixelSize: 15
                                 font.weight: Font.Light
                                 color: Theme.textPrimary
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: "song · album · artist · movie · series · season · "
-                                      + "episode · music video · photo · Mixtape — one "
-                                      + "menu, everywhere."
+                                text: qsTr("song · album · artist · movie · series · season · episode · music video · photo · Mixtape — one menu, everywhere.")
                                 font.pixelSize: 12
                                 font.weight: Font.Light
                                 color: Theme.textDim
@@ -1101,11 +1088,15 @@ Item {
                                 id: menuCol
                                 width: parent.width
                                 Repeater {
-                                    model: [{ t: "Add to Sync Queue", d: false },
-                                            { t: "Add to Mixtape  ›", d: false },
-                                            { t: "Save to Library", d: false },
-                                            { t: "Delete from Zune", d: true },
-                                            { t: "Edit…", d: false }]
+                                    // A drawn picture of a context menu, but
+                                    // every word in it is still a word the user
+                                    // reads, so the words come from the language
+                                    // file like any real menu item.
+                                    model: [{ t: qsTr("Add to Sync Queue"), d: false },
+                                            { t: qsTr("Add to Mixtape  ›"), d: false },
+                                            { t: qsTr("Save to Library"), d: false },
+                                            { t: qsTr("Delete from Zune"), d: true },
+                                            { t: qsTr("Edit…"), d: false }]
                                     Item {
                                         required property var modelData
                                         required property int index
@@ -1142,16 +1133,14 @@ Item {
                             Layout.fillWidth: true
                             spacing: 2
                             Text {
-                                text: "Mixtapes"
+                                text: qsTr("Mixtapes")
                                 font.pixelSize: 15
                                 font.weight: Font.Light
                                 color: Theme.textPrimary
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: "build one in the tray and sync it over; drag one "
-                                      + "off the Zune and we keep what you have, pull "
-                                      + "what you don't."
+                                text: qsTr("build one in the tray and sync it over; drag one off the Zune and we keep what you have, pull what you don't.")
                                 font.pixelSize: 12
                                 font.weight: Font.Light
                                 color: Theme.textDim
@@ -1200,7 +1189,7 @@ Item {
                         Layout.topMargin: Theme.spaceSm
                         spacing: Theme.spaceMd
                         Text {
-                            text: "skip tour"
+                            text: qsTr("skip tour")
                             font.pixelSize: 13
                             font.weight: Font.Light
                             color: walkSkip.containsMouse ? Theme.textSecondary : Theme.textDim
@@ -1220,7 +1209,7 @@ Item {
                             }
                         }
                         PinkCta {
-                            label: "let's go"
+                            label: qsTr("let's go")
                             onActivated: {
                                 if (LibraryService.scanning)
                                     root.step = root.stepScan
@@ -1242,9 +1231,9 @@ Item {
                             : (LibraryService.scanning ? 0 : 1)
 
                     Text {
-                        text: !LibraryService.scanning ? "all set"
-                              : scanStep.fraction >= 0.55 ? "just finishing your library…"
-                              : "scanning your library…"
+                        text: !LibraryService.scanning ? qsTr("all set")
+                              : scanStep.fraction >= 0.55 ? qsTr("just finishing your library…")
+                              : qsTr("scanning your library…")
                         font.pixelSize: 36
                         font.weight: Font.ExtraLight
                         color: Theme.textPrimary
@@ -1253,8 +1242,8 @@ Item {
                         Layout.maximumWidth: 460
                         wrapMode: Text.WordWrap
                         text: LibraryService.scanning
-                              ? "you can open Zuuned now — it'll keep going inside."
-                              : "your library's ready."
+                              ? qsTr("you can open Zuuned now — it'll keep going inside.")
+                              : qsTr("your library's ready.")
                         font.pixelSize: 13
                         font.weight: Font.Light
                         color: Theme.textDim
@@ -1290,14 +1279,13 @@ Item {
                                 if (!LibraryService.scanning)
                                     return "done"
                                 var s = LibraryService.scanStage
-                                var human = s === "music"    ? "reading your music"
-                                          : s === "videos"   ? "reading your videos"
-                                          : s === "photos"   ? "reading your photos"
-                                          : s === "starting" ? "getting started"
+                                var human = s === "music"    ? qsTr("reading your music")
+                                          : s === "videos"   ? qsTr("reading your videos")
+                                          : s === "photos"   ? qsTr("reading your photos")
+                                          : s === "starting" ? qsTr("getting started")
                                           : s
                                 if (LibraryService.scanTotal > 0)
-                                    human += " · " + LibraryService.scanCurrent
-                                           + " of " + LibraryService.scanTotal
+                                    human += " · " + qsTr("%1 of %2").arg(LibraryService.scanCurrent, LibraryService.scanTotal)
                                 return human
                             }
                             font.pixelSize: 11
@@ -1315,7 +1303,7 @@ Item {
 
                     PinkCta {
                         Layout.topMargin: Theme.spaceMd
-                        label: LibraryService.scanning ? "open zuuned (scan continues)" : "open zuuned"
+                        label: LibraryService.scanning ? qsTr("open zuuned (scan continues)") : qsTr("open zuuned")
                         onActivated: root.complete()
                     }
                 }
@@ -1335,7 +1323,7 @@ Item {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     visible: root.step > 0
-                    text: "‹  back"
+                    text: qsTr("‹  back")
                     font.pixelSize: 14
                     font.weight: Font.Light
                     color: backArea.containsMouse ? Theme.textPrimary : Theme.textSecondary
@@ -1367,7 +1355,7 @@ Item {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     visible: root.step < root.stepScan
-                    text: "skip setup  ›"
+                    text: qsTr("skip setup  ›")
                     font.pixelSize: 14
                     font.weight: Font.Light
                     color: skipArea.containsMouse ? Theme.textSecondary : Theme.textDim
@@ -1470,9 +1458,9 @@ Item {
                 // Presence only — the real progress lives on the finishing
                 // screen. No count here that could read as fake progress.
                 text: chip.busy
-                      ? "scanning your library…"
-                      : (chip.items > 0 ? "library ready"
-                                        : "we start scanning the moment you continue")
+                      ? qsTr("scanning your library…")
+                      : (chip.items > 0 ? qsTr("library ready")
+                                        : qsTr("we start scanning the moment you continue"))
                 font.pixelSize: Math.round(11.5 * chip.k)
                 font.weight: Font.Light
                 color: chip.busy ? Theme.textSecondary
@@ -1508,10 +1496,9 @@ Item {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: mpInput.text.length === 0
-                    text: "…or type a path (e.g. "
-                          + (Qt.platform.os === "windows"
-                             ? "C:\\Music\\" : "/mnt/MissionControl/")
-                          + mp.typeModel[0] + ")"
+                    text: qsTr("…or type a path (e.g. %1)")
+                          .arg((Qt.platform.os === "windows"
+                                ? "C:\\Music\\" : "/mnt/MissionControl/") + mp.typeModel[0])
                     color: Theme.textGhost
                     font.pixelSize: 12
                 }
@@ -1533,7 +1520,7 @@ Item {
             Text {
                 id: mpAddLabel
                 anchors.centerIn: parent
-                text: "add path"
+                text: qsTr("add path")
                 font.pixelSize: 12
                 color: mpInput.text.trim().length > 1 ? "#ffffff" : Theme.textDim
             }
@@ -1764,9 +1751,9 @@ Item {
                     Text {
                         Layout.fillWidth: true
                         text: section.staged.length === 0
-                              ? "add a folder…"
-                              : section.staged.length + " folder"
-                                + (section.staged.length > 1 ? "s" : "") + " added"
+                              ? qsTr("add a folder…")
+                              : (section.staged.length > 1
+                                 ? qsTr("%1 folders added") : qsTr("%1 folder added")).arg(section.staged.length)
                         font.pixelSize: 11
                         font.weight: Font.Light
                         color: Theme.textDim
@@ -1848,7 +1835,7 @@ Item {
     FolderDialog {
         id: folderDialog
         property string pendingType: "music"
-        title: "Choose a " + pendingType + " folder"
+        title: qsTr("Choose a %1 folder").arg(pendingType)
         onAccepted: {
             console.warn("[onboarding] folder accepted:", selectedFolder)
             const p = ZPathText.canonical(selectedFolder.toString())
@@ -1861,7 +1848,7 @@ Item {
     // Backdrop image picker (mirrors SettingsPage) — sets the live setting.
     FileDialog {
         id: bgImageDialog
-        title: "Choose a background image"
+        title: qsTr("Choose a background image")
         nameFilters: ["Images (*.png *.jpg *.jpeg *.webp *.bmp)"]
         onAccepted: {
             const path = ZPathText.canonical(selectedFile.toString())

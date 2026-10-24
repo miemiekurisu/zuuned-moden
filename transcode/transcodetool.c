@@ -4,6 +4,10 @@
  * Exercises every exported function against real media without the app:
  *
  *   transcodetool audio <in>                 → MP3 320 CBR (prints path)
+  transcodetool audio-cbr <in> <kbps>      → MP3 at a chosen CBR rate
+  transcodetool audio-vbr <in> <kbps>      → MP3 VBR capped at <kbps>
+  transcodetool audio-wma <in> [kbps]      → WMA (ASF) through libavcodec
+  transcodetool encoders                   → what this build can encode
  *   transcodetool video <in> <profile 0-3>   → Zune video (prints path)
  *   transcodetool probe <in>                 → duration + resolution
  *   transcodetool art   <in> <out.jpg>       → embedded album art
@@ -93,6 +97,10 @@ static int usage(void)
     fprintf(stderr,
         "usage:\n"
         "  transcodetool audio <in>\n"
+        "  transcodetool audio-cbr <in> <kbps>\n"
+        "  transcodetool audio-vbr <in> <kbps>\n"
+        "  transcodetool audio-wma <in> [kbps]\n"
+        "  transcodetool encoders\n"
         "  transcodetool video <in> <profile 0-3>\n"
         "  transcodetool probe <in>\n"
         "  transcodetool art <in> <out.jpg>\n"
@@ -113,9 +121,11 @@ int main(int argc, char **argv)
         }
     }
 #endif
-    if (argc < 3) return usage();
+    if (argc < 2) return usage();
     const char *cmd = argv[1];
-    const char *in = argv[2];
+    /* `encoders` asks about the build and names no file; every other command
+     * takes an input path as its second argument. */
+    const char *in = argc >= 3 ? argv[2] : NULL;
 
     const char *hw = getenv("ZUUNED_HW_DECODE");
     if (hw && *hw)
@@ -124,6 +134,37 @@ int main(int argc, char **argv)
     if (strcmp(cmd, "audio") == 0) {
         char *out = zuuned_transcode_audio(in, NULL, progress_cb, NULL);
         if (!out) { fprintf(stderr, "FAIL: audio transcode\n"); return 1; }
+        printf("%s\n", out);
+        free(out);
+        return 0;
+    }
+
+    if (strcmp(cmd, "encoders") == 0) {
+        /* What the linked libraries can actually do.  A settings page must not
+         * offer a format this build cannot make, and only the linked libav*
+         * knows: the ffmpeg on PATH is a different binary. */
+        printf("ffmpeg=%s\n", zuuned_ffmpeg_version());
+        printf("mp3=%d\n", zuuned_audio_encoder_available(ZUUNED_AUDIO_MP3));
+        printf("wma=%d\n", zuuned_audio_encoder_available(ZUUNED_AUDIO_WMA));
+        return 0;
+    }
+
+    if (strcmp(cmd, "audio-cbr") == 0 || strcmp(cmd, "audio-vbr") == 0) {
+        if (argc < 4) return usage();
+        const int vbr = strcmp(cmd, "audio-vbr") == 0 ? 1 : 0;
+        char *out = zuuned_transcode_audio_ex(in, NULL, 0, ZUUNED_AUDIO_MP3,
+                                              atoi(argv[3]), vbr, progress_cb, NULL);
+        if (!out) { fprintf(stderr, "FAIL: audio transcode\n"); return 1; }
+        printf("%s\n", out);
+        free(out);
+        return 0;
+    }
+
+    if (strcmp(cmd, "audio-wma") == 0) {
+        const int kbps = argc >= 4 ? atoi(argv[3]) : 128;
+        char *out = zuuned_transcode_audio_ex(in, NULL, 0, ZUUNED_AUDIO_WMA,
+                                              kbps, 0, progress_cb, NULL);
+        if (!out) { fprintf(stderr, "FAIL: wma encode\n"); return 1; }
         printf("%s\n", out);
         free(out);
         return 0;

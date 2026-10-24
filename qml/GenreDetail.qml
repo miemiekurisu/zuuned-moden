@@ -255,16 +255,15 @@ Item {
                 spacing: Theme.spaceLg
 
                 Text {
-                    text: page.albums.length
-                          + (page.albums.length === 1 ? " album" : " albums")
-                          + "  ·  " + page.tracks.length + " tracks"
+                    text: (page.albums.length === 1 ? qsTr("%1 album") : qsTr("%1 albums")).arg(page.albums.length)
+                          + "  ·  " + qsTr("%1 tracks").arg(page.tracks.length)
                     font.pixelSize: 11
                     font.weight: Font.Light
                     color: Theme.textSecondary
                 }
                 Text {
                     visible: page.localArt
-                    text: "▶ add to now playing"
+                    text: qsTr("▶ add to now playing")
                     font.pixelSize: 12
                     color: npAllArea.containsMouse ? Theme.activePink
                                                    : Theme.textSecondary
@@ -308,7 +307,7 @@ Item {
             Text {
                 visible: page.albums.length > 0
                 Layout.topMargin: Theme.spaceLg
-                text: "ALBUMS"
+                text: qsTr("ALBUMS")
                 font.pixelSize: 10
                 font.weight: Font.Bold
                 font.letterSpacing: 1.5
@@ -344,7 +343,7 @@ Item {
 
             Text {
                 Layout.topMargin: Theme.spaceSm
-                text: "ALL TRACKS"
+                text: qsTr("ALL TRACKS")
                 font.pixelSize: 10
                 font.weight: Font.Bold
                 font.letterSpacing: 1.5

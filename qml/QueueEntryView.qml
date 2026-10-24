@@ -114,7 +114,7 @@ ColumnLayout {
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             hoverEnabled: true
             ToolTip.visible: containsMouse
-            ToolTip.text: "Available when syncing finishes"
+            ToolTip.text: qsTr("Available when syncing finishes")
             onClicked: mouse => {
                 if (mouse.button === Qt.RightButton)
                     entry.openRemoveMenu(actionSlot.wholeGroup)
@@ -250,9 +250,10 @@ ColumnLayout {
                     }
                     Text {
                         objectName: "queueEntryDetail"
-                        text: entry.isRemoval ? "Completed episode" + (entry.artist ? " · " + entry.artist : "")
-                            : entry.type === "video" ? (entry.series || "movie")
-                            : entry.type === "photo" ? entry.album : entry.artist
+                        text: entry.isRemoval ? (entry.artist
+                          ? qsTr("Completed episode · %1").arg(entry.artist) : qsTr("Completed episode"))
+                          : entry.type === "video" ? (entry.series || qsTr("movie"))
+                          : entry.type === "photo" ? entry.album : entry.artist
                         font.pixelSize: Theme.customizeCaptionSize
                         color: Theme.textSecondary
                         elide: Text.ElideRight
@@ -313,7 +314,8 @@ ColumnLayout {
         property bool wholeGroup: false
         ZuneMenuItem {
             objectName: "queueMenuRemoveAction"
-            text: removeMenu.wholeGroup ? "Remove " + entry.groupNoun + " from queue" : "Remove from queue"
+            text: removeMenu.wholeGroup
+              ? qsTr("Remove %1 from queue").arg(entry.groupNoun) : qsTr("Remove from queue")
             enabled: !entry.syncLocked && !entry.entryInFlight
             onTriggered: entry.requestRemoval(removeMenu.wholeGroup)
         }

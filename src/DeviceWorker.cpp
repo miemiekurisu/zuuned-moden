@@ -15,6 +15,8 @@
 
 #include <algorithm>
 
+#include "UiText.h"
+
 extern "C" {
 #include "zune.h"
 }
@@ -32,7 +34,7 @@ QString readSpokenInventory(ZuneDevice *dev, QVariantList &podcasts, QVariantLis
         || zune_get_podcast_series(dev, &series, &seriesCount)
         || zune_get_audiobook_parts(dev, &parts, &partCount)) {
         error = QString::fromUtf8(zune_get_error());
-        if (error.isEmpty()) error = QStringLiteral("Could not read spoken media from this Zune.");
+        if (error.isEmpty()) error = UiText::tr("Could not read spoken media from this Zune.");
     } else {
         // Source identities enrich badges; they must not disable otherwise
         // valid device browsing or explicitly confirmed management.
@@ -110,7 +112,7 @@ void DeviceWorker::doReadSpokenMedia(quint64 generation, quint64 request, const 
     QString error;
     if (generation != m_spokenGeneration.load() || !m_dev
         || QString::fromUtf8(zune_get_serial(m_dev)) != serial)
-        error = QStringLiteral("The Zune disconnected or changed. Reconnect and refresh.");
+        error = UiText::tr("The Zune disconnected or changed. Reconnect and refresh.");
     else {
         zune_clear_abort(m_dev);
         error = readSpokenInventory(m_dev, podcasts, books);
@@ -127,9 +129,9 @@ void DeviceWorker::doPurgeSpokenItems(quint64 generation, quint64 request, const
             && QString::fromUtf8(zune_get_serial(m_dev)) == serial;
     };
     if (serial.isEmpty() || !currentDevice())
-        error = QStringLiteral("The Zune disconnected or changed. Nothing was deleted.");
+        error = UiText::tr("The Zune disconnected or changed. Nothing was deleted.");
     else if (kind != QStringLiteral("podcast") && kind != QStringLiteral("audiobook"))
-        error = QStringLiteral("Unknown spoken media category. Nothing was deleted.");
+        error = UiText::tr("Unknown spoken media category. Nothing was deleted.");
     else {
         zune_clear_abort(m_dev);
         error = readSpokenInventory(m_dev, podcasts, books, false);
@@ -161,7 +163,7 @@ void DeviceWorker::doPurgeSpokenItems(quint64 generation, quint64 request, const
                 }
             }
             if (!id || id == 0xffffffffu || seen.contains(id) || !live.contains(id) || liveIdentity != expectedIdentity) {
-                error = QStringLiteral("The device selection changed. Refresh before deleting.");
+                error = UiText::tr("The device selection changed. Refresh before deleting.");
                 break;
             }
             seen.insert(id);
@@ -170,7 +172,7 @@ void DeviceWorker::doPurgeSpokenItems(quint64 generation, quint64 request, const
     if (error.isEmpty()) {
         for (int i = 0; i < rows.size(); ++i) {
             if (!currentDevice()) {
-                error = QStringLiteral("The Zune disconnected during deletion.");
+                error = UiText::tr("The Zune disconnected during deletion.");
                 break;
             }
             emit spokenPurgeProgress(generation, request, serial, i + 1, rows.size());
@@ -178,7 +180,7 @@ void DeviceWorker::doPurgeSpokenItems(quint64 generation, quint64 request, const
             if (zune_purge_track(m_dev, id) == 0)
                 purged.append(id);
             else {
-                error = QStringLiteral("Some items could not be deleted: %1")
+                error = UiText::tr("Some items could not be deleted: %1")
                     .arg(QString::fromUtf8(zune_autopsy_name(zune_autopsy(m_dev))));
                 break;
             }
@@ -196,26 +198,26 @@ void DeviceWorker::doBreach() {
         return;
     }
 
-    emit stage(QStringLiteral("Opening USB + MTPZ authentication…"), 0.15);
+    emit stage(UiText::tr("Opening USB + MTPZ authentication…"), 0.15);
     ZuneDevice *dev = zune_breach();
     if (!dev) {
         const char *err = zune_get_error();
 #if defined(Q_OS_WIN)
         // No udev here: a Windows tester needs the driver name, not a Linux rule.
-        const QString hint = QStringLiteral("check USB and bind the Zune to WinUSB");
+        const QString hint = UiText::tr("check USB and bind the Zune to WinUSB");
 #else
-        const QString hint = QStringLiteral("check USB + udev rule");
+        const QString hint = UiText::tr("check USB + udev rule");
 #endif
         r.error = err && err[0]
             ? QString::fromUtf8(err)
-            : QStringLiteral("No Zune found (%1)").arg(hint);
+            : UiText::tr("No Zune found (%1)").arg(hint);
         emit breachDone(r);
         return;
     }
 
     m_dev = dev;
     m_devShared.store(dev);
-    emit stage(QStringLiteral("Reading device info…"), 0.45);
+    emit stage(UiText::tr("Reading device info…"), 0.45);
     r.ok = true;
     r.name = QString::fromUtf8(zune_get_name(dev));
     r.model = QString::fromUtf8(zune_get_model(dev));
@@ -227,7 +229,7 @@ void DeviceWorker::doBreach() {
     r.freeGB = zune_get_headroom(dev) / 1e9;
 
     // ZMDB scan — the whole library in one vendor operation.
-    emit stage(QStringLiteral("Scanning library (ZMDB)…"), 0.6);
+    emit stage(UiText::tr("Scanning library (ZMDB)…"), 0.6);
     ZuneDBLibrary *lib = nullptr;
     if (zune_infiltrate(dev, &lib) == 0 && lib) {
         // Counted rather than assumed.  Whether a Zune really names an ALBUM by
@@ -488,7 +490,7 @@ void DeviceWorker::doBreach() {
         // Zune HD (Pavo): the ZMDB scan carries no video rows — the mac
         // falls back to plain MTP enumeration, and so do we.
         if (r.videos.isEmpty() && r.family == 0x06) {
-            emit stage(QStringLiteral("Loading videos (HD MTP fallback)…"), 0.8);
+            emit stage(UiText::tr("Loading videos (HD MTP fallback)…"), 0.8);
             int nvid = 0;
             if (ZuneVideoFile *vids = zune_get_videos(dev, &nvid)) {
                 for (int i = 0; i < nvid; i++)
@@ -859,7 +861,7 @@ void DeviceWorker::doSendVideo(const QString &entryId, const QString &filepath,
     if (zune_verify(m_dev, itemId, title8.constData(), nullptr,
                     quint64(QFileInfo(filepath).size())) != 0) {
         if (!warning.isEmpty()) warning += QStringLiteral("; ");
-        warning += QStringLiteral("uploaded; title or size readback could not be verified");
+        warning += UiText::tr("uploaded; title or size readback could not be verified");
     }
     emit sendVideoDone(entryId, true, itemId, warning);
 }
@@ -886,7 +888,7 @@ void DeviceWorker::doForgePlaylist(const QString &name,
 void DeviceWorker::doSendPhoto(const QString &entryId, const QString &filepath,
                                const QString &albumName) {
     if (!m_dev) {
-        emit sendPhotoDone(entryId, false, 0, QStringLiteral("no device"));
+        emit sendPhotoDone(entryId, false, 0, UiText::tr("no device"));
         return;
     }
     zune_clear_abort(m_dev);
@@ -1182,7 +1184,7 @@ QString inspectPlayedPodcasts(ZuneDevice *dev, const QVariantList &episodes,
                               QVariantList &result) {
     result.clear();
     if (episodes.size() > 5000)
-        return QStringLiteral("Too many podcast episodes selected for cleanup.");
+        return UiText::tr("Too many podcast episodes selected for cleanup.");
     QSet<QString> localIds;
     QSet<QPair<QString, QString>> identities, sources;
     for (const auto &value : episodes) {
@@ -1194,11 +1196,11 @@ QString inspectPlayedPodcasts(ZuneDevice *dev, const QVariantList &episodes,
         const auto valid = [](const QString &s) { return !s.trimmed().isEmpty() && !s.contains(QChar(0)); };
         if (!valid(id) || !valid(identity) || !valid(feed) || !valid(source)
             || localIds.contains(id) || identities.contains({feed, identity}) || sources.contains({feed, source}))
-            return QStringLiteral("Podcast cleanup identities are missing or ambiguous.");
+            return UiText::tr("Podcast cleanup identities are missing or ambiguous.");
         localIds.insert(id); identities.insert({feed, identity}); sources.insert({feed, source});
     }
     const auto active = [&] { return current() && !zune_is_aborted(dev); };
-    if (!active()) return QStringLiteral("Podcast cleanup was cancelled or the Zune changed.");
+    if (!active()) return UiText::tr("Podcast cleanup was cancelled or the Zune changed.");
     struct Snapshot {
         ZunePodcastState *states = nullptr;
         ZunePodcastEpisode *episodes = nullptr;
@@ -1213,27 +1215,27 @@ QString inspectPlayedPodcasts(ZuneDevice *dev, const QVariantList &episodes,
     // A complete empty live inventory is sufficient to prove there is nothing
     // to clean up. Do not require firmware listening-state support in that case.
     if (zune_get_podcast_episodes(dev, &snapshot.episodes, &snapshot.episodeCount) || !active())
-        return QStringLiteral("Could not read complete podcast inventory. Nothing was deleted.");
+        return UiText::tr("Could not read complete podcast inventory. Nothing was deleted.");
     if (snapshot.episodeCount == 0) return {};
     if (zune_get_podcast_states(dev, &snapshot.states, &snapshot.stateCount) || !active()) {
         const auto family = zune_get_family(dev);
         if (active() && family != ZUNE_FAMILY_KEEL && family != ZUNE_FAMILY_DRACO
             && family != ZUNE_FAMILY_PAVO)
-            return QStringLiteral("Played-podcast cleanup is not supported on this Zune model yet. Episodes were kept; syncing can continue.");
-        return QStringLiteral("Could not read complete podcast listening state. Nothing was deleted.");
+            return UiText::tr("Played-podcast cleanup is not supported on this Zune model yet. Episodes were kept; syncing can continue.");
+        return UiText::tr("Could not read complete podcast listening state. Nothing was deleted.");
     }
     QHash<quint32, ZunePodcastState> states;
     QHash<quint32, ZunePodcastEpisode> live;
     for (int i = 0; i < snapshot.stateCount; ++i) {
         const auto &state = snapshot.states[i];
         if (!state.item_id || state.item_id == 0xffffffffu || states.contains(state.item_id))
-            return QStringLiteral("Podcast listening state contains ambiguous device IDs.");
+            return UiText::tr("Podcast listening state contains ambiguous device IDs.");
         states.insert(state.item_id, state);
     }
     for (int i = 0; i < snapshot.episodeCount; ++i) {
         const auto &episode = snapshot.episodes[i];
         if (!episode.item_id || episode.item_id == 0xffffffffu || live.contains(episode.item_id))
-            return QStringLiteral("Podcast inventory contains ambiguous device IDs.");
+            return UiText::tr("Podcast inventory contains ambiguous device IDs.");
         live.insert(episode.item_id, episode);
     }
     bool anyPlayed = false;
@@ -1242,11 +1244,11 @@ QString inspectPlayedPodcasts(ZuneDevice *dev, const QVariantList &episodes,
     // Most syncs have nothing finished. Avoid repeated exact USB identity
     // searches when the complete snapshot proves there are no candidates.
     if (!anyPlayed) {
-        if (!active()) return QStringLiteral("Podcast cleanup was cancelled or the Zune changed.");
+        if (!active()) return UiText::tr("Podcast cleanup was cancelled or the Zune changed.");
         return {};
     }
     if (zune_get_podcast_episode_sources(dev, &snapshot.sources, &snapshot.sourceCount) || !active())
-        return QStringLiteral("Could not verify complete podcast source identities. Nothing was deleted.");
+        return UiText::tr("Could not verify complete podcast source identities. Nothing was deleted.");
     QHash<QPair<QString, QString>, ZunePodcastEpisodeSource> deviceSources;
     QSet<quint32> sourceIds;
     for (int i = 0; i < snapshot.sourceCount; ++i) {
@@ -1254,14 +1256,14 @@ QString inspectPlayedPodcasts(ZuneDevice *dev, const QVariantList &episodes,
         const auto key = qMakePair(QString::fromUtf8(source.feed_url), QString::fromUtf8(source.source_url));
         if (!source.item_id || source.item_id == 0xffffffffu || !source.series_id || source.series_id == 0xffffffffu
             || key.first.isEmpty() || key.second.isEmpty() || sourceIds.contains(source.item_id) || deviceSources.contains(key))
-            return QStringLiteral("Podcast source inventory contains ambiguous identities.");
+            return UiText::tr("Podcast source inventory contains ambiguous identities.");
         sourceIds.insert(source.item_id);
         deviceSources.insert(key, source);
     }
     QVariantList planned;
     QSet<quint32> mappedIds;
     for (const auto &value : episodes) {
-        if (!active()) return QStringLiteral("Podcast cleanup was cancelled or the Zune changed.");
+        if (!active()) return UiText::tr("Podcast cleanup was cancelled or the Zune changed.");
         auto row = value.toMap();
         if (row.value("keepOnDevice").toBool()) continue;
         const auto key = qMakePair(row.value("feedUrl").toString(), row.value("sourceUrl").toString());
@@ -1269,7 +1271,7 @@ QString inspectPlayedPodcasts(ZuneDevice *dev, const QVariantList &episodes,
         const auto source = deviceSources.value(key);
         const quint32 episode = source.item_id, show = source.series_id;
         if (!show || show == 0xffffffffu || mappedIds.contains(episode))
-            return QStringLiteral("Podcast cleanup matched an ambiguous device identity.");
+            return UiText::tr("Podcast cleanup matched an ambiguous device identity.");
         mappedIds.insert(episode);
         if (!states.contains(episode)) continue; // Missing is unknown, never played.
         const auto state = states.value(episode);
@@ -1277,7 +1279,7 @@ QString inspectPlayedPodcasts(ZuneDevice *dev, const QVariantList &episodes,
             || source.parent_id != live.value(episode).parent_id
             || state.duration_ms != live.value(episode).duration_ms
             || !state.title || QString::fromUtf8(state.title) != QString::fromUtf8(live.value(episode).title))
-            return QStringLiteral("Podcast identity and listening inventory disagree. Nothing was deleted.");
+            return UiText::tr("Podcast identity and listening inventory disagree. Nothing was deleted.");
         if (!state.marked_played || !(state.raw_flags & 0x200u)) continue;
         const auto e = live.value(episode);
         row["itemId"] = episode; row["seriesId"] = show;
@@ -1290,7 +1292,7 @@ QString inspectPlayedPodcasts(ZuneDevice *dev, const QVariantList &episodes,
         row["deviceDurationMs"] = e.duration_ms;
         planned.append(row);
     }
-    if (!active()) return QStringLiteral("Podcast cleanup was cancelled or the Zune changed.");
+    if (!active()) return UiText::tr("Podcast cleanup was cancelled or the Zune changed.");
     result = planned;
     return {};
 }
@@ -1305,7 +1307,7 @@ void DeviceWorker::doInspectPodcastCleanup(quint64 generation, const QString &to
             && QString::fromUtf8(zune_get_serial(m_dev)) == serial;
     };
     if (token.isEmpty() || !current())
-        error = QStringLiteral("The Zune disconnected or changed. Podcast cleanup was skipped.");
+        error = UiText::tr("The Zune disconnected or changed. Podcast cleanup was skipped.");
     else {
         zune_clear_abort(m_dev);
         error = inspectPlayedPodcasts(m_dev, episodes, current, rows);
@@ -1322,28 +1324,28 @@ void DeviceWorker::doPurgePlayedPodcasts(quint64 generation, const QString &toke
             && QString::fromUtf8(zune_get_serial(m_dev)) == serial;
     };
     if (token.isEmpty() || !current())
-        error = QStringLiteral("The Zune disconnected or changed. Nothing was deleted.");
+        error = UiText::tr("The Zune disconnected or changed. Nothing was deleted.");
     else {
         // Do not clear abort here: cancellation between planning and this queued
         // write must survive. Revalidate ALL rows before the first deletion.
         error = inspectPlayedPodcasts(m_dev, rows, current, live);
         if (error.isEmpty() && live != rows)
-            error = QStringLiteral("Podcast listening state or identity changed. Nothing was deleted.");
+            error = UiText::tr("Podcast listening state or identity changed. Nothing was deleted.");
     }
     if (error.isEmpty()) {
         for (const auto &value : rows) {
             if (!current() || zune_is_aborted(m_dev)) {
-                error = QStringLiteral("Podcast cleanup was cancelled or the Zune changed.");
+                error = UiText::tr("Podcast cleanup was cancelled or the Zune changed.");
                 break;
             }
             const auto id = RecoveryIdentity::objectId(value.toMap().value("itemId"));
             emit podcastCleanupProgress(generation, token, serial, id, false);
             if (!current() || zune_is_aborted(m_dev)) {
-                error = QStringLiteral("Podcast cleanup was cancelled or the Zune changed.");
+                error = UiText::tr("Podcast cleanup was cancelled or the Zune changed.");
                 break;
             }
             if (!id || id == 0xffffffffu || zune_purge_track(m_dev, id) != 0) {
-                error = QStringLiteral("The Zune could not confirm deletion of a played podcast.");
+                error = UiText::tr("The Zune could not confirm deletion of a played podcast.");
                 break;
             }
             purged.append(value); // Only a successful device response retires it.
@@ -1358,7 +1360,7 @@ void DeviceWorker::doInspectPodcasts(const QString &token, const QString &serial
     QVariantList result;
     QString error;
     if (!m_dev || QString::fromUtf8(zune_get_serial(m_dev)) != serial)
-        error = QStringLiteral("The Zune disconnected or changed; add the episodes again.");
+        error = UiText::tr("The Zune disconnected or changed; add the episodes again.");
     else {
         zune_clear_abort(m_dev);
         for (const auto &value : episodes) {
@@ -1380,7 +1382,7 @@ void DeviceWorker::doInspectPodcasts(const QString &token, const QString &serial
 void DeviceWorker::doSendPodcast(const QString &entryId, const QString &filepath,
                                   const QVariantMap &episode) {
     if (!m_dev) {
-        emit podcastSendDone(entryId, false, 0, QStringLiteral("Zune disconnected"), false);
+        emit podcastSendDone(entryId, false, 0, UiText::tr("Zune disconnected"), false);
         return;
     }
     zune_clear_abort(m_dev);
@@ -1441,7 +1443,7 @@ void DeviceWorker::doSendPodcast(const QString &entryId, const QString &filepath
     if (art.exists() && art.size() > 0 && art.size() <= 10 * 1024 * 1024 && art.open(QIODevice::ReadOnly)) {
         const auto bytes = art.readAll();
         if (zune_brand(m_dev, show, reinterpret_cast<const uint8_t *>(bytes.constData()), size_t(bytes.size())))
-            warning = QStringLiteral("Episode synced; this device did not accept the show cover.");
+            warning = UiText::tr("Episode synced; this device did not accept the show cover.");
     }
     emit podcastSendDone(entryId, true, id, warning, false);
 }
@@ -1463,7 +1465,7 @@ struct BookTransferInput {
 void DeviceWorker::doInspectAudiobooks(const QString &token, const QString &serial, const QVariantList &parts) {
     QVariantList result; QString error;
     if (!m_dev || QString::fromUtf8(zune_get_serial(m_dev)) != serial)
-        error="The Zune disconnected or changed; add the book again.";
+        error=UiText::tr("The Zune disconnected or changed; add the book again.");
     else {
         zune_clear_abort(m_dev);
         for (const auto &value : parts) {
@@ -1481,7 +1483,7 @@ void DeviceWorker::doSendAudiobook(const QString &entryId, const QString &filepa
     if (!m_dev) { emit audiobookSendDone(entryId,false,0,"Zune disconnected",false); return; }
     zune_clear_abort(m_dev);
     if (part.value("partNumber").toInt()<1 || part.value("partNumber").toInt()>65535) {
-        emit audiobookSendDone(entryId,false,0,"Invalid audiobook part order",false);return;
+        emit audiobookSendDone(entryId,false,0,UiText::tr("Invalid audiobook part order"),false);return;
     }
     BookTransferInput p(part); uint32_t folder=0,id=0;
     if (zune_find_audiobook_part(m_dev,&p.input,&folder,&id)) {
@@ -1498,7 +1500,7 @@ void DeviceWorker::doSendAudiobook(const QString &entryId, const QString &filepa
     if(art.exists() && art.size()>0 && art.size()<=10*1024*1024 && art.open(QIODevice::ReadOnly)) {
         const auto bytes=art.readAll();
         if(zune_brand(m_dev,id,reinterpret_cast<const uint8_t*>(bytes.constData()),size_t(bytes.size())))
-            warning="Book part synced; this device did not accept its cover.";
+            warning=UiText::tr("Book part synced; this device did not accept its cover.");
     }
     emit audiobookSendDone(entryId,true,id,warning,false);
 }

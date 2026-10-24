@@ -14,6 +14,7 @@
 #include <QFileInfo>
 #include <limits>
 #include <sys/stat.h>
+#include "../UiText.h"
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
@@ -88,18 +89,18 @@ bool Audiobooks::probePart(const QString &path, AudiobookPart *out, QString *err
     const auto fail = [error](const QString &message) { if (error) *error = message; return false; };
     const QFileInfo info(path);
     if (!out || !info.isFile() || info.size() <= 0)
-        return fail(QStringLiteral("Select a readable local audio file"));
+        return fail(UiText::tr("Select a readable local audio file"));
     Input input;
     input.cancel = cancel;
     input.file.setFileName(info.canonicalFilePath());
-    if (input.stopped()) return fail(QStringLiteral("Audiobook probe cancelled"));
+    if (input.stopped()) return fail(UiText::tr("Audiobook probe cancelled"));
     if (!input.file.open(QIODevice::ReadOnly)) return fail(input.file.errorString());
     struct stat before{};
     if (fstat(input.file.handle(), &before) || !S_ISREG(before.st_mode))
-        return fail(QStringLiteral("Audio source is not a regular file"));
+        return fail(UiText::tr("Audio source is not a regular file"));
     auto *buffer = static_cast<unsigned char *>(av_malloc(32768));
     auto *io = buffer ? avio_alloc_context(buffer, 32768, 0, &input, readBytes, nullptr, seekBytes) : nullptr;
-    if (!io) { av_free(buffer); return fail(QStringLiteral("Cannot allocate audio reader")); }
+    if (!io) { av_free(buffer); return fail(UiText::tr("Cannot allocate audio reader")); }
     auto *format = avformat_alloc_context();
     auto release = [&] {
         if (format) avformat_close_input(&format);
@@ -107,7 +108,7 @@ bool Audiobooks::probePart(const QString &path, AudiobookPart *out, QString *err
         av_freep(&io->buffer);
         avio_context_free(&io);
     };
-    if (!format) { release(); return fail(QStringLiteral("Cannot allocate audio probe")); }
+    if (!format) { release(); return fail(UiText::tr("Cannot allocate audio probe")); }
     format->pb = io;
     format->flags |= AVFMT_FLAG_CUSTOM_IO;
     format->interrupt_callback = {interrupted, &input};
@@ -123,8 +124,8 @@ bool Audiobooks::probePart(const QString &path, AudiobookPart *out, QString *err
     const int audio = result >= 0 ? av_find_best_stream(format, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0) : -1;
     if (audio < 0 || input.stopped()) {
         release();
-        return fail(input.stopped() ? QStringLiteral("Audiobook probe cancelled or timed out")
-                                   : QStringLiteral("File could not be read as supported unprotected audio"));
+        return fail(input.stopped() ? UiText::tr("Audiobook probe cancelled or timed out")
+                                   : UiText::tr("File could not be read as supported unprotected audio"));
     }
     AudiobookPart part;
     const auto *parameters = format->streams[audio]->codecpar;
@@ -174,9 +175,9 @@ bool Audiobooks::probePart(const QString &path, AudiobookPart *out, QString *err
         before.st_mtim.tv_nsec == after.st_mtim.tv_nsec && before.st_ctim.tv_sec == after.st_ctim.tv_sec &&
         before.st_ctim.tv_nsec == after.st_ctim.tv_nsec;
     release();
-    if (input.stopped()) return fail(QStringLiteral("Audiobook probe cancelled or timed out"));
-    if (!unchanged) return fail(QStringLiteral("Audio file changed during inspection; retry import"));
-    if (!valid) return fail(QStringLiteral("Audio duration or chapter timeline is invalid"));
+    if (input.stopped()) return fail(UiText::tr("Audiobook probe cancelled or timed out"));
+    if (!unchanged) return fail(UiText::tr("Audio file changed during inspection; retry import"));
+    if (!valid) return fail(UiText::tr("Audio duration or chapter timeline is invalid"));
     *out = std::move(part);
     return true;
 }

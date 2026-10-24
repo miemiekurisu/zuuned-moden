@@ -34,14 +34,14 @@ ColumnLayout {
     }
     PreferenceCheck {
         objectName: "podcastAutoQueueToggle"
-        text: "Queue starred shows when a Zune connects"
+        text: qsTr("Queue starred shows when a Zune connects")
         checked: root.autoQueue
         onClicked: root.queuePicked(checked)
     }
     Explanation {
-        text: "Refresh starred shows and queue their newest unplayed episodes. Episodes already on the Zune count toward the selection. Review the queue, then press Sync."
+        text: qsTr("Refresh starred shows and queue their newest unplayed episodes. Episodes already on the Zune count toward the selection. Review the queue, then press Sync.")
     }
-    Text { text: "Episodes per show"; color: Theme.textPrimary; font.pixelSize: Theme.spokenBody }
+    Text { text: qsTr("Episodes per show"); color: Theme.textPrimary; font.pixelSize: Theme.spokenBody }
     RowLayout {
         spacing: Theme.spaceSm
         Repeater {
@@ -56,7 +56,7 @@ ColumnLayout {
         }
         SpokenButton {
             objectName: "podcastCountCustom"
-            text: "custom"
+            text: qsTr("custom")
             highlighted: root.customCount
             onClicked: root.customCount = true
         }
@@ -67,7 +67,7 @@ ColumnLayout {
             text: String(root.episodeCount)
             validator: IntValidator { bottom: 1; top: 5000 }
             inputMethodHints: Qt.ImhDigitsOnly
-            Accessible.name: "Default number of podcast episodes per show"
+            Accessible.name: qsTr("Default number of podcast episodes per show")
             onEditingFinished: {
                 if (acceptableInput) root.countPicked(Number(text))
                 text = Qt.binding(() => String(root.episodeCount))
@@ -75,15 +75,15 @@ ColumnLayout {
         }
     }
     Explanation {
-        text: "A saved show count overrides this default. The show + uses its saved selection; its arrow offers newest, oldest or individual episodes."
+        text: qsTr("A saved show count overrides this default. The show + uses its saved selection; its arrow offers newest, oldest or individual episodes.")
     }
     PreferenceCheck {
         objectName: "podcastAutoCleanupToggle"
-        text: "Remove completed episodes at the next sync"
+        text: qsTr("Remove completed episodes at the next sync")
         checked: root.autoCleanup
         onClicked: root.cleanupPicked(checked)
     }
     Explanation {
-        text: "Only episodes marked played by this Zune are removed. Local downloads stay. Choose Keep on Zune from an episode's right-click menu to protect it, even beyond the episode count."
+        text: qsTr("Only episodes marked played by this Zune are removed. Local downloads stay. Choose Keep on Zune from an episode's right-click menu to protect it, even beyond the episode count.")
     }
 }

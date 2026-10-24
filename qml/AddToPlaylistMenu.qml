@@ -8,7 +8,7 @@ import Zuuned
 ZuneMenu {
     id: sub
 
-    title: "Add to Playlist"
+    title: qsTr("Add to Playlist")
 
     signal picked(double playlistId, string name)
     signal newRequested()
@@ -25,7 +25,7 @@ ZuneMenu {
     }
 
     ZuneMenuItem {
-        text: "New Playlist…"
+        text: qsTr("New Playlist…")
         onTriggered: sub.newRequested()
     }
 }

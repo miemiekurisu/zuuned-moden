@@ -9,7 +9,7 @@ Item {
     id: root
 
     property var entries: []
-    property string emptyLabel: "nothing here"
+    property string emptyLabel: qsTr("nothing here")
     property string emptyHint: ""
     property string countNoun: "tracks"   // for playlist count rows
     // Device pictures: fetch + show photo thumbnails per row
@@ -22,7 +22,7 @@ Item {
 
         Text {
             Layout.alignment: Qt.AlignHCenter
-            text: DeviceService.connected ? root.emptyLabel : "no device"
+            text: DeviceService.connected ? root.emptyLabel : qsTr("no device")
             color: Theme.textDim
             font.family: Theme.displayFamily
             font.pixelSize: 34
@@ -30,7 +30,7 @@ Item {
         Text {
             Layout.alignment: Qt.AlignHCenter
             visible: text.length > 0
-            text: DeviceService.connected ? root.emptyHint : "plug in a zune"
+            text: DeviceService.connected ? root.emptyHint : qsTr("plug in a zune")
             color: Theme.textGhost
             font.pixelSize: 14
             font.weight: Font.Light

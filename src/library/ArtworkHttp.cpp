@@ -12,6 +12,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include "../UiText.h"
 
 namespace {
 const QByteArray kUA = "Zuuned/1.0 ( https://badgeromen.xyz )";
@@ -193,21 +194,21 @@ QString ArtworkHttp::userMessage(const Response &response, bool musicBrainz) {
     if (response.success()) return {};
     if (response.status == 429 || response.status == 503)
         return musicBrainz
-            ? QStringLiteral("MusicBrainz is busy. Try again shortly, or choose a cover from your computer.")
-            : QStringLiteral("The artwork provider is busy. Try again shortly.");
+            ? UiText::tr("MusicBrainz is busy. Try again shortly, or choose a cover from your computer.")
+            : UiText::tr("The artwork provider is busy. Try again shortly.");
     if (response.status == 404 || response.status == 410)
-        return QStringLiteral("That artwork is no longer available. Choose another cover.");
+        return UiText::tr("That artwork is no longer available. Choose another cover.");
     if (response.status == 401 || response.status == 403)
-        return musicBrainz ? QStringLiteral("MusicBrainz refused the lookup. Try again later, or choose a local cover.")
-                          : QStringLiteral("The artwork provider refused access to that image. Choose another cover.");
+        return musicBrainz ? UiText::tr("MusicBrainz refused the lookup. Try again later, or choose a local cover.")
+                          : UiText::tr("The artwork provider refused access to that image. Choose another cover.");
     if (response.status >= 500)
-        return musicBrainz ? QStringLiteral("MusicBrainz is unavailable. Try again later.")
-                          : QStringLiteral("The artwork provider is unavailable. Try again later.");
+        return musicBrainz ? UiText::tr("MusicBrainz is unavailable. Try again later.")
+                          : UiText::tr("The artwork provider is unavailable. Try again later.");
     if (response.status >= 400)
-        return musicBrainz ? QStringLiteral("MusicBrainz could not use that search. Check the album and artist names.")
-                          : QStringLiteral("The artwork request was rejected. Choose another cover.");
-    return musicBrainz ? QStringLiteral("Could not reach MusicBrainz. Check your connection and try again.")
-                      : QStringLiteral("Could not reach the artwork provider. Check your connection and try again.");
+        return musicBrainz ? UiText::tr("MusicBrainz could not use that search. Check the album and artist names.")
+                          : UiText::tr("The artwork request was rejected. Choose another cover.");
+    return musicBrainz ? UiText::tr("Could not reach MusicBrainz. Check your connection and try again.")
+                      : UiText::tr("Could not reach the artwork provider. Check your connection and try again.");
 }
 
 QByteArray ArtworkHttp::getBody(const QUrl &url, bool musicBrainz, QString *error) {

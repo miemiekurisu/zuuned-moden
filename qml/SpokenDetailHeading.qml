@@ -37,7 +37,7 @@ ColumnLayout {
     },
     Text {
         Layout.fillWidth: true
-        text: heading.narrator ? "narrated by " + heading.narrator : ""
+        text: heading.narrator ? qsTr("narrated by %1").arg(heading.narrator) : ""
         visible: !!text
         color: Theme.textSecondary
         font.pixelSize: Theme.spokenCaption

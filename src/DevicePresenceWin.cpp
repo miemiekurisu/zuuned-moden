@@ -19,25 +19,26 @@
 
 #include <cwchar>
 #include <vector>
+#include "UiText.h"
 
 namespace {
 
 QString problemTextFor(ULONG problem) {
     switch (problem) {
-    case 0:  return QStringLiteral("no problem");
-    case 1:  return QStringLiteral("the device is disabled");
-    case 10: return QStringLiteral("Windows cannot start the hardware");
-    case 14: return QStringLiteral("a reboot is required");
-    case 18: return QStringLiteral("the drivers need to be reinstalled");
-    case 21: return QStringLiteral("Windows is reinstalling the device");
-    case 22: return QStringLiteral("the device is disabled or gone");
-    case 28: return QStringLiteral("no driver is installed");
-    case 31: return QStringLiteral("the device is not working properly");
-    case 37: return QStringLiteral("a filter driver failed to load");
-    case 38: return QStringLiteral("the driver failed to load");
-    case 39: return QStringLiteral("the driver is corrupt or missing");
-    case 45: return QStringLiteral("it is not currently connected");
-    case 48: return QStringLiteral("the software for it cannot load");
+    case 0:  return UiText::tr("no problem");
+    case 1:  return UiText::tr("the device is disabled");
+    case 10: return UiText::tr("Windows cannot start the hardware");
+    case 14: return UiText::tr("a reboot is required");
+    case 18: return UiText::tr("the drivers need to be reinstalled");
+    case 21: return UiText::tr("Windows is reinstalling the device");
+    case 22: return UiText::tr("the device is disabled or gone");
+    case 28: return UiText::tr("no driver is installed");
+    case 31: return UiText::tr("the device is not working properly");
+    case 37: return UiText::tr("a filter driver failed to load");
+    case 38: return UiText::tr("the driver failed to load");
+    case 39: return UiText::tr("the driver is corrupt or missing");
+    case 45: return UiText::tr("it is not currently connected");
+    case 48: return UiText::tr("the software for it cannot load");
     default: return QStringLiteral("problem code %1").arg(problem);
     }
 }

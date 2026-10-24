@@ -36,7 +36,7 @@ Item {
             const key = groupKey(row)
             if (!byId[key]) byId[key] = {
                 key: key,
-                title: (books ? row.bookTitle : row.seriesName) || (books ? "Untitled book" : "Untitled podcast"),
+                title: (books ? row.bookTitle : row.seriesName) || (books ? qsTr("Untitled book") : qsTr("Untitled podcast")),
                 author: row.author || "", artItemId: row.artItemId || 0, rows: []
             }
             byId[key].rows.push(row)
@@ -161,18 +161,19 @@ Item {
         PageHeaderBand {
             Layout.leftMargin: Gallery.spine(page.width)
             Layout.rightMargin: Theme.spaceXxxl
-            PivotBar { tabs: page.books ? ["Books"] : ["Shows"]; onCurrentChanged: page.openCollection("") }
+            PivotBar { tabs: page.books ? ["Books"] : ["Shows"]; labels: page.books ? [qsTr("Books")] : [qsTr("Shows")]; onCurrentChanged: page.openCollection("") }
             Item { Layout.fillWidth: true }
-            Text { visible: page.width > Theme.spokenSheetWidth; text: page.groups.length + (page.books ? " books" : " shows"); color: Theme.textDim; font.pixelSize: Theme.spokenCaption }
+            Text { visible: page.width > Theme.spokenSheetWidth; text: (page.books ? qsTr("%1 books").arg(page.groups.length)
+              : qsTr("%1 shows").arg(page.groups.length)); color: Theme.textDim; font.pixelSize: Theme.spokenCaption }
             ZuneSearchField {
                 visible: !page.openGroup
                 Layout.preferredWidth: Theme.spokenSearchWidth
-                placeholderText: page.books ? "search books" : "search shows"
+                placeholderText: page.books ? qsTr("search books") : qsTr("search shows")
                 onTextChanged: page.searchText = text
             }
             SpokenButton {
                 objectName: "deviceSpokenRefresh"
-                text: "refresh"
+                text: qsTr("refresh")
                 enabled: page.deviceService.connected && !page.deviceService.busy
                     && !page.deviceService.purging && !page.deviceService.pulling
                     && !page.syncEngine.isSyncing && !page.deviceService.spokenMediaLoading
@@ -205,7 +206,7 @@ Item {
         }
         Text {
             visible: page.deviceService.spokenMediaLoading || page.deviceService.purging
-            text: page.deviceService.purging ? "removing from your Zune…" : "reading your Zune…"
+            text: page.deviceService.purging ? qsTr("removing from your Zune…") : qsTr("reading your Zune…")
             color: Theme.textSecondary
             font.pixelSize: Theme.spokenCaption
         }
@@ -247,7 +248,7 @@ Item {
                 SpokenButton {
                     objectName: "deviceSpokenRemoveCollection"
                     flat: true
-                    text: page.books ? "remove book…" : "remove all episodes…"
+                    text: page.books ? qsTr("remove book…") : qsTr("remove all episodes…")
                     enabled: page.canManage
                     onClicked: page.requestRemoval(page.rows.map(row => row.itemId), page.openGroup.title)
                 }
@@ -260,19 +261,19 @@ Item {
             Layout.rightMargin: Theme.spaceXxxl
             SpokenButton {
                 objectName: "deviceSpokenSelectAll"
-                text: page.selectedIds.length === page.rows.length ? "clear selection" : "select all"
+                text: page.selectedIds.length === page.rows.length ? qsTr("clear selection") : qsTr("select all")
                 enabled: page.canManage
                 onClicked: page.selectAll()
             }
             Text {
                 Layout.fillWidth: true
-                text: page.selectedIds.length + " selected"
+                text: qsTr("%1 selected").arg(page.selectedIds.length)
                 font.pixelSize: Theme.spokenCaption
                 color: Theme.textSecondary
             }
             SpokenButton {
                 objectName: "deviceSpokenRemoveSelected"
-                text: "remove selected…"
+                text: qsTr("remove selected…")
                 enabled: page.canManage && page.selectedIds.length > 0
                 onClicked: page.requestRemoval(page.selectedIds, "selected " + (page.books ? "parts" : "episodes"))
             }
@@ -313,7 +314,8 @@ Item {
                         }
                         Text {
                             width: parent.width
-                            text: card.modelData.rows.length + (page.books ? " parts" : " episodes")
+                            text: (page.books ? qsTr("%1 parts").arg(card.modelData.rows.length)
+                              : qsTr("%1 episodes").arg(card.modelData.rows.length))
                             color: Theme.textSecondary
                             font.pixelSize: Theme.spokenCaption
                         }
@@ -378,7 +380,7 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             Layout.minimumWidth: 0
-                            text: row.modelData.title || "Untitled"
+                            text: row.modelData.title || qsTr("Untitled")
                             color: Theme.textPrimary
                             font.pixelSize: Theme.spokenBody
                             elide: Text.ElideRight
@@ -386,7 +388,7 @@ Item {
                         Text {
                             objectName: "devicePodcastPlayed"
                             visible: !page.books && !!row.modelData.playedKnown && !!row.modelData.played
-                            text: "✓ played on Zune"
+                            text: qsTr("✓ played on Zune")
                             color: Theme.textSecondary
                             font.pixelSize: Theme.spokenCaption
                         }
@@ -404,10 +406,12 @@ Item {
                 width: Math.min(parent.width, Theme.spokenEmptyWidth)
                 visible: !page.deviceService.connected || !page.categorySupported || (!page.openGroup && !page.filteredGroups.length
                     && !page.deviceService.spokenMediaLoading && !page.deviceService.spokenMediaError)
-                text: !page.deviceService.connected ? "Plug in a Zune to browse its contents."
-                    : !page.categorySupported ? "Audiobook browsing is not supported on this Zune model yet."
-                    : page.searchText ? "No matching titles"
-                    : page.books ? "No audiobooks on this Zune yet." : "No podcasts on this Zune yet."
+                text: !page.deviceService.connected ? qsTr("Plug in a Zune to browse its contents.")
+                    : !page.categorySupported
+                      ? qsTr("Audiobook browsing is not supported on this Zune model yet.")
+                    : page.searchText ? qsTr("No matching titles")
+                    : page.books ? qsTr("No audiobooks on this Zune yet.")
+                      : qsTr("No podcasts on this Zune yet.")
                 color: Theme.textSecondary
                 font.pixelSize: Theme.spokenBody
                 horizontalAlignment: Text.AlignHCenter
@@ -420,7 +424,7 @@ Item {
         property var itemIds: []
         property string label: ""
         ZuneMenuItem {
-            text: "Remove from Zune…"
+            text: qsTr("Remove from Zune…")
             danger: true
             enabled: page.canManage
             onTriggered: page.requestRemoval(contextMenu.itemIds, contextMenu.label)
@@ -446,7 +450,7 @@ Item {
             spacing: Theme.spaceLg
             Text {
                 Layout.fillWidth: true
-                text: "Remove from your Zune?"
+                text: qsTr("Remove from your Zune?")
                 color: Theme.textPrimary
                 font.pixelSize: Theme.spokenTitle
                 wrapMode: Text.Wrap
@@ -463,10 +467,10 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
-                SpokenButton { text: "cancel"; onClicked: removal.close() }
+                SpokenButton { text: qsTr("cancel"); onClicked: removal.close() }
                 SpokenButton {
                     objectName: "deviceSpokenConfirmRemoval"
-                    text: "remove from Zune"
+                    text: qsTr("remove from Zune")
                     highlighted: true
                     enabled: page.canManage && page.pendingDevice === page.deviceIdentity
                     onClicked: page.confirmRemoval()

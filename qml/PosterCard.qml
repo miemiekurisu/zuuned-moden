@@ -121,7 +121,7 @@ Item {
             Text {
                 id: versionLabel
                 anchors.centerIn: parent
-                text: card.versionCount + " versions"
+                text: qsTr("%1 versions").arg(card.versionCount)
                 font.pixelSize: 9
                 font.bold: true
                 color: "white"

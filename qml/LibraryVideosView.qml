@@ -316,6 +316,9 @@ Item {
                 Layout.minimumWidth: implicitWidth
                 tabs: ["Movies", "TV Shows", "Anime", "Music Videos",
                        "Other", "Needs Match"]
+                labels: [qsTr("Movies"), qsTr("TV Shows"), qsTr("Anime"),
+                         qsTr("Music Videos"), qsTr("Other"),
+                         qsTr("Needs Match")]
                 current: root.currentTab
                 onCurrentChanged: {
                     root.currentTab = current
@@ -336,8 +339,8 @@ Item {
                 visible: root.width > 1150
                 Text {
                     Layout.alignment: Qt.AlignRight
-                    text: videoBrowser.movieCount + " movies, "
-                          + videoBrowser.totalEpisodeCount + " tv episodes"
+                    text: qsTr("%1 movies, %2 tv episodes")
+                      .arg(videoBrowser.movieCount).arg(videoBrowser.totalEpisodeCount)
                     font.pixelSize: 11
                     font.weight: Font.Light
                     color: Theme.textDim
@@ -345,7 +348,7 @@ Item {
                 Text {
                     Layout.alignment: Qt.AlignRight
                     visible: videoBrowser.pendingCount > 0
-                    text: videoBrowser.pendingCount + " still being looked up..."
+                    text: qsTr("%1 still being looked up...").arg(videoBrowser.pendingCount)
                     font.pixelSize: 10
                     color: Qt.alpha(Theme.pink, 0.8)
                 }
@@ -353,7 +356,7 @@ Item {
                     Layout.alignment: Qt.AlignRight
                     visible: videoBrowser.unmatchedCount > 0
                              && root.currentTab !== "Needs Match"
-                    text: videoBrowser.unmatchedCount + " need manual match"
+                    text: qsTr("%1 need manual match").arg(videoBrowser.unmatchedCount)
                     font.pixelSize: 10
                     color: Qt.alpha(Theme.orange, 0.85)
                 }
@@ -519,8 +522,8 @@ Item {
                                     flat = flat.concat(eps)
                                     return {
                                         id: "season" + s,
-                                        label: s > 0 ? "Season " + s : "Specials",
-                                        sublabel: eps.length + " eps",
+                                        label: s > 0 ? qsTr("Season %1").arg(s) : qsTr("Specials"),
+                                        sublabel: qsTr("%1 eps").arg(eps.length),
                                         children: eps.map(e => ({
                                             id: String(e.id),
                                             label: "E" + e.episode
@@ -577,9 +580,9 @@ Item {
                           && videoBrowser.othersList.length === 0))
                 Text {
                     Layout.alignment: Qt.AlignHCenter
-                    text: root.currentTab === "Anime" ? "No anime sources yet."
+                    text: root.currentTab === "Anime" ? qsTr("No anime sources yet.")
                         : root.currentTab === "Music Videos"
-                          ? "No music videos filed yet." : "Nothing filed as other."
+                          ? qsTr("No music videos filed yet.") : qsTr("Nothing filed as other.")
                     font.pixelSize: 14
                     font.weight: Font.Light
                     color: Theme.textSecondary
@@ -590,12 +593,10 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
                     text: root.currentTab === "Anime"
-                        ? "Add a folder as \"anime\" in Settings, or set an "
-                          + "existing source's type to anime there."
-                        : "Right-click any movie and pick \"Move to "
-                          + (root.currentTab === "Music Videos"
-                             ? "Music Videos" : "Other")
-                          + "\" — or file a Needs Match item as other."
+                        ? qsTr("Add a folder as \"anime\" in Settings, or set an existing source's type to anime there.")
+                        : root.currentTab === "Music Videos"
+                          ? qsTr("Right-click any movie and pick \"Move to Music Videos\" — or file a Needs Match item as other.")
+                          : qsTr("Right-click any movie and pick \"Move to Other\" — or file a Needs Match item as other.")
                     font.pixelSize: 11
                     color: Theme.textDim
                 }
@@ -674,14 +675,14 @@ Item {
                                  && root.shownUnmatchedLoose.length === 0
                         Text {
                             Layout.alignment: Qt.AlignHCenter
-                            text: "Nothing to match."
+                            text: qsTr("Nothing to match.")
                             font.pixelSize: 14
                             font.weight: Font.Light
                             color: Theme.textSecondary
                         }
                         Text {
                             Layout.alignment: Qt.AlignHCenter
-                            text: "Videos whose TMDB lookup finds no result show up here."
+                            text: qsTr("Videos whose TMDB lookup finds no result show up here.")
                             font.pixelSize: 11
                             color: Theme.textDim
                         }
@@ -695,7 +696,7 @@ Item {
                                  || root.shownUnmatchedLoose.length > 0
                         Item { Layout.fillWidth: true }
                         Text {
-                            text: "Retry All"
+                            text: qsTr("Retry All")
                             font.pixelSize: 12
                             color: Theme.pink
                             MouseArea {
@@ -716,7 +717,7 @@ Item {
                     // Whole shows — one Fix Match repairs every episode
                     Text {
                         visible: root.shownUnmatchedGroups.length > 0
-                        text: "SERIES — one match fixes every episode"
+                        text: qsTr("SERIES — one match fixes every episode")
                         font.pixelSize: 11
                         font.letterSpacing: 1
                         color: Theme.textDim
@@ -753,15 +754,15 @@ Item {
                                     Layout.fillWidth: true
                                 }
                                 Text {
-                                    text: unmatchedGroup.modelData.episodeCount
-                                          + (unmatchedGroup.modelData.episodeCount === 1
-                                             ? " episode" : " episodes")
+                                    text: (unmatchedGroup.modelData.episodeCount === 1
+                                             ? qsTr("%1 episode") : qsTr("%1 episodes"))
+                                            .arg(unmatchedGroup.modelData.episodeCount)
                                     font.pixelSize: 11
                                     color: Theme.textDim
                                 }
                             }
                             Text {
-                                text: "Customize…"
+                                text: qsTr("Customize…")
                                 font.pixelSize: 12
                                 color: Theme.pink
                                 Layout.rightMargin: Theme.spaceMd
@@ -785,7 +786,7 @@ Item {
                     // Loose items
                     Text {
                         visible: root.shownUnmatchedLoose.length > 0
-                        text: "INDIVIDUAL ITEMS"
+                        text: qsTr("INDIVIDUAL ITEMS")
                         font.pixelSize: 11
                         font.letterSpacing: 1
                         color: Theme.textDim
@@ -816,7 +817,7 @@ Item {
                                     Layout.fillWidth: true
                                 }
                                 Text {
-                                    text: "searched as: " + looseRow.modelData.cleanedQuery
+                                    text: qsTr("searched as: %1").arg(looseRow.modelData.cleanedQuery)
                                     font.pixelSize: 11
                                     color: Theme.textDim
                                     elide: Text.ElideRight
@@ -826,7 +827,7 @@ Item {
                             // The honest exit for things TMDB will never
                             // know: file it under Other and stop matching.
                             Text {
-                                text: "file as other"
+                                text: qsTr("file as other")
                                 font.pixelSize: 12
                                 color: Theme.textSecondary
                                 Layout.rightMargin: Theme.spaceXs
@@ -838,7 +839,7 @@ Item {
                                 }
                             }
                             Text {
-                                text: "Customize…"
+                                text: qsTr("Customize…")
                                 font.pixelSize: 12
                                 color: Theme.pink
                                 Layout.rightMargin: Theme.spaceXs
@@ -893,21 +894,21 @@ Item {
         property var target: null
         // Canonical order: Play · Queue · type-specific · Delete
         ZuneMenuItem {
-            text: "Play"
+            text: qsTr("Play")
             onTriggered: root.playMovie(movieMenu.target)
         }
         ZuneMenuItem {
-            text: "Queue for Zune"
+            text: qsTr("Queue for Zune")
             visible: DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: root.queueMovie(movieMenu.target)
         }
         ZuneMenuItem {
-            text: "Customize…"
+            text: qsTr("Customize…")
             onTriggered: root.customizeVideo(movieMenu.target, root.itemIds(movieMenu.target))
         }
         ZuneMenuItem {
-            text: "Convert to TV Show"
+            text: qsTr("Convert to TV Show")
             onTriggered: LibraryService.reclassifyVideos(
                 movieMenu.target.versionIds, "tv")
         }
@@ -919,7 +920,7 @@ Item {
                 (movieMenu.target?.category ?? "") !== "music_video"
             visible: shown
             height: shown ? implicitHeight : 0
-            text: "Move to Music Videos"
+            text: qsTr("Move to Music Videos")
             onTriggered: LibraryService.reclassifyVideos(
                 movieMenu.target.versionIds, "music_video")
         }
@@ -928,7 +929,7 @@ Item {
                 (movieMenu.target?.category ?? "") !== "other"
             visible: shown
             height: shown ? implicitHeight : 0
-            text: "Move to Other"
+            text: qsTr("Move to Other")
             onTriggered: LibraryService.reclassifyVideos(
                 movieMenu.target.versionIds, "other")
         }
@@ -938,12 +939,12 @@ Item {
                 || (movieMenu.target?.category ?? "") === "other"
             visible: shown
             height: shown ? implicitHeight : 0
-            text: "Move to Movies"
+            text: qsTr("Move to Movies")
             onTriggered: LibraryService.reclassifyVideos(
                 movieMenu.target.versionIds, "movie")
         }
         ZuneMenuItem {
-            text: "Delete from Library"
+            text: qsTr("Delete from Library")
             danger: true
             onTriggered: LibraryService.deleteVideos(movieMenu.target.versionIds)
         }
@@ -953,21 +954,21 @@ Item {
         id: seriesMenu
         property var target: null
         ZuneMenuItem {
-            text: "Play"
+            text: qsTr("Play")
             onTriggered: root.playSeries(seriesMenu.target.key)
         }
         ZuneMenuItem {
-            text: "Queue All Episodes for Zune"
+            text: qsTr("Queue All Episodes for Zune")
             visible: DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: root.queueSeries(seriesMenu.target.key)
         }
         ZuneMenuItem {
-            text: "Customize…"
+            text: qsTr("Customize…")
             onTriggered: root.customizeSeries(seriesMenu.target.key)
         }
         ZuneMenuItem {
-            text: "Delete Series"
+            text: qsTr("Delete Series")
             danger: true
             onTriggered: LibraryService.deleteVideos(
                 videoBrowser.seriesEpisodeIds(seriesMenu.target.key))
@@ -980,7 +981,7 @@ Item {
         property var rows: []
         property bool group: false
         ZuneMenuItem {
-            text: "Play"
+            text: qsTr("Play")
             onTriggered: {
                 const rows = unmatchedMenu.rows.map(root.currentVideo).filter(v => v.id !== undefined)
                 if (rows.length === 0) return
@@ -989,7 +990,7 @@ Item {
             }
         }
         ZuneMenuItem {
-            text: "Queue for Zune"
+            text: qsTr("Queue for Zune")
             visible: DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: {
@@ -1000,14 +1001,14 @@ Item {
             }
         }
         ZuneMenuItem {
-            text: "Customize…"
+            text: qsTr("Customize…")
             onTriggered: {
                 const ids = unmatchedMenu.rows.map(v => v.id)
                 if (ids.length > 0) root.customizeVideo({id: ids[0]}, ids)
             }
         }
         ZuneMenuItem {
-            text: "Delete from Library"
+            text: qsTr("Delete from Library")
             danger: true
             onTriggered: LibraryService.deleteVideos(unmatchedMenu.rows.map(v => v.id))
         }

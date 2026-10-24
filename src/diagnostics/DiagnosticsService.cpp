@@ -3,6 +3,7 @@
 #include "SessionLog.h"
 #include "SupportReport.h"
 #include "ZuunedBuildInfo.h"
+#include "../../transcode/libav_transcode.h"
 
 #include <QDateTime>
 #include <QDesktopServices>
@@ -10,6 +11,7 @@
 #include <QFutureWatcher>
 #include <QGuiApplication>
 #include <QJsonArray>
+#include <QLocale>
 #include <QRegularExpression>
 #include <QScreen>
 #include <QSettings>
@@ -18,6 +20,49 @@
 #include <QtConcurrent>
 
 using namespace Zuuned::Diagnostics;
+
+QString DiagnosticsService::s_uiLanguageApplied = QStringLiteral("en");
+
+QString DiagnosticsService::uiLanguage() const
+{
+    // The language src/main.cpp actually installed a catalogue for, which is
+    // not necessarily what the ini asks for: "system" resolves, and a build
+    // without the zh_CN catalogue stays in English and says so on the log.
+    return s_uiLanguageApplied;
+}
+
+QString DiagnosticsService::systemUiLanguage() const
+{
+    return QLocale::system().language() == QLocale::Chinese
+               ? QStringLiteral("zh_CN")
+               : QStringLiteral("en");
+}
+
+void DiagnosticsService::setUiLanguageApplied(const QString &code)
+{
+    s_uiLanguageApplied = code;
+}
+
+QVariantMap DiagnosticsService::conversionTools() const
+{
+    /* Asked of the linked libraries, never of a table: a build without a WMA
+     * encoder has to be able to say so, because Settings offers WMA on the
+     * strength of this answer and nothing else. */
+    const QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+    const QString ffprobe = QStandardPaths::findExecutable(QStringLiteral("ffprobe"));
+    return QVariantMap{
+        {QStringLiteral("bundledLibav"),
+         QString::fromLatin1(zuuned_ffmpeg_version())},
+        {QStringLiteral("mp3Encoder"),
+         zuuned_audio_encoder_available(ZUUNED_AUDIO_MP3) != 0},
+        {QStringLiteral("wmaEncoder"),
+         zuuned_audio_encoder_available(ZUUNED_AUDIO_WMA) != 0},
+        {QStringLiteral("ffmpegPath"), ffmpeg},
+        {QStringLiteral("ffprobePath"), ffprobe},
+        {QStringLiteral("commandLineTools"), !ffmpeg.isEmpty() && !ffprobe.isEmpty()},
+        {QStringLiteral("downloadUrl"),
+         QStringLiteral("https://www.gyan.dev/ffmpeg/builds/")}};
+}
 
 DiagnosticsService::DiagnosticsService(QObject *parent) : QObject(parent) {
     m_lastAvailable = loggingAvailable();

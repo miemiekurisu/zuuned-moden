@@ -74,7 +74,7 @@ Item {
             id: navLabel
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.verticalCenter: parent.verticalCenter
-            text: item.dropHover ? "+ add to library" : item.title
+            text: item.dropHover ? qsTr("+ add to library") : item.title
             font.pixelSize: item.dropHover ? 22
                             : (item.active ? 30 : (item.hovering ? 24 : 20))
             font.weight: item.active ? Font.Normal : Font.Light
@@ -128,7 +128,7 @@ Item {
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: Theme.spaceXl
             Layout.bottomMargin: Theme.spaceXxs
-            text: "LIBRARY"
+            text: qsTr("LIBRARY")
             font.pixelSize: 11
             font.weight: Font.DemiBold
             font.letterSpacing: 3
@@ -143,14 +143,14 @@ Item {
         // playlists (music page's Playlists pivot) — UX-2 made the
         // library the home of playlists; the zune's own live under the
         // device panel like every other device page.
-        NavItem { title: "music"; page: "music" }
-        NavItem { title: "videos"; page: "videos" }
-        NavItem { title: "photos"; page: "photos" }
-        NavItem { title: "podcasts"; page: "podcasts" }
-        NavItem { title: "audiobooks"; page: "audiobooks" }
-        NavItem { title: "playlists"; page: "libraryPlaylists" }
+        NavItem { title: qsTr("music"); page: "music" }
+        NavItem { title: qsTr("videos"); page: "videos" }
+        NavItem { title: qsTr("photos"); page: "photos" }
+        NavItem { title: qsTr("podcasts"); page: "podcasts" }
+        NavItem { title: qsTr("audiobooks"); page: "audiobooks" }
+        NavItem { title: qsTr("playlists"); page: "libraryPlaylists" }
         NavItem {
-            title: "now playing"
+            title: qsTr("now playing")
             page: "nowPlaying"
             visible: PlayerService.queue.length > 0
             pulsing: PlayerService.playing
@@ -166,7 +166,7 @@ Item {
             color: Theme.cardHover
         }
 
-        NavItem { title: "settings"; page: "settings" }
+        NavItem { title: qsTr("settings"); page: "settings" }
 
         Item { Layout.fillHeight: true }
 

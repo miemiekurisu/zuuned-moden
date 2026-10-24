@@ -12,6 +12,17 @@ Popup {
     property var service: LibraryService
     property var current: ({})
     property string kind: "album"
+    // The caption over the sleeve says what kind of thing is being customized.
+    // It used to print the internal key in capitals, which is English in every
+    // language; the words are the language file's and the capitals stay a
+    // Windows-Phone styling choice rather than a translation.
+    readonly property string kindWord: kind === "album" ? qsTr("album")
+        : kind === "artist" ? qsTr("artist")
+        : kind === "genre" ? qsTr("genre")
+        : kind === "mixtape" ? qsTr("mixtape")
+        : kind === "movie" ? qsTr("movie")
+        : kind === "series" ? qsTr("series")
+        : kind
     property string tab: "art"
     property string idTabMode: "manual"
     property string identityMode: "keep"
@@ -69,26 +80,27 @@ Popup {
         case "checkingLocal": return "Checking local artwork"
         case "lookingUp": return "Looking up artwork"
         case "needsMatch": return "Needs a match"
-        case "noArtwork": return kind === "artist" ? "Artist identified, no portrait available" : "No cover available"
-        case "providerUnavailable": return "Provider unavailable"
-        case "generalCoverAvailable": return "General album cover available"
+        case "noArtwork": return kind === "artist"
+                ? qsTr("Artist identified, no portrait available") : qsTr("No cover available")
+        case "providerUnavailable": return qsTr("Provider unavailable")
+        case "generalCoverAvailable": return qsTr("General album cover available")
         default: return ""
         }
     }
     readonly property bool valid: identityMode !== "manual" || String(identityFields.title || "").trim().length > 0
     readonly property string previewTitle: String(identityFields.title || current.title || current.name || "Untitled")
     readonly property string previewArt: selectedArt || (artReset ? "" : String(current.poster || ""))
-    readonly property string previewSub: kind === "artist" ? String(current.sub || "Artist in your collection")
-        : artworkOnly ? String(current.sub || "A collection that’s yours.")
+    readonly property string previewSub: kind === "artist" ? String(current.sub || qsTr("Artist in your collection"))
+        : artworkOnly ? String(current.sub || qsTr("A collection that’s yours."))
         : kind === "album" ? [identityFields.albumartist, identityFields.year].filter(v => !!v).join(" · ")
         : [identityFields.year, kind === "series" ? current.sub : identityFields.genres].filter(v => !!v).join(" · ")
     readonly property var artSources: kind === "album"
-        ? [{label: "cover archive", value: "caa"}, {label: "fanart.tv", value: "fanart"}, {label: "your computer", value: "file"}]
+        ? [{label: qsTr("cover archive"), value: "caa"}, {label: "fanart.tv", value: "fanart"}, {label: qsTr("your computer"), value: "file"}]
         : kind === "artist"
-          ? [{label: "fanart.tv", value: "fanart"}, {label: "deezer", value: "deezer"}, {label: "your computer", value: "file"}]
-          : artworkOnly ? [{label: "your computer", value: "file"}]
-          : [{label: "tmdb", value: "tmdb"}, {label: "fanart.tv", value: "fanart"},
-             {label: "frame grab", value: "grab"}, {label: "your computer", value: "file"}]
+          ? [{label: "fanart.tv", value: "fanart"}, {label: qsTr("deezer"), value: "deezer"}, {label: qsTr("your computer"), value: "file"}]
+          : artworkOnly ? [{label: qsTr("your computer"), value: "file"}]
+          : [{label: qsTr("tmdb"), value: "tmdb"}, {label: "fanart.tv", value: "fanart"},
+             {label: qsTr("frame grab"), value: "grab"}, {label: qsTr("your computer"), value: "file"}]
     signal saved(string message)
 
     function token() {
@@ -512,9 +524,9 @@ Popup {
                 anchors.left: parent.left; anchors.leftMargin: Theme.spaceXxxl
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Theme.spaceSm
-                SmallLabel { text: "YOUR COLLECTION / YOUR CALL" }
+                SmallLabel { text: qsTr("YOUR COLLECTION / YOUR CALL") }
                 GradientText {
-                    text: "make it yours."
+                    text: qsTr("make it yours.")
                     font.family: Theme.displayFamily
                     font.pixelSize: sheet.compact ? Theme.customizeTitleSize - Theme.spaceSm : Theme.customizeTitleSize
                     rotation: -3
@@ -527,7 +539,7 @@ Popup {
                 anchors.margins: Theme.spaceXl
                 text: "×"; font.pixelSize: Theme.customizeHeadingSize
                 enabled: !sheet.busy
-                Accessible.name: "Cancel customization"
+                Accessible.name: qsTr("Cancel customization")
                 onClicked: sheet.discard()
             }
         }
@@ -549,13 +561,13 @@ Popup {
                 SmallLabel {
                     id: kindCaption
                     anchors.top: parent.top; anchors.left: parent.left
-                    text: sheet.kind.toUpperCase()
+                    text: sheet.kindWord.toUpperCase()
                 }
                 Text {
                     anchors.right: parent.right; anchors.top: parent.top
-                    text: sheet.artReset || sheet.identityMode === "reset" ? "automatic on apply"
-                        : sheet.selectedArt ? "your artwork"
-                        : sheet.identityMode === "manual" || Number(sheet.current.tmdbId || 0) < 0 ? "manual identity" : ""
+                    text: sheet.artReset || sheet.identityMode === "reset" ? qsTr("automatic on apply")
+                        : sheet.selectedArt ? qsTr("your artwork")
+                        : sheet.identityMode === "manual" || Number(sheet.current.tmdbId || 0) < 0 ? qsTr("manual identity") : ""
                     color: Theme.activePink; font.pixelSize: Theme.customizeLabelSize
                 }
                 Item {
@@ -627,7 +639,7 @@ Popup {
                         anchors.top: parent.bottom; anchors.right: parent.right
                         anchors.topMargin: Theme.spaceMd
                         visible: !sheet.compact
-                        text: "your version ↗"
+                        text: qsTr("your version ↗")
                         font.family: Theme.displayFamily
                         font.pixelSize: Theme.spaceLg
                         color: Theme.activePink
@@ -672,7 +684,7 @@ Popup {
                         id: pivots
                         spacing: Theme.spaceXxl
                         Repeater {
-                            model: [{label:"identity",value:"ident"},{label:"artwork",value:"art"}]
+                            model: [{label:qsTr("identity"),value:"ident"},{label:qsTr("artwork"),value:"art"}]
                             Button {
                                 id: pivot
                                 required property var modelData
@@ -721,15 +733,15 @@ Popup {
                             width: identityScroll.width - Theme.spaceMd
                             spacing: Theme.spaceLg
                             Text {
-                                text: sheet.artworkMatchMode ? "Match artwork only." : "Tell its story."
+                                text: sheet.artworkMatchMode ? qsTr("Match artwork only.") : qsTr("Tell its story.")
                                 font.pixelSize: Theme.customizeHeadingSize; font.weight: Font.Light
                                 color: Theme.textPrimary
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: sheet.artworkMatchMode ? "Choose the artist or album for artwork. Your names, tags and grouping stay as they are."
-                                    : sheet.isMusic ? "The name, the year, the notes. Your collection, in your words."
-                                    : "A fan edit belongs in your collection, too."
+                                text: sheet.artworkMatchMode ? qsTr("Choose the artist or album for artwork. Your names, tags and grouping stay as they are.")
+                                    : sheet.isMusic ? qsTr("The name, the year, the notes. Your collection, in your words.")
+                                    : qsTr("A fan edit belongs in your collection, too.")
                                 color: Theme.textSecondary; font.pixelSize: Theme.customizeCaptionSize
                                 wrapMode: Text.WordWrap
                             }
@@ -737,12 +749,12 @@ Popup {
                                 spacing: Theme.spaceMd
                                 QuietButton {
                                     tabLike: true
-                                    text: "write it yourself"; chosen: sheet.idTabMode === "manual"
+                                    text: qsTr("write it yourself"); chosen: sheet.idTabMode === "manual"
                                     onClicked: { sheet.artworkMatchMode = false; sheet.idTabMode = "manual" }
                                 }
                                 QuietButton {
                                     tabLike: true
-                                    text: sheet.isMusic ? "edit identity from a match" : "find a match"
+                                    text: sheet.isMusic ? qsTr("edit identity from a match") : qsTr("find a match")
                                     chosen: sheet.idTabMode === "match" && !sheet.artworkMatchMode
                                     onClicked: { sheet.artworkMatchMode = false; sheet.idTabMode = "match"; if (!sheet.results.length) sheet.searchIdentity() }
                                 }
@@ -757,24 +769,24 @@ Popup {
                                         objectName: "customizeIdentityQuery"
                                         Layout.fillWidth: true
                                         text: sheet.identityQuery
-                                        placeholderText: "Search a title"
+                                        placeholderText: qsTr("Search a title")
                                         onTextEdited: sheet.identityQuery = text
                                         onAccepted: sheet.searchIdentity()
-                                        Accessible.name: "Search identity"
+                                        Accessible.name: qsTr("Search identity")
                                     }
-                                    QuietButton { text: "search ↗"; onClicked: sheet.searchIdentity() }
+                                    QuietButton { text: qsTr("search ↗"); onClicked: sheet.searchIdentity() }
                                 }
                                 Row {
                                     spacing: Theme.spaceMd
                                     visible: !sheet.isMusic
                                     QuietButton {
                                         tabLike: true
-                                        text: "movie"; chosen: !sheet.searchTV
+                                        text: qsTr("movie"); chosen: !sheet.searchTV
                                         onClicked: { sheet.searchTV = false; sheet.searchIdentity() }
                                     }
                                     QuietButton {
                                         tabLike: true
-                                        text: "tv / series"; chosen: sheet.searchTV
+                                        text: qsTr("tv / series"); chosen: sheet.searchTV
                                         onClicked: { sheet.searchTV = true; sheet.searchIdentity() }
                                     }
                                 }
@@ -783,20 +795,20 @@ Popup {
                                     visible: sheet.isMusic
                                     QuietButton {
                                         tabLike: true
-                                        text: "musicbrainz"; chosen: sheet.identityProvider === "musicbrainz"
+                                        text: qsTr("musicbrainz"); chosen: sheet.identityProvider === "musicbrainz"
                                         onClicked: { sheet.identityProvider = "musicbrainz"; sheet.searchIdentity() }
                                     }
                                     QuietButton {
                                         tabLike: true
                                         visible: sheet.kind === "artist"
-                                        text: "deezer"; chosen: sheet.identityProvider === "deezer"
+                                        text: qsTr("deezer"); chosen: sheet.identityProvider === "deezer"
                                         onClicked: { sheet.identityProvider = "deezer"; sheet.searchIdentity() }
                                     }
                                 }
                                 Text {
                                     Layout.fillWidth: true
                                     visible: sheet.searching || sheet.searchError !== "" || sheet.results.length === 0
-                                    text: sheet.searching ? "searching " + (sheet.isMusic ? sheet.identityProvider : "TMDB") + "…" : sheet.searchError || "No matches here. Try another title, or write it yourself."
+                                    text: sheet.searching ? qsTr("searching %1…").arg(sheet.isMusic ? sheet.identityProvider : "TMDB") : sheet.searchError || qsTr("No matches here. Try another title, or write it yourself.")
                                     font.pixelSize: Theme.customizeBodySize
                                     color: sheet.searchError ? Theme.warning : Theme.textSecondary
                                     wrapMode: Text.WordWrap
@@ -837,14 +849,14 @@ Popup {
                                                            matchButton.modelData.disambiguation, matchButton.modelData.country,
                                                            matchButton.modelData.type,
                                                            sheet.artworkMatchMode && sheet.kind === "album"
-                                                               ? matchButton.modelData.releaseId ? "specific edition" : "general album"
+                                                               ? matchButton.modelData.releaseId ? qsTr("specific edition") : qsTr("general album")
                                                                : ""].filter(v => !!v).join(" · ")
                                                     elide: Text.ElideRight
                                                     color: Theme.textSecondary; font.pixelSize: Theme.customizeCaptionSize
                                                 }
                                             }
                                             Text {
-                                                text: sheet.isSelectedMatch(matchButton.modelData) ? "selected" : "use this"
+                                                text: sheet.isSelectedMatch(matchButton.modelData) ? "selected" : qsTr("use this")
                                                 color: Theme.activePink; font.pixelSize: Theme.customizeCaptionSize
                                             }
                                         }
@@ -860,17 +872,17 @@ Popup {
                                 CustomizeField {
                                     objectName: "customizeTitleField"
                                     Layout.fillWidth: true; Layout.columnSpan: 2
-                                    label: sheet.kind === "artist" ? "Artist name" : sheet.kind === "album" ? "Album title"
+                                    label: sheet.kind === "artist" ? qsTr("Artist name") : sheet.kind === "album" ? qsTr("Album title")
                                          : sheet.identityFields.type === "tv" ? "Series title" : "Title"
                                     value: sheet.identityFields.title || ""
-                                    placeholder: "Give it a name"
+                                    placeholder: qsTr("Give it a name")
                                     prominent: true
                                     onEdited: value => sheet.setField("title", value)
                                 }
                                 CustomizeField {
                                     Layout.fillWidth: true
                                     visible: sheet.kind === "album"
-                                    label: "Album artist"; value: sheet.identityFields.albumartist || ""
+                                    label: qsTr("Album artist"); value: sheet.identityFields.albumartist || ""
                                     onEdited: value => sheet.setField("albumartist", value)
                                 }
                                 Row {
@@ -878,56 +890,58 @@ Popup {
                                     spacing: Theme.spaceSm
                                     QuietButton {
                                         tabLike: true
-                                        text: "movie"; chosen: sheet.identityFields.type !== "tv"
+                                        text: qsTr("movie"); chosen: sheet.identityFields.type !== "tv"
                                         onClicked: sheet.setField("type", "movie")
                                     }
                                     QuietButton {
                                         tabLike: true
-                                        text: "tv / series"; chosen: sheet.identityFields.type === "tv"
+                                        text: qsTr("tv / series"); chosen: sheet.identityFields.type === "tv"
                                         onClicked: sheet.setField("type", "tv")
                                     }
                                 }
                                 CustomizeField {
                                     Layout.fillWidth: true
                                     visible: sheet.kind !== "artist"
-                                    label: "Year"; value: sheet.identityFields.year || ""; numeric: true
+                                    label: qsTr("Year"); value: sheet.identityFields.year || ""; numeric: true
                                     onEdited: value => sheet.setField("year", value)
                                 }
                                 CustomizeField {
                                     Layout.fillWidth: true; Layout.columnSpan: 2
                                     visible: sheet.kind !== "artist"
-                                    label: "Genre"; value: sheet.isMusic ? sheet.identityFields.genre || "" : sheet.identityFields.genres || ""
+                                    label: qsTr("Genre"); value: sheet.isMusic ? sheet.identityFields.genre || "" : sheet.identityFields.genres || ""
                                     onEdited: value => sheet.setField(sheet.isMusic ? "genre" : "genres", value)
                                 }
                                 CustomizeField {
                                     Layout.fillWidth: true
                                     visible: !sheet.isMusic && sheet.identityFields.type === "tv" && !sheet.bulk
-                                    label: "Season"; value: sheet.identityFields.season || ""; numeric: true
+                                    label: qsTr("Season"); value: sheet.identityFields.season || ""; numeric: true
                                     onEdited: value => sheet.setField("season", value)
                                 }
                                 CustomizeField {
                                     Layout.fillWidth: true
                                     visible: !sheet.isMusic && sheet.identityFields.type === "tv" && !sheet.bulk
-                                    label: "Episode"; value: sheet.identityFields.episode || ""; numeric: true
+                                    label: qsTr("Episode"); value: sheet.identityFields.episode || ""; numeric: true
                                     onEdited: value => sheet.setField("episode", value)
                                 }
                                 CustomizeField {
                                     Layout.fillWidth: true; Layout.columnSpan: 2
                                     visible: !sheet.isMusic && sheet.identityFields.type === "tv" && !sheet.bulk
-                                    label: "Episode title"; value: sheet.identityFields.episodeTitle || ""
+                                    label: qsTr("Episode title"); value: sheet.identityFields.episodeTitle || ""
                                     onEdited: value => sheet.setField("episodeTitle", value)
                                 }
                                 CustomizeField {
                                     Layout.fillWidth: true; Layout.columnSpan: 2
-                                    label: sheet.isMusic ? "Liner notes" : "The story"; value: sheet.identityFields.overview || ""
+                                    label: sheet.isMusic ? qsTr("Liner notes") : qsTr("The story"); value: sheet.identityFields.overview || ""
                                     multiline: true
                                     onEdited: value => sheet.setField("overview", value)
                                 }
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: sheet.isMusic ? "Changes apply to the tracks in this " + (sheet.kind === "album" ? "album." : "artist’s collection.")
-                                     : sheet.bulk ? "Each episode keeps its own season, number, and title." : ""
+                                text: sheet.isMusic ? (sheet.kind === "album"
+                                  ? qsTr("Changes apply to the tracks in this album.")
+                                  : qsTr("Changes apply to the tracks in this artist’s collection."))
+                                  : sheet.bulk ? qsTr("Each episode keeps its own season, number, and title.") : ""
                                 visible: text !== ""
                                 color: Theme.textSecondary; font.pixelSize: Theme.customizeCaptionSize
                                 wrapMode: Text.WordWrap
@@ -948,17 +962,17 @@ Popup {
                             width: artworkScroll.width - Theme.spaceMd
                             spacing: Theme.spaceLg
                             Text {
-                                text: "Find its face."
+                                text: qsTr("Find its face.")
                                 font.pixelSize: Theme.customizeHeadingSize; font.weight: Font.Light
                                 color: Theme.textPrimary
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: sheet.kind === "album" ? "Something that feels like this record."
-                                     : sheet.kind === "artist" ? "A face for the name. A photo that feels right."
-                                     : sheet.kind === "mixtape" ? "Your mix. Your cover."
-                                     : sheet.kind === "genre" ? "Give this corner of your collection its own look."
-                                     : "The poster you want on your shelf."
+                                text: sheet.kind === "album" ? qsTr("Something that feels like this record.")
+                                     : sheet.kind === "artist" ? qsTr("A face for the name. A photo that feels right.")
+                                     : sheet.kind === "mixtape" ? qsTr("Your mix. Your cover.")
+                                     : sheet.kind === "genre" ? qsTr("Give this corner of your collection its own look.")
+                                     : qsTr("The poster you want on your shelf.")
                                 color: Theme.textSecondary; font.pixelSize: Theme.customizeCaptionSize
                                 wrapMode: Text.WordWrap
                             }
@@ -979,8 +993,8 @@ Popup {
                                     Layout.fillWidth: true
                                     visible: sheet.selectedArtworkMatch !== null
                                     text: sheet.selectedArtworkMatch && sheet.selectedArtworkMatch.scope === "general"
-                                        ? "General album cover selected. This does not identify an exact edition."
-                                        : "Artwork match selected. Apply remembers this choice without changing tags."
+                                        ? qsTr("General album cover selected. This does not identify an exact edition.")
+                                        : qsTr("Artwork match selected. Apply remembers this choice without changing tags.")
                                     color: Theme.textSecondary
                                     font.pixelSize: Theme.customizeCaptionSize
                                     wrapMode: Text.WordWrap
@@ -990,20 +1004,20 @@ Popup {
                                     spacing: Theme.spaceMd
                                     QuietButton {
                                         objectName: "customizeChooseArtworkMatch"
-                                        text: sheet.identityMode === "keep" ? "choose artwork match" : "apply identity edits before matching artwork"
+                                        text: sheet.identityMode === "keep" ? qsTr("choose artwork match") : qsTr("apply identity edits before matching artwork")
                                         enabled: !sheet.busy && sheet.identityMode === "keep"
                                         onClicked: sheet.chooseArtworkMatch()
                                     }
                                     QuietButton {
                                         objectName: "customizeRetryArtwork"
-                                        text: "retry lookup"
+                                        text: qsTr("retry lookup")
                                         visible: !sheet.current.poster && sheet.artworkStatusText !== ""
                                         enabled: !sheet.busy && sheet.artworkDiscovery.status !== "lookingUp" && sheet.artworkDiscovery.status !== "checkingLocal"
                                         onClicked: sheet.service.retryArtwork(sheet.kind, sheet.current)
                                     }
                                     QuietButton {
                                         objectName: "customizeGeneralCover"
-                                        text: "preview general cover"
+                                        text: qsTr("preview general cover")
                                         enabled: !sheet.busy && sheet.identityMode === "keep"
                                         visible: sheet.kind === "album" && sheet.artworkDiscovery.status === "generalCoverAvailable" && !!sheet.artworkDiscovery.imageUrl
                                         onClicked: sheet.stageGeneralCover()
@@ -1034,22 +1048,22 @@ Popup {
                                     objectName: "customizeArtQuery"
                                     Layout.fillWidth: true
                                     text: sheet.artQuery
-                                    placeholderText: "Search artwork"
+                                    placeholderText: qsTr("Search artwork")
                                     onTextEdited: sheet.artQuery = text
                                     onAccepted: sheet.loadArt(true)
-                                    Accessible.name: "Search artwork independently of identity"
+                                    Accessible.name: qsTr("Search artwork independently of identity")
                                 }
-                                QuietButton { text: "search ↗"; onClicked: sheet.loadArt(true) }
+                                QuietButton { text: qsTr("search ↗"); onClicked: sheet.loadArt(true) }
                             }
                             RowLayout {
                                 Layout.fillWidth: true
                                 visible: sheet.artSource !== "file"
                                 SmallLabel {
                                     Layout.fillWidth: true
-                                    text: sheet.artSource === "grab" ? "FROM THE FILM" : sheet.kind === "artist" ? "PORTRAITS" : "ALTERNATE COVERS"
+                                    text: sheet.artSource === "grab" ? qsTr("FROM THE FILM") : sheet.kind === "artist" ? qsTr("PORTRAITS") : qsTr("ALTERNATE COVERS")
                                 }
                                 Text {
-                                    text: sheet.artLoading ? "searching…" : sheet.artUrls.length + " found"
+                                    text: sheet.artLoading ? qsTr("searching…") : qsTr("%1 found").arg(sheet.artUrls.length)
                                     color: Theme.textSecondary; font.pixelSize: Theme.customizeCaptionSize
                                 }
                                 QuietButton {
@@ -1057,7 +1071,7 @@ Popup {
                                     text: "‹"; font.pixelSize: Theme.spaceXl
                                     enabled: coverStrip.contentX > 0
                                     implicitWidth: Theme.spaceXxl
-                                    Accessible.name: sheet.kind === "artist" ? "Previous portraits" : "Previous covers"
+                                    Accessible.name: sheet.kind === "artist" ? qsTr("Previous portraits") : qsTr("Previous covers")
                                     onClicked: sheet.scrollCovers(-1)
                                 }
                                 QuietButton {
@@ -1065,7 +1079,7 @@ Popup {
                                     text: "›"; font.pixelSize: Theme.spaceXl
                                     enabled: coverStrip.contentX < coverStrip.contentWidth - coverStrip.width
                                     implicitWidth: Theme.spaceXxl
-                                    Accessible.name: sheet.kind === "artist" ? "More portraits" : "More covers"
+                                    Accessible.name: sheet.kind === "artist" ? qsTr("More portraits") : qsTr("More covers")
                                     onClicked: sheet.scrollCovers(1)
                                 }
                             }
@@ -1125,8 +1139,8 @@ Popup {
                                         anchors.top: candidateImage.bottom; anchors.topMargin: Theme.spaceSm
                                         width: parent.width
                                         text: candidateImage.status === Image.Error ? "unavailable"
-                                             : candidateImage.selected ? "your pick"
-                                             : (sheet.kind === "artist" ? "portrait " : "cover ") + (candidate.index + 1)
+                                             : candidateImage.selected ? qsTr("your pick")
+                                             : (sheet.kind === "artist" ? qsTr("portrait %1") : qsTr("cover %1")).arg(candidate.index + 1)
                                         color: candidateImage.selected ? Theme.activePink : Theme.textSecondary
                                         font.pixelSize: Theme.customizeCaptionSize
                                     }
@@ -1140,15 +1154,15 @@ Popup {
                             Text {
                                 Layout.fillWidth: true
                                 visible: sheet.artSource !== "file" && (sheet.artLoading || sheet.artError !== "" || sheet.artUrls.length === 0)
-                                text: sheet.artLoading ? (sheet.artSource === "grab" ? "Finding moments in your video…" : "Looking for artwork…")
-                                     : sheet.artError || "No artwork here yet. Try another search, another source, or your own file."
+                                text: sheet.artLoading ? (sheet.artSource === "grab" ? qsTr("Finding moments in your video…") : qsTr("Looking for artwork…"))
+                                     : sheet.artError || qsTr("No artwork here yet. Try another search, another source, or your own file.")
                                 font.pixelSize: Theme.customizeBodySize
                                 color: sheet.artError ? Theme.warning : Theme.textSecondary
                                 wrapMode: Text.WordWrap
                             }
                             QuietButton {
                                 visible: sheet.artSource !== "file" && sheet.artError !== "" && !sheet.artLoading
-                                text: "try again ↗"
+                                text: qsTr("try again ↗")
                                 onClicked: sheet.loadArt(true)
                             }
                             Rectangle {
@@ -1164,19 +1178,19 @@ Popup {
                                     spacing: Theme.spaceMd
                                     Text {
                                         anchors.horizontalCenter: parent.horizontalCenter
-                                        text: "bring your own."
+                                        text: qsTr("bring your own.")
                                         font.family: Theme.displayFamily; font.pixelSize: Theme.customizeHeadingSize
                                         rotation: -3; color: Theme.activePink
                                     }
                                     Text {
                                         width: parent.width; horizontalAlignment: Text.AlignHCenter
-                                        text: "Drop an image here, or choose a file."
+                                        text: qsTr("Drop an image here, or choose a file.")
                                         font.pixelSize: Theme.customizeBodySize; color: Theme.textSecondary
                                         wrapMode: Text.WordWrap
                                     }
                                     QuietButton {
                                         anchors.horizontalCenter: parent.horizontalCenter
-                                        text: "choose image…"; accent: true
+                                        text: qsTr("choose image…"); accent: true
                                         onClicked: artDialog.open()
                                     }
                                 }
@@ -1193,9 +1207,9 @@ Popup {
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: sheet.selectedArt ? "Your pick is in the sleeve. Apply when it feels right."
-                                     : sheet.kind === "artist" ? "Pick a portrait. Make it theirs."
-                                     : "Pick a cover. See it in the sleeve."
+                                text: sheet.selectedArt ? qsTr("Your pick is in the sleeve. Apply when it feels right.")
+                                     : sheet.kind === "artist" ? qsTr("Pick a portrait. Make it theirs.")
+                                     : qsTr("Pick a cover. See it in the sleeve.")
                                 font.pixelSize: Theme.customizeCaptionSize; color: Theme.textSecondary
                                 wrapMode: Text.WordWrap
                             }
@@ -1231,27 +1245,27 @@ Popup {
                     Rectangle { width: Theme.spaceXxs; height: width; radius: width / 2; color: Theme.green }
                     Text {
                         Layout.fillWidth: true
-                        text: sheet.busy ? "Saving your changes…"
-                             : sheet.identityMode === "reset" || sheet.artReset ? "Automatic on Apply. Cancel keeps your picks."
-                             : sheet.dirty ? "Your picks stay yours." : "Make a change. Make it yours."
+                        text: sheet.busy ? qsTr("Saving your changes…")
+                             : sheet.identityMode === "reset" || sheet.artReset ? qsTr("Automatic on Apply. Cancel keeps your picks.")
+                             : sheet.dirty ? qsTr("Your picks stay yours.") : qsTr("Make a change. Make it yours.")
                         font.pixelSize: Theme.customizeCaptionSize; color: Theme.textSecondary
                         wrapMode: Text.WordWrap
                     }
                     QuietButton {
                         objectName: "customizeReset"
                         visible: !sheet.compact
-                        text: sheet.isMusic || sheet.artworkOnly ? "reset artwork" : "reset to auto"
+                        text: sheet.isMusic || sheet.artworkOnly ? qsTr("reset artwork") : qsTr("reset to auto")
                         enabled: !sheet.busy
                         onClicked: sheet.resetDraft()
                     }
                     QuietButton {
                         objectName: "customizeCancel"
-                        text: "cancel"; enabled: !sheet.busy
+                        text: qsTr("cancel"); enabled: !sheet.busy
                         onClicked: sheet.discard()
                     }
                     QuietButton {
                         objectName: "customizeApply"
-                        text: sheet.busy ? "saving…" : "apply changes  ↗"
+                        text: sheet.busy ? "saving…" : qsTr("apply changes  ↗")
                         filled: true
                         enabled: sheet.dirty && sheet.valid && !sheet.busy
                         onClicked: sheet.applyDraft()
@@ -1259,7 +1273,7 @@ Popup {
                 }
                 QuietButton {
                     visible: sheet.compact
-                    text: sheet.isMusic || sheet.artworkOnly ? "reset artwork" : "reset to auto"
+                    text: sheet.isMusic || sheet.artworkOnly ? qsTr("reset artwork") : qsTr("reset to auto")
                     enabled: !sheet.busy
                     onClicked: sheet.resetDraft()
                 }
@@ -1268,7 +1282,7 @@ Popup {
     }
     FileDialog {
         id: artDialog
-        title: "Choose artwork"
+        title: qsTr("Choose artwork")
         nameFilters: ["Images (*.png *.jpg *.jpeg *.webp *.bmp)"]
         onAccepted: sheet.stageArt(selectedFile.toString())
     }

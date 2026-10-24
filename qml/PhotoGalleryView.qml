@@ -168,7 +168,7 @@ Rectangle {
     Text {
         anchors.centerIn: parent
         visible: mainImg.status === Image.Loading
-        text: "loading…"
+        text: qsTr("loading…")
         font.pixelSize: 13
         color: Theme.textDim
     }
@@ -280,7 +280,7 @@ Rectangle {
                 objectName: "galleryPhotoTransfer"
                 anchors.verticalCenter: parent.verticalCenter
                 visible: gallery.canTransfer
-                text: gallery.deviceMode ? "⤓ save to library" : "+ queue for device"
+                text: gallery.deviceMode ? qsTr("⤓ save to library") : qsTr("+ queue for device")
                 font.pixelSize: Theme.spaceMd
                 color: transferArea.containsMouse ? Theme.activePink : Theme.pink
                 MouseArea {
@@ -438,7 +438,7 @@ Rectangle {
         id: photoMenu
         property int photoIndex: -1
         ZuneMenuItem {
-            text: gallery.deviceMode ? "Save to Library" : "Queue for Device"
+            text: gallery.deviceMode ? qsTr("Save to Library") : qsTr("Queue for Device")
             enabled: gallery.canTransfer
             onTriggered: gallery.transferAt(photoMenu.photoIndex)
         }

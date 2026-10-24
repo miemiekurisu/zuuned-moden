@@ -425,7 +425,7 @@ Item {
                 spacing: Theme.spaceXs
 
                 Text {
-                    text: "ALBUM"
+                    text: qsTr("ALBUM")
                     font.pixelSize: 10
                     font.weight: Font.DemiBold
                     font.letterSpacing: 3
@@ -460,8 +460,8 @@ Item {
                     }
                 }
                 Text {
-                    text: page.tracks.length + " tracks  ·  " + page.totalDuration
-                          + (page.albumPlaying ? "  ·  spinning" : "")
+                    text: qsTr("%1 tracks  ·  %2").arg(page.tracks.length).arg(page.totalDuration)
+                          + (page.albumPlaying ? qsTr("  ·  spinning") : "")
                     font.pixelSize: 11
                     font.weight: Font.Light
                     color: page.albumPlaying ? Theme.activePink : Theme.textSecondary
@@ -475,7 +475,7 @@ Item {
                     visible: page.localArt
 
                     Text {
-                        text: "▶ add to now playing"
+                        text: qsTr("▶ add to now playing")
                         font.pixelSize: 12
                         color: npArea.containsMouse ? Theme.activePink : Theme.textSecondary
                         MouseArea {
@@ -514,7 +514,7 @@ Item {
                 Text {
                     visible: !page.localArt
                     Layout.topMargin: Theme.spaceSm
-                    text: "delete from device"
+                    text: qsTr("delete from device")
                     font.pixelSize: 12
                     color: delArea.containsMouse ? Theme.error : Theme.textDim
                     MouseArea {

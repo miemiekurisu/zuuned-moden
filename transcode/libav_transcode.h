@@ -30,6 +30,10 @@ typedef void (*zuuned_progress_cb)(float fraction, void *userdata);
 void zuuned_transcode_abort(void);
 void zuuned_transcode_clear_abort(void);
 
+/* Reads the flag without changing it, for a stage that lives in another
+ * translation unit and was never handed the flag directly. */
+int zuuned_transcode_abort_requested(void);
+
 /* ---- Hardware decode mode ----
  * 0 = software only
  * 1 = auto (default): NVDEC, then VAAPI, then software
@@ -62,6 +66,52 @@ char *zuuned_transcode_audio(const char *input_path,
  * preserves a valid source disc or discnumber (including its total). */
 char *zuuned_transcode_audio_with_disc(const char *input_path, const char *album_artist,
                                       int disc_number, zuuned_progress_cb progress, void *userdata);
+
+/* ---- Output audio targets ----
+ *
+ * MP3 is the historical output and the default: LAME plus a hand-built ID3v2.3
+ * tag, which is what a Zune reads.  WMA encodes through libavcodec `wmav2` into
+ * ASF, the container the player reports as WMA.
+ *
+ * WMA Lossless is not one of these targets, and it is not an omission that more
+ * code would fix.  Measured against the FFmpeg this application links:
+ * `ffmpeg -encoders` lists `wmav1` and `wmav2` as the only WMA encoders, with
+ * `wmalossless` and `wmapro` under decoders only, and Windows itself offers no
+ * WMA lossless ACM codec to reach instead (System32 carries atrac3, the two
+ * ADPCMs, l3codeca/l3codecp and two telephony codecs).  So a lossless WMA the
+ * user already owns is carried byte-for-byte by the sync engine rather than
+ * converted: every encoder that exists here would be a downgrade.  `wmav2` also
+ * has no variable-bitrate mode, which is why the VBR option is MP3-only.
+ */
+#define ZUUNED_AUDIO_MP3 0
+#define ZUUNED_AUDIO_WMA 1
+
+/* The transcode with the target and its bit rate chosen by the caller.
+ * bitrate_kbps is the nominal CBR rate for MP3, and the ceiling LAME may spend
+ * when vbr is set; `wmav2` ignores vbr because it has no VBR mode.  Same
+ * contract as zuuned_transcode_audio(): a new temporary path the caller frees
+ * and unlinks, or NULL. */
+char *zuuned_transcode_audio_ex(const char *input_path, const char *album_artist,
+                                int disc_number, int target, int bitrate_kbps, int vbr,
+                                zuuned_progress_cb progress, void *userdata);
+
+/* 1 when this build can encode that target, 0 when it cannot, so a settings
+ * page never offers what the linked libraries cannot do. */
+int zuuned_audio_encoder_available(int target);
+
+/* Release string of the FFmpeg whose libav* this process linked, e.g. "8.0".
+ * Settings shows it so a report says what the app carries rather than what
+ * happens to be on PATH. */
+const char *zuuned_ffmpeg_version(void);
+
+/* Encode to WMA in ASF at an explicit output path, which the caller owns.
+ * Copies the tag pairs a Zune displays with the same album-artist override the
+ * MP3 path applies; deletes the output on failure or cancellation.  Returns a
+ * copy of output_path on success, NULL on failure. */
+char *zuuned_audio_encode_wma(const char *input_path, const char *album_artist,
+                              int disc_number, int bitrate_kbps,
+                              const char *output_path,
+                              zuuned_progress_cb progress, void *userdata);
 
 /* Transcode decoded audio in the half-open presentation interval [start_ms,
  * end_ms) into a unique temporary MP3. Milliseconds are relative to the audio

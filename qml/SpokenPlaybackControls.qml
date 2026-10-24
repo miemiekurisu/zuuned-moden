@@ -21,7 +21,7 @@ ColumnLayout {
         ControlButton { objectName: "spokenPlayPause"; text: controls.player.playing ? "Ⅱ" : "▶"; onClicked: controls.player.playPause() }
         ControlButton { objectName: "spokenForward30"; text: "30 ↷"; enabled: !controls.player.stopped; onClicked: controls.player.seekMs(Math.min(controls.player.durationMs, controls.player.positionMs + 30000)) }
         ControlButton { visible: controls.compact; text: controls.player.playbackRate + "×"; onClicked: rateMenu.popup() }
-        ControlButton { visible: controls.compact; text: "+ mark"; enabled: !!controls.current.spokenId && !controls.player.stopped; onClicked: SpokenMediaService.addBookmark(controls.current.spokenId, controls.player.positionMs, "") }
+        ControlButton { visible: controls.compact; text: qsTr("+ mark"); enabled: !!controls.current.spokenId && !controls.player.stopped; onClicked: SpokenMediaService.addBookmark(controls.current.spokenId, controls.player.positionMs, "") }
         ControlButton { visible: controls.compact; text: "···"; onClicked: optionsMenu.popup() }
     }
     Text {
@@ -34,7 +34,7 @@ ColumnLayout {
         Layout.alignment: Qt.AlignHCenter
         spacing: Theme.spaceXxs
         ControlButton { objectName: "spokenRate"; text: controls.player.playbackRate.toFixed(2).replace(/0$/, "") + "×"; onClicked: rateMenu.popup() }
-        ControlButton { objectName: "spokenBookmark"; text: "+ mark"; enabled: !!controls.current.spokenId && !controls.player.stopped; onClicked: SpokenMediaService.addBookmark(controls.current.spokenId, controls.player.positionMs, "") }
+        ControlButton { objectName: "spokenBookmark"; text: qsTr("+ mark"); enabled: !!controls.current.spokenId && !controls.player.stopped; onClicked: SpokenMediaService.addBookmark(controls.current.spokenId, controls.player.positionMs, "") }
         ControlButton { objectName: "spokenOptions"; text: "···"; onClicked: optionsMenu.popup() }
     }
     ZuneMenu {
@@ -46,14 +46,14 @@ ColumnLayout {
     }
     ZuneMenu {
         id: optionsMenu
-        ZuneMenuItem { text: "open now playing"; visible: controls.showIslandButton; onTriggered: controls.islandRequested() }
-        ZuneMenuItem { text: "previous chapter / part"; visible: controls.book; enabled: !controls.player.stopped; onTriggered: SpokenMediaService.skipChapter(-1) }
-        ZuneMenuItem { text: "next chapter / part"; visible: controls.book; enabled: !controls.player.stopped; onTriggered: SpokenMediaService.skipChapter(1) }
-        ZuneMenuItem { text: "mark played"; enabled: !!controls.current.spokenId; onTriggered: SpokenMediaService.markPlayed(controls.current.spokenId, true) }
-        ZuneMenuItem { text: "sleep in 15 minutes"; enabled: !controls.player.stopped; onTriggered: controls.player.setSleepMinutes(15) }
-        ZuneMenuItem { text: "sleep in 30 minutes"; enabled: !controls.player.stopped; onTriggered: controls.player.setSleepMinutes(30) }
-        ZuneMenuItem { text: "sleep in 60 minutes"; enabled: !controls.player.stopped; onTriggered: controls.player.setSleepMinutes(60) }
-        ZuneMenuItem { text: "cancel sleep timer"; visible: controls.player.sleepMinutes > 0; onTriggered: controls.player.setSleepMinutes(0) }
+        ZuneMenuItem { text: qsTr("open now playing"); visible: controls.showIslandButton; onTriggered: controls.islandRequested() }
+        ZuneMenuItem { text: qsTr("previous chapter / part"); visible: controls.book; enabled: !controls.player.stopped; onTriggered: SpokenMediaService.skipChapter(-1) }
+        ZuneMenuItem { text: qsTr("next chapter / part"); visible: controls.book; enabled: !controls.player.stopped; onTriggered: SpokenMediaService.skipChapter(1) }
+        ZuneMenuItem { text: qsTr("mark played"); enabled: !!controls.current.spokenId; onTriggered: SpokenMediaService.markPlayed(controls.current.spokenId, true) }
+        ZuneMenuItem { text: qsTr("sleep in 15 minutes"); enabled: !controls.player.stopped; onTriggered: controls.player.setSleepMinutes(15) }
+        ZuneMenuItem { text: qsTr("sleep in 30 minutes"); enabled: !controls.player.stopped; onTriggered: controls.player.setSleepMinutes(30) }
+        ZuneMenuItem { text: qsTr("sleep in 60 minutes"); enabled: !controls.player.stopped; onTriggered: controls.player.setSleepMinutes(60) }
+        ZuneMenuItem { text: qsTr("cancel sleep timer"); visible: controls.player.sleepMinutes > 0; onTriggered: controls.player.setSleepMinutes(0) }
     }
-    Text { Layout.alignment: Qt.AlignHCenter; visible: controls.player.sleepMinutes > 0; text: "sleep timer on"; color: Theme.activePink; font.pixelSize: Theme.spokenCaption }
+    Text { Layout.alignment: Qt.AlignHCenter; visible: controls.player.sleepMinutes > 0; text: qsTr("sleep timer on"); color: Theme.activePink; font.pixelSize: Theme.spokenCaption }
 }

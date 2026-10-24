@@ -15,6 +15,9 @@
 #include <QQuickWindow>
 #include <QStandardPaths>
 #include <QSettings>
+#include <QLibraryInfo>
+#include <QLocale>
+#include <QTranslator>
 #include <QThreadPool>
 #include <QScopeGuard>
 #include <cstdio>
@@ -43,6 +46,92 @@
 #include "diagnostics/SessionLog.h"
 #include "library/NetworkAccess.h"
 #include "sync/SyncEngine.h"
+
+namespace {
+// UI language, 2026-10-24.
+//
+// AppSettings::uiLanguage is the *request* ("system" | "en" | "zh_CN"); this is
+// the decision, and it is taken here exactly once because a QTranslator
+// installed after the QML engine has evaluated its bindings repaints nothing -
+// which is precisely the thing Settings must not imply.  A build without the
+// catalogue says so on the log instead of quietly staying English, and the
+// answer this process chose is handed to DiagnosticsService so the Language
+// card can tell a request apart from what is actually on screen.
+void installUiLanguage()
+{
+    const QString requested = QSettings()
+                                  .value(QStringLiteral("uiLanguage"), QStringLiteral("system"))
+                                  .toString();
+    QString wanted = requested;
+    if (wanted != QLatin1String("en") && wanted != QLatin1String("zh_CN")) {
+        // "system", and any typo an ini edit can produce, resolves the same way.
+        wanted = QLocale::system().language() == QLocale::Chinese
+                     ? QStringLiteral("zh_CN")
+                     : QStringLiteral("en");
+    }
+    if (wanted != QLatin1String("zh_CN")) {
+        DiagnosticsService::setUiLanguageApplied(QStringLiteral("en"));
+        std::fprintf(stderr, "[i18n] UI language en (setting was \"%s\")\n",
+                     qUtf8Printable(requested));
+        return;
+    }
+
+    auto *own = new QTranslator(qApp);
+    // A translation is data, not code.  The editable source of truth is
+    // i18n/zh_CN.tsv; i18n/build_qm.ps1 turns it into a .qm with lrelease, and a
+    // .qm in an i18n folder next to the executable - or in the folder named by
+    // ZUUNED_I18N_DIR - is used in preference to the copy compiled into the
+    // binary, so rewording the interface is a file edit and a restart rather
+    // than a build.  qt_add_translations() still builds i18n/zuuned_zh_CN.ts
+    // into :/i18n as the fallback a plain checkout gets; a configure with no
+    // LinguistTools has neither, which is a packaging difference, not a runtime
+    // one.
+    QString catalogue = QStringLiteral("compiled in");
+    bool haveOwn = false;
+    const QString fromEnv = qEnvironmentVariable("ZUUNED_I18N_DIR");
+    const QString beside = QGuiApplication::applicationDirPath() + QStringLiteral("/i18n");
+    for (const QString &dir : {fromEnv, beside}) {
+        if (dir.isEmpty())
+            continue;
+        if (own->load(QStringLiteral("zuuned_zh_CN"), dir)) {
+            haveOwn = true;
+            catalogue = dir;
+            break;
+        }
+    }
+    if (!haveOwn)
+        haveOwn = own->load(QStringLiteral("zuuned_zh_CN"), QStringLiteral(":/i18n"));
+    if (haveOwn) {
+        QCoreApplication::installTranslator(own);
+    } else {
+        delete own;
+        std::fprintf(stderr,
+                     "[i18n] zh_CN requested but no zuuned_zh_CN catalogue is "
+                     "compiled into this build or sitting beside it; staying English\n");
+        DiagnosticsService::setUiLanguageApplied(QStringLiteral("en"));
+        return;
+    }
+    // Qt's own words - the standard file dialog buttons, Calendar and the
+    // Controls the Basic style still delegates to.  Best effort: whichever
+    // base has a shipped zh_CN .qm next to this Qt answers.
+    QString qtAnswered;
+    for (const char *base : {"qtbase", "qtquickdialogs2", "qtquickcontrols2"}) {
+        auto *qt = new QTranslator(qApp);
+        if (qt->load(QLocale(QStringLiteral("zh_CN")), QString::fromLatin1(base), "_",
+                     QLibraryInfo::path(QLibraryInfo::TranslationsPath))) {
+            QCoreApplication::installTranslator(qt);
+            qtAnswered += QString::fromLatin1(base) + QLatin1Char(' ');
+        } else {
+            delete qt;
+        }
+    }
+    DiagnosticsService::setUiLanguageApplied(QStringLiteral("zh_CN"));
+    std::fprintf(stderr, "[i18n] UI language zh_CN; catalogue %s; Qt catalogues: %s\n",
+                 qUtf8Printable(catalogue),
+                 qtAnswered.isEmpty() ? "none" : qUtf8Printable(qtAnswered.trimmed()));
+}
+
+} // namespace
 
 int main(int argc, char *argv[]) {
 #ifdef Q_OS_WIN
@@ -150,6 +239,7 @@ int main(int argc, char *argv[]) {
         }
     }
 #endif
+    installUiLanguage();
     Zuuned::configureApplicationIdentity(app);
     std::fprintf(stderr, "[zuuned] %s; Qt runtime %s\n", ZuunedBuild::version, qVersion());
 

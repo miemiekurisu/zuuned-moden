@@ -79,13 +79,14 @@ Popup {
             id: modeTabs
             objectName: "podcastSelectionMode"
             tabs: ["Newest", "Oldest", "Manual"]
+            labels: [qsTr("Newest"), qsTr("Oldest"), qsTr("Manual")]
             current: "Newest"
             onCurrentChanged: picker.mode = current.toLowerCase()
         }
         RowLayout {
             visible: picker.mode !== "manual"
             Layout.fillWidth: true
-            Text { text: "Episodes"; color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
+            Text { text: qsTr("Episodes"); color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
             SpokenButton { text: "−"; enabled: picker.episodeCount > 1; onClicked: picker.episodeCount-- }
             ZuneSearchField {
                 id: countField
@@ -94,7 +95,7 @@ Popup {
                 text: String(picker.episodeCount)
                 validator: IntValidator { bottom: 1; top: 5000 }
                 inputMethodHints: Qt.ImhDigitsOnly
-                Accessible.name: "Number of podcast episodes"
+                Accessible.name: qsTr("Number of podcast episodes")
                 onEditingFinished: { if (acceptableInput) picker.episodeCount = Number(text); text = String(picker.episodeCount) }
             }
             SpokenButton { text: "+"; enabled: picker.episodeCount < 5000; onClicked: picker.episodeCount++ }
@@ -104,15 +105,15 @@ Popup {
             visible: picker.mode !== "manual"
             SpokenCheckBox {
                 objectName: "podcastSelectionUnplayed"
-                Accessible.name: "Only unplayed episodes"
+                Accessible.name: qsTr("Only unplayed episodes")
                 checked: picker.unplayedOnly
                 onClicked: picker.unplayedOnly = !picker.unplayedOnly
             }
-            Text { text: "Only unplayed episodes"; color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
+            Text { text: qsTr("Only unplayed episodes"); color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
         }
         Text {
             Layout.fillWidth: true
-            text: "Choose how many newest or oldest episodes you want. Episodes already on this Zune are marked and stay out of the queue. Review the selection before adding it to the queue. Downloads happen during sync. To replay a cleaned-up episode, choose Keep on Zune from its right-click menu."
+            text: qsTr("Choose how many newest or oldest episodes you want. Episodes already on this Zune are marked and stay out of the queue. Review the selection before adding it to the queue. Downloads happen during sync. To replay a cleaned-up episode, choose Keep on Zune from its right-click menu.")
             wrapMode: Text.Wrap; color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption
         }
         ListView {
@@ -134,15 +135,15 @@ Popup {
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: Theme.spaceXxs
                     Text { Layout.fillWidth: true; text: modelData.title; elide: Text.ElideRight; color: Theme.textPrimary; font.pixelSize: Theme.spokenBody }
-                    Text { Layout.fillWidth: true; text: (modelData.published ? new Date(modelData.published).toLocaleDateString() : "date unknown") + (podcastStatus.played(modelData) ? " · " + podcastStatus.playedLabel(modelData) : "") + (modelData.keepOnDevice ? " · kept on Zune" : ""); elide: Text.ElideRight; color: Theme.textDim; font.pixelSize: Theme.spokenCaption }
+                    Text { Layout.fillWidth: true; text: (modelData.published ? new Date(modelData.published).toLocaleDateString() : qsTr("date unknown")) + (podcastStatus.played(modelData) ? " · " + podcastStatus.playedLabel(modelData) : "") + (modelData.keepOnDevice ? qsTr(" · kept on Zune") : ""); elide: Text.ElideRight; color: Theme.textDim; font.pixelSize: Theme.spokenCaption }
                 }
             }
-            Text { anchors.centerIn: parent; visible: picker.rows.length === 0; text: "No episodes match this selection"; color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
+            Text { anchors.centerIn: parent; visible: picker.rows.length === 0; text: qsTr("No episodes match this selection"); color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
         }
         RowLayout {
             Layout.fillWidth: true
-            Text { Layout.fillWidth: true; text: picker.selectedIds.length + " selected"; color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
-            SpokenButton { objectName: "podcastSelectionAdd"; text: "add to queue"; highlighted: true; enabled: DeviceService.connected && !SyncEngine.isSyncing && picker.selectedIds.length > 0 && (picker.mode === "manual" || countField.acceptableInput); onClicked: picker.addSelection() }
+            Text { Layout.fillWidth: true; text: qsTr("%1 selected").arg(picker.selectedIds.length); color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
+            SpokenButton { objectName: "podcastSelectionAdd"; text: qsTr("add to queue"); highlighted: true; enabled: DeviceService.connected && !SyncEngine.isSyncing && picker.selectedIds.length > 0 && (picker.mode === "manual" || countField.acceptableInput); onClicked: picker.addSelection() }
         }
     }
 }

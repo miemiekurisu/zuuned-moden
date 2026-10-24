@@ -12,8 +12,10 @@
 
 #include "DeviceWorker.h"
 #include "TrackImportBatch.h"
+#include "DeviceHistory.h"
 #include "TrackModel.h"
 #include "library/MusicIdentity.h"
+#include "UiText.h"
 
 class UsbWatcher;
 class LibraryService;
@@ -79,6 +81,10 @@ class DeviceService : public QObject {
     Q_PROPERTY(int pullTotal READ pullTotal NOTIFY pullChanged)
     Q_PROPERTY(QString pullNoun READ pullNoun NOTIFY pullChanged)
     Q_PROPERTY(TrackModel *tracks READ tracks CONSTANT)
+    // Every player this profile has connected to, newest sighting first, plus
+    // the one on the cable right now (the ordinary name/model/serial
+    // properties above).  See DeviceHistory.h for what a row is and is not.
+    Q_PROPERTY(QObject *deviceHistory READ deviceHistory CONSTANT)
     Q_PROPERTY(int trackCount READ trackCount NOTIFY stateChanged)
     Q_PROPERTY(int albumCount READ albumCount NOTIFY stateChanged)
     Q_PROPERTY(int artistCount READ artistCount NOTIFY stateChanged)
@@ -211,6 +217,7 @@ public:
             emit workerRefreshStorage();
     }
     TrackModel *tracks() { return &m_tracks; }
+    QObject *deviceHistory() { return m_deviceHistory; }
     int trackCount() const { return m_trackCount; }
     int albumCount() const { return m_albumCount; }
     int artistCount() const { return m_artistCount; }
@@ -431,7 +438,7 @@ private:
     // mistaken for the blocked case, or the other way round.
     QString m_usbBlockDetail;
     bool m_blockedPresence = false;
-    QString m_status = QStringLiteral("Waiting for a Zune…");
+    QString m_status = UiText::tr("Waiting for a Zune…");
     QString m_name, m_model;
     QString m_serial;
     int m_family = 0xFF;
@@ -445,6 +452,7 @@ private:
     QString m_pullNoun = QStringLiteral("item");
     void notePullDone(bool ok);   // one extract finished (import path)
     TrackModel m_tracks;
+    DeviceHistory *m_deviceHistory = nullptr;
     int m_trackCount = 0, m_albumCount = 0, m_artistCount = 0;
     QVariantList m_artistsList, m_albumsList, m_genresList;
     QVariantList m_videosList, m_photosList, m_playlistsList;

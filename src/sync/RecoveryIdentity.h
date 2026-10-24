@@ -2,6 +2,7 @@
 #include <QVariantMap>
 #include <QVariantList>
 #include <cmath>
+#include "../UiText.h"
 
 // Deletion requires evidence for one exact newly-created object. A title or
 // even a unique title match is never authority to delete existing media.
@@ -13,13 +14,13 @@ inline quint32 objectId(const QVariant &value) {
         ? quint32(id) : 0;
 }
 inline QString refusal(const QVariantMap &record, const QString &serial) {
-    const QString manual = QStringLiteral("Recovery cannot identify one safe object. Review the device library manually; nothing was deleted.");
+    const QString manual = UiText::tr("Recovery cannot identify one safe object. Review the device library manually; nothing was deleted.");
     if (record.value("version").toInt() != 1
         || (record.value("type") != "music" && record.value("type") != "photo")
         || record.value("token").toString().isEmpty()) return manual;
     if (serial.isEmpty() || record.value("serial").toString().isEmpty()
         || record.value("serial").toString() != serial)
-        return QStringLiteral("Connect the original Zune with a readable serial number. Nothing was deleted.");
+        return UiText::tr("Connect the original Zune with a readable serial number. Nothing was deleted.");
     const quint32 id = objectId(record.value("itemId"));
     if (!id || record.value("baselineIds").metaType().id() != QMetaType::QVariantList) return manual;
     for (const auto &previous : record.value("baselineIds").toList())

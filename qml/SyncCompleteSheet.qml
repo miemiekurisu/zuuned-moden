@@ -54,14 +54,14 @@ Popup {
         Text {
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: Theme.spaceSm
-            text: "sync completed"
+            text: qsTr("sync completed")
             font.family: Theme.displayFamily
             font.pixelSize: 26
             color: Theme.textPrimary
         }
         Text {
             Layout.alignment: Qt.AlignHCenter
-            text: "in " + sheet.fmtElapsed(sheet.elapsedMs)
+            text: qsTr("in %1").arg(sheet.fmtElapsed(sheet.elapsedMs))
             font.pixelSize: 14
             color: Theme.pink
         }
@@ -93,18 +93,19 @@ Popup {
                     color: Theme.textPrimary
                 }
             }
-            CountRow { glyph: "▤"; label: "book part"; count: sheet.audiobooks }
-            CountRow { glyph: "🎙"; label: "podcast"; count: sheet.podcasts }
-            CountRow { glyph: "🎵"; label: "song"; count: sheet.tracks }
-            CountRow { glyph: "🎬"; label: "video"; count: sheet.videos }
-            CountRow { glyph: "🖼"; label: "photo"; count: sheet.photos }
+            CountRow { glyph: "▤"; label: qsTr("book part"); count: sheet.audiobooks }
+            CountRow { glyph: "🎙"; label: qsTr("podcast"); count: sheet.podcasts }
+            CountRow { glyph: "🎵"; label: qsTr("song"); count: sheet.tracks }
+            CountRow { glyph: "🎬"; label: qsTr("video"); count: sheet.videos }
+            CountRow { glyph: "🖼"; label: qsTr("photo"); count: sheet.photos }
         }
 
         Text {
             objectName: "syncPodcastsRemoved"
             Layout.alignment: Qt.AlignHCenter
             visible: sheet.podcastsRemoved > 0
-            text: sheet.podcastsRemoved + (sheet.podcastsRemoved === 1 ? " played podcast removed" : " played podcasts removed")
+            text: (sheet.podcastsRemoved === 1 ? qsTr("1 played podcast removed")
+              : qsTr("%1 played podcasts removed").arg(sheet.podcastsRemoved))
             font.pixelSize: Theme.spokenBody
             color: Theme.textPrimary
         }
@@ -121,21 +122,21 @@ Popup {
         Text {
             Layout.alignment: Qt.AlignHCenter
             visible: sheet.skipped > 0
-            text: sheet.skipped + " skipped"
+            text: qsTr("%1 skipped").arg(sheet.skipped)
             font.pixelSize: 12
             color: Theme.textDim
         }
         Text {
             Layout.alignment: Qt.AlignHCenter
             visible: sheet.failed > 0
-            text: sheet.failed + " failed — still in the queue for retry"
+            text: qsTr("%1 failed — still in the queue for retry").arg(sheet.failed)
             font.pixelSize: 12
             color: Theme.warning
         }
         Text {
             Layout.alignment: Qt.AlignHCenter
             visible: sheet.tracks + sheet.videos + sheet.photos + sheet.podcasts + sheet.audiobooks === 0
-            text: "nothing new to send"
+            text: qsTr("nothing new to send")
             font.pixelSize: 13
             color: Theme.textDim
         }
@@ -143,7 +144,7 @@ Popup {
         DetailActionButton {
             Layout.alignment: Qt.AlignHCenter
             Layout.bottomMargin: Theme.spaceSm
-            title: "Nice"
+            title: qsTr("Nice")
             kind: "accent"
             onClicked: sheet.close()
         }

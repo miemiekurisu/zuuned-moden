@@ -375,7 +375,7 @@ Item {
             // Centered on x — matches the library island's nav (pair)
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.verticalCenter: parent.verticalCenter
-            text: browseBtn.dropHover ? "＋ zune" : browseBtn.title
+            text: browseBtn.dropHover ? qsTr("＋ zune") : browseBtn.title
             font.pixelSize: browseBtn.dropHover ? 28
                             : (browseBtn.active ? 36
                                : (browseBtn.hovering ? 28 : 24))
@@ -426,7 +426,7 @@ Item {
             spacing: 0
 
             Text {
-                text: "ZUNE"
+                text: qsTr("ZUNE")
                 Layout.alignment: Qt.AlignHCenter
                 font.pixelSize: 14
                 font.weight: Font.Light
@@ -481,7 +481,7 @@ Item {
                     width: parent.width
                     visible: deviceNameSlot.editing
                     font.pixelSize: 18
-                    placeholderText: "zune name"
+                    placeholderText: qsTr("zune name")
                     onAccepted: {
                         if (text.trim() !== "")
                             DeviceService.renameDevice(text.trim())
@@ -504,7 +504,7 @@ Item {
                 Text {
                     text: DeviceService.modelName
                           + (DeviceService.capacityGB > 0
-                                 ? " · " + Math.round(DeviceService.capacityGB) + "GB"
+                                 ? " · " + qsTr("%1GB").arg(Math.round(DeviceService.capacityGB))
                                  : "")
                     font.pixelSize: 12
                     color: Theme.pink
@@ -557,7 +557,7 @@ Item {
             // mistakes patience for a hang.
             Text {
                 visible: SyncEngine.syncPhase === "transcoding"
-                text: "converting for your zune — large videos take a few minutes"
+                text: qsTr("converting for your zune — large videos take a few minutes")
                 font.pixelSize: 9
                 font.weight: Font.Light
                 color: Theme.textDim
@@ -595,9 +595,9 @@ Item {
                 }
                 Text {
                     Layout.fillWidth: true
-                    text: "deleting from your zune · "
-                          + DeviceService.purgeCurrent + " of "
-                          + DeviceService.purgeTotal
+                    text: qsTr("deleting from your zune · %1 of %2")
+                          .arg(DeviceService.purgeCurrent)
+                          .arg(DeviceService.purgeTotal)
                     font.pixelSize: 11
                     font.weight: Font.Light
                     color: Theme.pink
@@ -640,8 +640,8 @@ Item {
                 }
                 Text {
                     Layout.fillWidth: true
-                    text: "pulling to library · " + DeviceService.pullCurrent
-                          + " of " + DeviceService.pullTotal
+                    text: qsTr("pulling to library · %1 of %2")
+                      .arg(DeviceService.pullCurrent).arg(DeviceService.pullTotal)
                     font.pixelSize: 11
                     font.weight: Font.Light
                     color: Theme.green
@@ -666,11 +666,11 @@ Item {
                 id: tabRow
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: Theme.spaceLg
-                PanelTabItem { tabId: "device" }
-                PanelTabItem { tabId: "stats" }
+                PanelTabItem { tabId: "device"; label: qsTr("device") }
+                PanelTabItem { tabId: "stats"; label: qsTr("stats") }
                 PanelTabItem {
                     tabId: "queue"
-                    label: root.queueCount > 0 ? "queue (" + root.queueCount + ")" : "queue"
+                    label: root.queueCount > 0 ? qsTr("queue (%1)").arg(root.queueCount) : qsTr("queue")
                 }
             }
 
@@ -720,7 +720,7 @@ Item {
                         spacing: Theme.spaceSm
 
                         Text {
-                            text: "a transfer needs review"
+                            text: qsTr("a transfer needs review")
                             font.pixelSize: 12
                             font.weight: Font.DemiBold
                             color: Theme.error
@@ -728,9 +728,8 @@ Item {
                             Layout.fillWidth: true
                         }
                         Text {
-                            text: "'" + SyncEngine.interruptedSend
-                                  + "' could not be confirmed complete or removed."
-                                  + " Review it in the device library before playback."
+                            text: qsTr("'%1' could not be confirmed complete or removed. Review it in the device library before playback.")
+                                  .arg(SyncEngine.interruptedSend)
                             font.pixelSize: 11
                             font.weight: Font.Light
                             color: Theme.textSecondary
@@ -742,7 +741,7 @@ Item {
                             spacing: Theme.spaceMd
 
                             Text {
-                                text: "dismiss"
+                                text: qsTr("dismiss")
                                 font.pixelSize: 11
                                 color: orphanDismiss.containsMouse
                                        ? Theme.textPrimary : Theme.textDim
@@ -758,7 +757,7 @@ Item {
                             Item { Layout.fillWidth: true }
                             // primary action rightmost (house rule)
                             Text {
-                                text: "delete it from the zune"
+                                text: qsTr("delete it from the zune")
                                 font.pixelSize: 11
                                 font.weight: Font.DemiBold
                                 color: orphanPurge.containsMouse
@@ -771,9 +770,10 @@ Item {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
                                         const n = SyncEngine.purgeInterruptedSend()
-                                        toastHost.show(n > 0
-                                            ? "deleting " + n + " item(s) — eject to re-index"
-                                            : (SyncEngine.interruptedRecoveryStatus || "recovery remains pending — review the device library"))
+                                            toastHost.show(n > 0
+                                                ? qsTr("deleting %1 item(s) — eject to re-index").arg(n)
+                                                : (SyncEngine.interruptedRecoveryStatus
+                                                   || qsTr("recovery remains pending — review the device library")))
                                     }
                                 }
                             }
@@ -795,12 +795,12 @@ Item {
                         // No offset — labels center on x (pair rule)
                         spacing: Theme.spaceMd
 
-                        BrowseButton { title: "music"; page: "deviceMusic" }
-                        BrowseButton { title: "videos"; page: "deviceVideos" }
-                        BrowseButton { title: "photos"; page: "devicePictures" }
-                        BrowseButton { title: "playlists"; page: "devicePlaylists" }
-                        BrowseButton { title: "podcasts"; page: "devicePodcasts" }
-                        BrowseButton { title: "audiobooks"; page: "deviceAudiobooks" }
+                        BrowseButton { title: qsTr("music"); page: "deviceMusic" }
+                        BrowseButton { title: qsTr("videos"); page: "deviceVideos" }
+                        BrowseButton { title: qsTr("photos"); page: "devicePictures" }
+                        BrowseButton { title: qsTr("playlists"); page: "devicePlaylists" }
+                        BrowseButton { title: qsTr("podcasts"); page: "devicePodcasts" }
+                        BrowseButton { title: qsTr("audiobooks"); page: "deviceAudiobooks" }
                     }
 
                     Item { Layout.fillHeight: true }
@@ -826,9 +826,10 @@ Item {
                         }
                         Text {
                             Layout.alignment: Qt.AlignHCenter
-                            text: (DeviceService.capacityGB - DeviceService.freeGB)
-                                      .toFixed(1) + " GB used · "
-                                  + DeviceService.freeGB.toFixed(1) + " GB free"
+                            text: qsTr("%1 GB used · %2 GB free")
+                                      .arg((DeviceService.capacityGB - DeviceService.freeGB)
+                                           .toFixed(1))
+                                      .arg(DeviceService.freeGB.toFixed(1))
                             font.pixelSize: 11
                             font.weight: Font.Light
                             color: Theme.textDim
@@ -875,25 +876,25 @@ Item {
                         // there are mis-parsed garbage, not sizes.
                         StatBlock {
                             count: DeviceService.trackCount
-                            label: "TRACKS"
+                            label: qsTr("TRACKS")
                             gb: statsTab.breakdownKnown ? DeviceService.musicGB : 0
                             chip: Theme.pink
                         }
                         StatBlock {
                             count: root.videoCount
-                            label: "VIDEOS"
+                            label: qsTr("VIDEOS")
                             gb: statsTab.breakdownKnown ? DeviceService.videoGB : 0
                             chip: Theme.orange
                         }
                         StatBlock {
                             count: root.photoCount
-                            label: "PHOTOS"
+                            label: qsTr("PHOTOS")
                             gb: statsTab.breakdownKnown ? DeviceService.photoGB : 0
                             chip: Theme.purple
                         }
                         StatBlock {
                             count: root.playlistCount
-                            label: "PLAYLISTS"
+                            label: qsTr("PLAYLISTS")
                             gb: 0
                             chip: "transparent"
                         }
@@ -972,8 +973,8 @@ Item {
                         }
                         Text {
                             Layout.alignment: Qt.AlignHCenter
-                            text: statsTab.usedGB.toFixed(1) + " GB used · "
-                                  + DeviceService.freeGB.toFixed(1) + " GB free"
+                            text: qsTr("%1 GB used · %2 GB free")
+                              .arg(statsTab.usedGB.toFixed(1)).arg(DeviceService.freeGB.toFixed(1))
                             font.pixelSize: 11
                             font.weight: Font.Light
                             color: Theme.textDim
@@ -1006,10 +1007,8 @@ Item {
                             id: mismatchText
                             anchors.fill: parent
                             anchors.margins: Theme.spaceMd
-                            text: "this queue was built for "
-                                  + SyncEngine.queueBuiltFor.split("|")[0]
-                                  + " — anything already on THIS zune gets"
-                                  + " skipped at sync"
+                            text: qsTr("this queue was built for %1 — anything already on THIS zune gets skipped at sync")
+                                  .arg(SyncEngine.queueBuiltFor.split("|")[0])
                             font.pixelSize: 10
                             font.weight: Font.Light
                             color: Theme.textSecondary
@@ -1026,22 +1025,25 @@ Item {
                         text: {
                             const s = SyncEngine.lastSync
                             const parts = []
-                            if (s.podcasts > 0) parts.push(s.podcasts + " podcasts")
-                            if (s.tracks > 0) parts.push(s.tracks + " tracks")
-                            if (s.videos > 0) parts.push(s.videos + " videos")
-                            if (s.photos > 0) parts.push(s.photos + " photos")
-                            let line = "last sync: "
-                                + (parts.length ? parts.join(", ") : "nothing new")
-                            if (s.podcastsRemoved > 0) line += " · " + s.podcastsRemoved + " played podcasts removed"
+                            if (s.podcasts > 0) parts.push(qsTr("%1 podcasts").arg(s.podcasts))
+                            if (s.tracks > 0) parts.push(qsTr("%1 tracks").arg(s.tracks))
+                            if (s.videos > 0) parts.push(qsTr("%1 videos").arg(s.videos))
+                            if (s.photos > 0) parts.push(qsTr("%1 photos").arg(s.photos))
+                            let line = qsTr("last sync: %1").arg(
+                                parts.length ? parts.join(", ") : qsTr("nothing new"))
+                            if (s.podcastsRemoved > 0)
+                                line += qsTr(" · %1 played podcasts removed").arg(s.podcastsRemoved)
                             if (s.podcastCleanupWarning) line += " · " + s.podcastCleanupWarning
-                            if (s.skipped > 0) line += " · " + s.skipped + " skipped"
-                            if (s.failed > 0) line += " · " + s.failed + " FAILED"
+                            if (s.skipped > 0)
+                                line += qsTr(" · %1 skipped").arg(s.skipped)
+                            if (s.failed > 0)
+                                line += qsTr(" · %1 FAILED").arg(s.failed)
                             const mins = Math.floor(
                                 (Date.now() / 1000 - s.when) / 60)
-                            line += mins < 1 ? " · just now"
-                                : mins < 60 ? " · " + mins + "m ago"
-                                : mins < 1440 ? " · " + Math.floor(mins / 60) + "h ago"
-                                : " · " + Math.floor(mins / 1440) + "d ago"
+                            line += mins < 1 ? qsTr(" · just now")
+                                : mins < 60 ? qsTr(" · %1m ago").arg(mins)
+                                : mins < 1440 ? qsTr(" · %1h ago").arg(Math.floor(mins / 60))
+                                : qsTr(" · %1d ago").arg(Math.floor(mins / 1440))
                             return line
                         }
                         font.pixelSize: 10
@@ -1056,7 +1058,7 @@ Item {
                         spacing: Theme.spaceSm
 
                         Text {
-                            text: "QUEUE"
+                            text: qsTr("QUEUE")
                             font.pixelSize: 11
                             font.weight: Font.DemiBold
                             font.letterSpacing: 2
@@ -1085,7 +1087,7 @@ Item {
 
                     Text {
                         visible: queueRepeater.count === 0
-                        text: "no items queued"
+                        text: qsTr("no items queued")
                         font.pixelSize: 11
                         font.weight: Font.Light
                         color: Theme.textDim
@@ -1192,13 +1194,11 @@ Item {
                         horizontalAlignment: Text.AlignHCenter
                         // Same rule as the modal: say what's LEFT
                         // after the sync, not a subtraction problem.
-                        text: "~" + capacityBar.fmtGB(capacityBar.queuedGB)
-                              + " queued"
+                        text: qsTr("~%1 queued").arg(capacityBar.fmtGB(capacityBar.queuedGB))
                               + (DeviceService.connected
-                                 ? " · ~" + capacityBar.fmtGB(
+                                 ? qsTr(" · ~%1 left after").arg(capacityBar.fmtGB(
                                        Math.max(0, capacityBar.freeGB
-                                                   - capacityBar.queuedGB))
-                                   + " left after"
+                                                   - capacityBar.queuedGB)))
                                  : "")
                         font.pixelSize: 10
                         font.weight: Font.Light
@@ -1211,7 +1211,7 @@ Item {
                 // Action bottom-RIGHT (house rule)
                 AccentButton {
                     Layout.alignment: Qt.AlignRight
-                    title: "sync now"
+                    title: qsTr("sync now")
                     disabled: (root.queueCount === 0 && !AppSettings.podcastAutoCleanup) || !DeviceService.connected || root.isSyncing
                     onClicked: SyncEngine.startSync()
                 }
@@ -1225,7 +1225,10 @@ Item {
                         Layout.fillWidth: true
                         Text {
                             text: root.syncTotalCount > 0
-                                  ? "syncing " + root.syncCurrentIndex + "/" + root.syncTotalCount + ": " + root.syncCurrentName
+                                  ? qsTr("syncing %1/%2: %3")
+                                        .arg(root.syncCurrentIndex)
+                                        .arg(root.syncTotalCount)
+                                        .arg(root.syncCurrentName)
                                   : root.syncCurrentName
                             font.pixelSize: 11
                             font.weight: Font.Light
@@ -1234,7 +1237,7 @@ Item {
                             Layout.fillWidth: true
                         }
                         Text {
-                            text: "cancel"
+                            text: qsTr("cancel")
                             font.pixelSize: 11
                             font.weight: Font.Light
                             color: cancelArea.containsMouse
@@ -1260,19 +1263,19 @@ Item {
                     spacing: Theme.spaceXs
 
                     Text {
-                        text: "sync complete"
+                        text: qsTr("sync complete")
                         font.pixelSize: 14
                         font.weight: Font.Light
                         color: Theme.green
                     }
                     Text {
-                        text: "disconnect your Zune to apply changes"
+                        text: qsTr("disconnect your Zune to apply changes")
                         font.pixelSize: 11
                         font.weight: Font.Light
                         color: Theme.textSecondary
                     }
                     AccentButton {
-                        title: "eject"
+                        title: qsTr("eject")
                         onClicked: DeviceService.eject()
                     }
                 }
@@ -1328,7 +1331,7 @@ Item {
                         color: Theme.green
                     }
                     Text {
-                        text: "Connected"
+                        text: qsTr("Connected")
                         font.pixelSize: 12
                         font.weight: Font.Light
                         font.letterSpacing: 1
@@ -1340,7 +1343,7 @@ Item {
 
                 Text {
                     id: ejectLabel
-                    text: "eject"
+                    text: qsTr("eject")
                     font.pixelSize: 13
                     font.weight: Font.Light
                     color: ejectArea.containsMouse ? Theme.textPrimary : Theme.textSecondary
@@ -1374,7 +1377,7 @@ Item {
         spacing: 0
 
         Text {
-            text: "ZUNE"
+            text: qsTr("ZUNE")
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: Theme.spaceXl
             font.pixelSize: 14
@@ -1401,7 +1404,7 @@ Item {
                 horizontalAlignment: Text.AlignHCenter
                 text: DeviceService.busy || DeviceService.devicePresent
                       ? DeviceService.status
-                      : "waiting for a zune…"
+                      : qsTr("waiting for a zune…")
                 font.pixelSize: 12
                 font.weight: Font.Light
                 color: Theme.textDim
@@ -1470,8 +1473,8 @@ Item {
                         // click, and nothing to click where it cannot.
                         visible: DeviceService.usbAccessFixable
                         width: parent.width
-                        text: udevCol.showManual ? "hide the manual command"
-                                                : "trouble? show the manual command"
+                        text: udevCol.showManual ? qsTr("hide the manual command")
+                                                : qsTr("trouble? show the manual command")
                         font.pixelSize: 10
                         wrapMode: Text.WordWrap
                         color: manualArea.containsMouse
@@ -1499,7 +1502,7 @@ Item {
                         Text {
                             id: fixLabel
                             anchors.centerIn: parent
-                            text: "Fix it for me"
+                            text: qsTr("Fix it for me")
                             font.pixelSize: 12
                             font.weight: Font.DemiBold
                             color: Theme.textPrimary
@@ -1564,7 +1567,7 @@ Item {
                 color: Theme.error
             }
             Text {
-                text: "Disconnected"
+                text: qsTr("Disconnected")
                 font.pixelSize: 12
                 font.weight: Font.Light
                 font.letterSpacing: 1
@@ -1572,7 +1575,7 @@ Item {
             }
             Item { Layout.fillWidth: true }
             AccentButton {
-                title: "connect"
+                title: qsTr("connect")
                 disabled: DeviceService.busy
                 onClicked: DeviceService.breach()
             }
@@ -1616,7 +1619,7 @@ Item {
                 text: DeviceService.connected
                       ? (DeviceService.name.length > 0
                          ? DeviceService.name : DeviceService.modelName)
-                      : "no zune"
+                      : qsTr("no zune")
                 rotation: 90
                 font.pixelSize: 11
                 font.letterSpacing: 3

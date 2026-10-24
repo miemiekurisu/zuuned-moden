@@ -30,15 +30,15 @@ Popup {
     ColumnLayout {
         anchors.fill: parent
         spacing: Theme.spaceMd
-        Text { text: "BRING YOUR BOOKS."; color: Theme.activePink; font.family: Theme.displayFamily; font.pixelSize: Theme.spokenTitle }
-        Text { Layout.fillWidth: true; text: sheet.collection ? "One book per immediate subfolder. Disc folders stay inside their book. Files directly in the selected folder form a separate book." : "All audio files in the selected folder and its subfolders become one book."; wrapMode: Text.Wrap; color: Theme.textSecondary; font.pixelSize: Theme.spokenBody }
+        Text { text: qsTr("BRING YOUR BOOKS."); color: Theme.activePink; font.family: Theme.displayFamily; font.pixelSize: Theme.spokenTitle }
+        Text { Layout.fillWidth: true; text: sheet.collection ? qsTr("One book per immediate subfolder. Disc folders stay inside their book. Files directly in the selected folder form a separate book.") : qsTr("All audio files in the selected folder and its subfolders become one book."); wrapMode: Text.Wrap; color: Theme.textSecondary; font.pixelSize: Theme.spokenBody }
         RowLayout {
             visible: sheet.books.length === 0
-            SpokenButton { text: "book collection"; highlighted: sheet.collection; enabled: !sheet.awaitingPreview; onClicked: sheet.collection = true }
-            SpokenButton { text: "one book"; highlighted: !sheet.collection; enabled: !sheet.awaitingPreview; onClicked: sheet.collection = false }
-            SpokenButton { objectName: "spokenChooseFolder"; text: "choose folder…"; enabled: !SpokenMediaService.busy; onClicked: { picker.generation = sheet.generation; picker.open() } }
+            SpokenButton { text: qsTr("book collection"); highlighted: sheet.collection; enabled: !sheet.awaitingPreview; onClicked: sheet.collection = true }
+            SpokenButton { text: qsTr("one book"); highlighted: !sheet.collection; enabled: !sheet.awaitingPreview; onClicked: sheet.collection = false }
+            SpokenButton { objectName: "spokenChooseFolder"; text: qsTr("choose folder…"); enabled: !SpokenMediaService.busy; onClicked: { picker.generation = sheet.generation; picker.open() } }
         }
-        Text { Layout.fillWidth: true; visible: sheet.books.length > 0 && sheet.reviewIndex < 0; text: "Review the titles and part order, then import. Existing books are reused; source files stay in place."; wrapMode: Text.Wrap; color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
+        Text { Layout.fillWidth: true; visible: sheet.books.length > 0 && sheet.reviewIndex < 0; text: qsTr("Review the titles and part order, then import. Existing books are reused; source files stay in place."); wrapMode: Text.Wrap; color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
         ListView {
             visible: sheet.reviewIndex < 0
             Layout.fillWidth: true; Layout.fillHeight: true; clip: true
@@ -51,19 +51,19 @@ Popup {
                 RowLayout {
                     Layout.fillWidth: true
                     SpokenCheckBox { checked: modelData.included !== false; enabled: !sheet.saving; onClicked: sheet.books[index].included = checked }
-                    ZuneSearchField { Layout.fillWidth: true; text: modelData.title; placeholderText: "Book title"; enabled: !sheet.saving; onTextEdited: sheet.books[index].title = text }
+                    ZuneSearchField { Layout.fillWidth: true; text: modelData.title; placeholderText: qsTr("Book title"); enabled: !sheet.saving; onTextEdited: sheet.books[index].title = text }
                 }
                 RowLayout {
                     Layout.fillWidth: true
-                    ZuneSearchField { Layout.fillWidth: true; text: modelData.author; placeholderText: "Author"; enabled: !sheet.saving; onTextEdited: sheet.books[index].author = text }
-                    ZuneSearchField { Layout.fillWidth: true; text: modelData.narrator; placeholderText: "Narrator"; enabled: !sheet.saving; onTextEdited: sheet.books[index].narrator = text }
+                    ZuneSearchField { Layout.fillWidth: true; text: modelData.author; placeholderText: qsTr("Author"); enabled: !sheet.saving; onTextEdited: sheet.books[index].author = text }
+                    ZuneSearchField { Layout.fillWidth: true; text: modelData.narrator; placeholderText: qsTr("Narrator"); enabled: !sheet.saving; onTextEdited: sheet.books[index].narrator = text }
                 }
                 Text { Layout.fillWidth: true; text: ZPathText.display(modelData.folder); elide: Text.ElideMiddle; color: Theme.textDim; font.pixelSize: Theme.spokenCaption }
-                SpokenButton { text: modelData.parts.length + " parts · review order"; enabled: !sheet.saving; onClicked: sheet.review(index) }
+                SpokenButton { text: qsTr("%1 parts · review order").arg(modelData.parts.length); enabled: !sheet.saving; onClicked: sheet.review(index) }
             }
             ScrollBar.vertical: ZuneScrollBar {}
         }
-        SpokenButton { visible: sheet.reviewIndex >= 0; text: "‹ back to books"; onClicked: sheet.finishReview() }
+        SpokenButton { visible: sheet.reviewIndex >= 0; text: qsTr("‹ back to books"); onClicked: sheet.finishReview() }
         ListView {
             visible: sheet.reviewIndex >= 0
             Layout.fillWidth: true; Layout.fillHeight: true; clip: true
@@ -85,11 +85,11 @@ Popup {
         Text { Layout.fillWidth: true; text: sheet.errorText || (sheet.awaitingPreview || sheet.saving ? SpokenMediaService.status + "…" : ""); wrapMode: Text.Wrap; color: sheet.errorText ? Theme.error : Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
         RowLayout {
             Layout.fillWidth: true
-            SpokenButton { text: "cancel"; enabled: !sheet.saving; onClicked: { if (sheet.awaitingPreview) SpokenMediaService.cancelWork(); sheet.close() } }
+            SpokenButton { text: qsTr("cancel"); enabled: !sheet.saving; onClicked: { if (sheet.awaitingPreview) SpokenMediaService.cancelWork(); sheet.close() } }
             Item { Layout.fillWidth: true }
             SpokenButton {
                 objectName: "spokenImportFolder"
-                text: sheet.saving ? "importing…" : "import books"
+                text: sheet.saving ? "importing…" : qsTr("import books")
                 enabled: sheet.books.length > 0 && !SpokenMediaService.busy && !sheet.saving
                 onClicked: {
                     sheet.finishReview(); sheet.errorText = ""; sheet.saving = true
@@ -101,7 +101,7 @@ Popup {
     FolderDialog {
         id: picker
         property int generation: 0
-        title: sheet.collection ? "Choose your audiobook collection folder" : "Choose one audiobook folder"
+        title: sheet.collection ? qsTr("Choose your audiobook collection folder") : qsTr("Choose one audiobook folder")
         onAccepted: {
             if (!sheet.visible || generation !== sheet.generation) return
             sheet.awaitingPreview = true; sheet.errorText = ""

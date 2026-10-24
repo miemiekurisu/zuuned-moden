@@ -33,7 +33,7 @@ Popup {
         spacing: Theme.spaceLg
         RowLayout {
             Layout.fillWidth: true
-            Text { text: "MAKE IT YOURS."; font.family: Theme.displayFamily; font.pixelSize: Theme.spokenTitle; color: Theme.activePink; Layout.fillWidth: true }
+            Text { text: qsTr("MAKE IT YOURS."); font.family: Theme.displayFamily; font.pixelSize: Theme.spokenTitle; color: Theme.activePink; Layout.fillWidth: true }
             SpokenButton { text: "×"; enabled: !sheet.saving; onClicked: sheet.close() }
         }
         RowLayout {
@@ -53,16 +53,16 @@ Popup {
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: Theme.spaceMd
-                Text { text: "artwork"; color: Theme.activePink; font.pixelSize: Theme.spokenBody }
-                Text { Layout.fillWidth: true; text: "Choose your cover. Your choice stays put when feeds refresh or files are rescanned."; color: Theme.textSecondary; wrapMode: Text.Wrap; font.pixelSize: Theme.spokenBody }
+                Text { text: qsTr("artwork"); color: Theme.activePink; font.pixelSize: Theme.spokenBody }
+                Text { Layout.fillWidth: true; text: qsTr("Choose your cover. Your choice stays put when feeds refresh or files are rescanned."); color: Theme.textSecondary; wrapMode: Text.Wrap; font.pixelSize: Theme.spokenBody }
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: Theme.spokenDropHeight
                     color: imageDrop.containsDrag ? Theme.rowSelectedPink : Theme.cardBg
                     border.width: Theme.hairline; border.color: Theme.focusRing; radius: Theme.radiusMd
                     Column { anchors.centerIn: parent; spacing: Theme.spaceSm
-                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "drop a cover here"; font.family: Theme.displayFamily; font.pixelSize: Theme.spokenTitle; color: Theme.activePink }
-                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "or click to choose · JPEG / PNG / WebP"; color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
+                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("drop a cover here"); font.family: Theme.displayFamily; font.pixelSize: Theme.spokenTitle; color: Theme.activePink }
+                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("or click to choose · JPEG / PNG / WebP"); color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
                     }
                     MouseArea { anchors.fill: parent; enabled: !sheet.saving; cursorShape: Qt.PointingHandCursor; onClicked: { imagePicker.generation = sheet.generation; imagePicker.open() } }
                     DropArea { id: imageDrop; anchors.fill: parent; enabled: !sheet.saving
@@ -78,13 +78,13 @@ Popup {
         }
         RowLayout {
             Layout.fillWidth: true
-            SpokenButton { text: "reset to automatic"; enabled: !sheet.saving; onClicked: { sheet.reset = true; sheet.draftSource = sheet.context.autoArt ?? ""; sheet.dirty = true } }
+            SpokenButton { text: qsTr("reset to automatic"); enabled: !sheet.saving; onClicked: { sheet.reset = true; sheet.draftSource = sheet.context.autoArt ?? ""; sheet.dirty = true } }
             Item { Layout.fillWidth: true }
-            SpokenButton { objectName: "spokenCancelCover"; text: "cancel"; enabled: !sheet.saving; onClicked: sheet.close() }
-            SpokenButton { objectName: "spokenApplyCover"; text: sheet.saving ? "saving…" : "apply changes"; enabled: sheet.dirty && !sheet.saving; onClicked: { sheet.saving = true; SpokenMediaService.saveCover(sheet.context.id, sheet.draftSource, sheet.reset, sheet.context.coverRevision ?? 0) } }
+            SpokenButton { objectName: "spokenCancelCover"; text: qsTr("cancel"); enabled: !sheet.saving; onClicked: sheet.close() }
+            SpokenButton { objectName: "spokenApplyCover"; text: sheet.saving ? "saving…" : qsTr("apply changes"); enabled: sheet.dirty && !sheet.saving; onClicked: { sheet.saving = true; SpokenMediaService.saveCover(sheet.context.id, sheet.draftSource, sheet.reset, sheet.context.coverRevision ?? 0) } }
         }
     }
-    FileDialog { id: imagePicker; property int generation: 0; title: "Choose a cover"; nameFilters: ["Images (*.jpg *.jpeg *.png *.webp)"]
+    FileDialog { id: imagePicker; property int generation: 0; title: qsTr("Choose a cover"); nameFilters: ["Images (*.jpg *.jpeg *.png *.webp)"]
         onAccepted: { if (!sheet.visible || generation !== sheet.generation) return; sheet.draftSource = selectedFile; sheet.reset = false; sheet.dirty = true }
     }
     Connections { target: SpokenMediaService

@@ -9,7 +9,7 @@ Item {
     width: size
     height: size
     Accessible.role: Accessible.StaticText
-    Accessible.name: "In your library"
+    Accessible.name: qsTr("In your library")
 
     Rectangle {
         id: monitor
@@ -41,7 +41,7 @@ Item {
         id: locationTip
         visible: hover.hovered
         delay: Theme.locationTooltipDelay
-        text: "In your library"
+        text: qsTr("In your library")
         contentItem: Text {
             text: locationTip.text
             font.pixelSize: Theme.customizeCaptionSize

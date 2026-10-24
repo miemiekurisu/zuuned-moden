@@ -48,7 +48,7 @@ Item {
     ZuneMenu {
         id: collectionMenu
         objectName: "builderCollectionMenu"
-        ZuneMenuItem { text: "Customize…"; onTriggered: tray.customizeMixtape() }
+        ZuneMenuItem { text: qsTr("Customize…"); onTriggered: tray.customizeMixtape() }
     }
     function editMember(id) {
         const track = TrayState.trackFor(id)
@@ -63,11 +63,11 @@ Item {
         id: memberMenu
         property double trackId: -1
         ZuneMenuItem {
-            text: "Edit Info…"
+            text: qsTr("Edit Info…")
             onTriggered: tray.editMember(memberMenu.trackId)
         }
         ZuneMenuItem {
-            text: "Queue for Device"
+            text: qsTr("Queue for Device")
             visible: DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: {
@@ -215,7 +215,7 @@ Item {
                 Layout.fillWidth: true
                 spacing: Theme.spaceXxs
                 Text {
-                    text: TrayState.playlistId < 0 ? "NEW PLAYLIST" : "EDITING PLAYLIST"
+                    text: TrayState.playlistId < 0 ? qsTr("NEW PLAYLIST") : qsTr("EDITING PLAYLIST")
                     font.pixelSize: Theme.customizeLabelSize
                     font.bold: true
                     font.letterSpacing: Theme.spaceXxxs
@@ -223,7 +223,7 @@ Item {
                 }
                 Text {
                     visible: TrayState.playlistId >= 0
-                    text: "customize…"
+                    text: qsTr("customize…")
                     font.pixelSize: Theme.customizeCaptionSize
                     color: collectionCustomizeArea.containsMouse ? Theme.activePink : Theme.textSecondary
                     MouseArea {
@@ -257,7 +257,7 @@ Item {
                 Text {
                     anchors.fill: parent
                     visible: nameInput.text === "" && !nameInput.activeFocus
-                    text: "name it…"
+                    text: qsTr("name it…")
                     font.pixelSize: 22
                     font.family: Theme.displayFamily
                     color: Qt.alpha(Theme.orange, 0.45)
@@ -291,8 +291,8 @@ Item {
                 let ms = 0
                 for (const t of TrayState.tracks) ms += t.durationMs
                 const m = Math.round(ms / 60000)
-                return n + (n === 1 ? " track" : " tracks")
-                     + (m > 0 ? " · " + m + " min" : "")
+                return (n === 1 ? qsTr("%1 track").arg(n) : qsTr("%1 tracks").arg(n))
+                     + (m > 0 ? " · " + qsTr("%1 min").arg(m) : "")
             }
             font.pixelSize: 11
             color: Theme.textDim
@@ -489,7 +489,7 @@ Item {
                         Layout.fillWidth: true
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.WordWrap
-                        text: "browse your music"
+                        text: qsTr("browse your music")
                         font.pixelSize: 17
                         font.family: Theme.displayFamily
                         color: Theme.textMid
@@ -498,7 +498,7 @@ Item {
                         Layout.fillWidth: true
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.WordWrap
-                        text: "every orange ＋ drops tracks here"
+                        text: qsTr("every orange ＋ drops tracks here")
                         font.pixelSize: 13
                         font.weight: Font.Light
                         color: Theme.textDim
@@ -513,7 +513,7 @@ Item {
             spacing: Theme.spaceMd
 
             Text {
-                text: "discard"
+                text: qsTr("discard")
                 font.pixelSize: 12
                 color: discardArea.containsMouse ? Theme.error : Theme.textDim
                 MouseArea {
@@ -543,7 +543,7 @@ Item {
                 Behavior on color { ColorAnimation { duration: 100 } }
                 Text {
                     anchors.centerIn: parent
-                    text: parent.saveEnabled ? "save playlist" : "name it to save"
+                    text: parent.saveEnabled ? qsTr("save playlist") : qsTr("name it to save")
                     font.pixelSize: 13
                     font.bold: parent.saveEnabled
                     color: parent.saveEnabled ? "white" : Qt.alpha(Theme.orange, 0.65)

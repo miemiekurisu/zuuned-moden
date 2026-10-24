@@ -83,7 +83,7 @@ Item {
         anchors.margins: Theme.spaceMd
         spacing: Theme.spaceSm
         Text {
-            text: PhotoTrayState.albumId < 0 ? "NEW PHOTO ALBUM" : "EDITING PHOTO ALBUM"
+            text: PhotoTrayState.albumId < 0 ? qsTr("NEW PHOTO ALBUM") : qsTr("EDITING PHOTO ALBUM")
             color: Theme.orange
             font.pixelSize: Theme.customizeCaptionSize
             font.bold: true
@@ -93,7 +93,7 @@ Item {
             objectName: "photoTrayName"
             Layout.fillWidth: true
             text: PhotoTrayState.name
-            placeholderText: "Album name"
+            placeholderText: qsTr("Album name")
             maximumLength: 200
             color: Theme.textPrimary
             placeholderTextColor: Theme.textDim
@@ -102,7 +102,7 @@ Item {
             background: Rectangle { color: Theme.cardBg; radius: Theme.radiusSm; border.color: albumName.activeFocus ? Theme.orange : Theme.borderLight }
             onTextEdited: PhotoTrayState.name = text
         }
-        Text { text: "PARENT ALBUM"; color: Theme.textSecondary; font.pixelSize: Theme.customizeLabelSize }
+        Text { text: qsTr("PARENT ALBUM"); color: Theme.textSecondary; font.pixelSize: Theme.customizeLabelSize }
         ComboBox {
             id: parentPicker
             objectName: "photoTrayParent"
@@ -145,7 +145,8 @@ Item {
             }
         }
         Text {
-            text: PhotoTrayState.photos.length + (PhotoTrayState.photos.length === 1 ? " photo" : " photos")
+            text: (PhotoTrayState.photos.length === 1 ? qsTr("1 photo")
+              : qsTr("%1 photos").arg(PhotoTrayState.photos.length))
             color: Theme.textSecondary
             font.pixelSize: Theme.customizeCaptionSize
         }
@@ -184,7 +185,7 @@ Item {
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: row.modelData.filename || "Photo " + row.modelData.id
+                        text: row.modelData.filename || qsTr("Photo %1").arg(row.modelData.id)
                         color: Theme.textPrimary
                         font.pixelSize: Theme.customizeCaptionSize
                         elide: Text.ElideMiddle
@@ -199,7 +200,7 @@ Item {
                             Layout.preferredWidth: Theme.spaceXxl
                             Layout.preferredHeight: Theme.spaceXxxl
                             enabled: index === 2 || (index === 0 ? row.index > 0 : row.index < PhotoTrayState.photos.length - 1)
-                            Accessible.name: index === 0 ? "Move photo earlier" : index === 1 ? "Move photo later" : "Remove photo from draft"
+                            Accessible.name: index === 0 ? qsTr("Move photo earlier") : index === 1 ? qsTr("Move photo later") : qsTr("Remove photo from draft")
                             contentItem: Text { text: memberAction.modelData; color: memberAction.enabled ? Theme.textPrimary : Theme.textDim; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                             background: Rectangle { color: memberAction.hovered ? Theme.cardHover : Theme.transparent; radius: Theme.radiusSm }
                             onClicked: index === 2 ? PhotoTrayState.removeAt(row.index) : PhotoTrayState.move(row.index, row.index + (index === 0 ? -1 : 1))
@@ -211,7 +212,7 @@ Item {
                 anchors.centerIn: parent
                 width: parent.width - Theme.spaceLg
                 visible: photoList.count === 0
-                text: "Drag photos or folders here,\nor select photos and choose Add."
+                text: qsTr("Drag photos or folders here,\nor select photos and choose Add.")
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
                 color: Theme.textDim
@@ -228,9 +229,9 @@ Item {
         }
         RowLayout {
             Layout.fillWidth: true
-            TrayButton { objectName: "photoTrayCancel"; title: "Cancel"; onClicked: PhotoTrayState.requestDiscard() }
+            TrayButton { objectName: "photoTrayCancel"; title: qsTr("Cancel"); onClicked: PhotoTrayState.requestDiscard() }
             Item { Layout.fillWidth: true }
-            TrayButton { objectName: "photoTraySave"; title: "Save album"; kind: "primary"; enabled: PhotoTrayState.name.trim() !== ""; onClicked: PhotoTrayState.save() }
+            TrayButton { objectName: "photoTraySave"; title: qsTr("Save album"); kind: "primary"; enabled: PhotoTrayState.name.trim() !== ""; onClicked: PhotoTrayState.save() }
         }
     }
     Rectangle {
@@ -245,10 +246,10 @@ Item {
             anchors.centerIn: parent
             width: parent.width - Theme.spaceXxl
             spacing: Theme.spaceLg
-            Text { Layout.fillWidth: true; text: "Discard this album draft?"; wrapMode: Text.WordWrap; color: Theme.textPrimary; font.pixelSize: Theme.customizeHeadingSize }
-            Text { Layout.fillWidth: true; text: "Your unsaved changes will be lost."; wrapMode: Text.WordWrap; color: Theme.textSecondary; font.pixelSize: Theme.customizeBodySize }
-            TrayButton { objectName: "photoTrayKeepEditing"; Layout.fillWidth: true; title: "Keep editing"; onClicked: PhotoTrayState.cancelDiscard() }
-            TrayButton { objectName: "photoTrayConfirmDiscard"; Layout.fillWidth: true; title: "Discard draft"; onClicked: PhotoTrayState.confirmDiscard() }
+            Text { Layout.fillWidth: true; text: qsTr("Discard this album draft?"); wrapMode: Text.WordWrap; color: Theme.textPrimary; font.pixelSize: Theme.customizeHeadingSize }
+            Text { Layout.fillWidth: true; text: qsTr("Your unsaved changes will be lost."); wrapMode: Text.WordWrap; color: Theme.textSecondary; font.pixelSize: Theme.customizeBodySize }
+            TrayButton { objectName: "photoTrayKeepEditing"; Layout.fillWidth: true; title: qsTr("Keep editing"); onClicked: PhotoTrayState.cancelDiscard() }
+            TrayButton { objectName: "photoTrayConfirmDiscard"; Layout.fillWidth: true; title: qsTr("Discard draft"); onClicked: PhotoTrayState.confirmDiscard() }
         }
     }
 }

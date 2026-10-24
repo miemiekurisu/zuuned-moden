@@ -427,8 +427,8 @@ Item {
         GradientText {
             Layout.alignment: Qt.AlignHCenter
             text: root.deviceSource
-                  ? (DeviceService.busy ? "breaching…" : "no device")
-                  : (LibraryService.scanning ? "scanning…" : "your music library")
+                  ? (DeviceService.busy ? "breaching…" : qsTr("no device"))
+                  : (LibraryService.scanning ? "scanning…" : qsTr("your music library"))
             font.family: Theme.displayFamily
             font.pixelSize: 26
             tracking: Math.max(26 * 0.08, 2)
@@ -437,11 +437,11 @@ Item {
             Layout.alignment: Qt.AlignHCenter
             text: root.deviceSource
                   ? (DeviceService.devicePresent
-                     ? "zune detected — connecting"
-                     : "plug in a zune")
+                     ? qsTr("zune detected — connecting")
+                     : qsTr("plug in a zune"))
                   : (LibraryService.scanning
                      ? LibraryService.scanStage
-                     : "add media folders in settings → media, then rescan")
+                     : qsTr("add media folders in settings → media, then rescan"))
             font.pixelSize: 14
             font.weight: Font.Light
             color: Theme.textDim
@@ -479,6 +479,11 @@ Item {
                 tabs: root.deviceSource
                     ? ["Artists", "Albums", "Songs", "Genres"]
                     : ["Artists", "Albums", "Songs", "Genres", "Playlists"]
+                labels: root.deviceSource
+                    ? [qsTr("Artists"), qsTr("Albums"), qsTr("Songs"),
+                       qsTr("Genres")]
+                    : [qsTr("Artists"), qsTr("Albums"), qsTr("Songs"),
+                       qsTr("Genres"), qsTr("Playlists")]
                 // Tapping a pivot from a detail page pops to that root.
                 onCurrentChanged: {
                     root.navStack = []
@@ -519,7 +524,7 @@ Item {
                     Text {
                         id: allMusicLabel
                         anchors.centerIn: parent
-                        text: "＋ all music"
+                        text: qsTr("＋ all music")
                         font.pixelSize: 11
                         color: allMusicArea.containsMouse ? "white" : Theme.activePink
                     }
@@ -568,8 +573,7 @@ Item {
                     Text {
                         id: filterChip
                         anchors.fill: parent
-                        text: "shows " + root.activeLetter.toUpperCase()
-                              + " only - show all"
+                        text: qsTr("shows %1 only - show all").arg(root.activeLetter.toUpperCase())
                         font.pixelSize: 11
                         font.underline: true
                         color: filterChipArea.containsMouse
@@ -587,7 +591,7 @@ Item {
                 Text {
                     Layout.alignment: Qt.AlignRight
                     Layout.rightMargin: Theme.spaceXs
-                    text: root.source.trackCount + " tracks"
+                    text: qsTr("%1 tracks").arg(root.source.trackCount)
                     font.pixelSize: 11
                     font.weight: Font.Light
                     color: Theme.textDim
@@ -745,11 +749,11 @@ Item {
                         Layout.alignment: Qt.AlignLeft
                         spacing: 0
 
-                        SortHeader { title: "TITLE"; field: "title"; Layout.preferredWidth: root.songsTableW * 0.34 }
-                        SortHeader { title: "ARTIST"; field: "artist"; Layout.preferredWidth: root.songsTableW * 0.22 }
-                        SortHeader { title: "ALBUM"; field: "album"; Layout.preferredWidth: root.songsTableW * 0.22 }
+                        SortHeader { title: qsTr("TITLE"); field: "title"; Layout.preferredWidth: root.songsTableW * 0.34 }
+                        SortHeader { title: qsTr("ARTIST"); field: "artist"; Layout.preferredWidth: root.songsTableW * 0.22 }
+                        SortHeader { title: qsTr("ALBUM"); field: "album"; Layout.preferredWidth: root.songsTableW * 0.22 }
                         Item { Layout.fillWidth: true }
-                        SortHeader { title: "TIME"; field: "duration" }
+                        SortHeader { title: qsTr("TIME"); field: "duration" }
                     }
 
                     Rectangle {
@@ -900,7 +904,7 @@ Item {
                             Text {
                                 id: newPlLabel
                                 anchors.centerIn: parent
-                                text: "＋ new mixtape"
+                                text: qsTr("＋ new mixtape")
                                 font.pixelSize: 12
                                 font.bold: true
                                 color: "white"
@@ -1113,7 +1117,7 @@ Item {
                                         spacing: Theme.spaceSm
 
                                         Text {
-                                            text: tapeTile.modelData.count + " tracks"
+                                            text: qsTr("%1 tracks").arg(tapeTile.modelData.count)
                                             font.pixelSize: 10
                                             color: cassette.playing
                                                 ? Theme.activePink : Theme.textDim
@@ -1234,14 +1238,14 @@ Item {
                             spacing: Theme.spaceSm
                             Text {
                                 Layout.alignment: Qt.AlignHCenter
-                                text: "no mixtapes yet"
+                                text: qsTr("no mixtapes yet")
                                 font.pixelSize: 16
                                 font.weight: Font.Light
                                 color: Theme.textDim
                             }
                             Text {
                                 Layout.alignment: Qt.AlignHCenter
-                                text: "hit ＋ new mixtape, then add from anywhere in your music"
+                                text: qsTr("hit ＋ new mixtape, then add from anywhere in your music")
                                 font.pixelSize: 12
                                 color: Theme.textGhost
                             }
@@ -1464,27 +1468,27 @@ Item {
         objectName: "mixtapeContextMenu"
         property var target: null
         ZuneMenuItem {
-            text: "Edit in Builder"
+            text: qsTr("Edit in Builder")
             onTriggered: TrayState.openExisting(libPlMenu.target.id,
                                                 libPlMenu.target.name)
         }
         ZuneMenuItem {
-            text: "Customize…"
+            text: qsTr("Customize…")
             onTriggered: root.customizeMixtape(libPlMenu.target.id)
         }
         ZuneMenuItem {
-            text: "Play"
+            text: qsTr("Play")
             onTriggered: root.playLibraryPlaylist(libPlMenu.target.id)
         }
         ZuneMenuItem {
-            text: "Sync to Zune"
+            text: qsTr("Sync to Zune")
             visible: DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: root.syncPlaylistToDevice(libPlMenu.target.id,
                                                    libPlMenu.target.name)
         }
         ZuneMenuItem {
-            text: "Delete Playlist"
+            text: qsTr("Delete Playlist")
             onTriggered: {
                 LibraryService.deletePlaylist(libPlMenu.target.id)
                 toastHost.show("deleted '" + libPlMenu.target.name + "'")
@@ -1546,7 +1550,7 @@ Item {
         objectName: "genreContextMenu"
         property string genreName: ""
         ZuneMenuItem {
-            text: "Customize…"
+            text: qsTr("Customize…")
             onTriggered: root.customizeGenre(genreCtxMenu.genreName)
         }
     }
@@ -1567,14 +1571,14 @@ Item {
         objectName: "albumContextMenu"
         property var albumRef: ({ name: "", artist: "" })
         ZuneMenuItem {
-            text: "Queue Album for Device"
+            text: qsTr("Queue Album for Device")
             visible: !root.deviceSource
             enabled: DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: root.queueForDevice(root.tracksInAlbum(albumCtxMenu.albumRef, ""))
         }
         ZuneMenuItem {
-            text: "Customize…"
+            text: qsTr("Customize…")
             visible: !root.deviceSource
             height: visible ? implicitHeight : 0
             onTriggered: root.customizeAlbum(albumCtxMenu.albumRef)
@@ -1584,7 +1588,7 @@ Item {
         // this album, not for the whole library.
         ZuneMenuItem {
             objectName: "albumLookupAction"
-            text: "Search Cover Online"
+            text: qsTr("Search Cover Online")
             visible: !root.deviceSource
             height: visible ? implicitHeight : 0
             onTriggered: {
@@ -1597,14 +1601,14 @@ Item {
             }
         }
         ZuneMenuItem {
-            text: "Save Album to Library"
+            text: qsTr("Save Album to Library")
             visible: root.deviceSource
             enabled: DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: root.saveAlbumToLibrary(albumCtxMenu.albumRef)
         }
         ZuneMenuItem {
-            text: "Delete Album from Zune"
+            text: qsTr("Delete Album from Zune")
             visible: root.deviceSource
             enabled: DeviceService.connected
             height: visible ? implicitHeight : 0
@@ -1624,14 +1628,14 @@ Item {
         objectName: "artistContextMenu"
         property string artistName: ""
         ZuneMenuItem {
-            text: "Queue Artist for Device"
+            text: qsTr("Queue Artist for Device")
             visible: !root.deviceSource
             enabled: DeviceService.connected
             height: visible ? implicitHeight : 0
             onTriggered: root.queueForDevice(root.tracksByArtist(artistCtxMenu.artistName, ""))
         }
         ZuneMenuItem {
-            text: "Customize…"
+            text: qsTr("Customize…")
             visible: !root.deviceSource
             height: visible ? implicitHeight : 0
             onTriggered: {
@@ -1649,7 +1653,7 @@ Item {
         // request only when this artist is asked for by name.
         ZuneMenuItem {
             objectName: "artistLookupAction"
-            text: "Search Artist Picture Online"
+            text: qsTr("Search Artist Picture Online")
             visible: !root.deviceSource
             height: visible ? implicitHeight : 0
             onTriggered: {
@@ -1660,7 +1664,7 @@ Item {
             }
         }
         ZuneMenuItem {
-            text: "Save Artist to Library"
+            text: qsTr("Save Artist to Library")
             visible: root.deviceSource
             enabled: DeviceService.connected
             height: visible ? implicitHeight : 0
@@ -1674,7 +1678,7 @@ Item {
             }
         }
         ZuneMenuItem {
-            text: "Delete Artist from Zune"
+            text: qsTr("Delete Artist from Zune")
             visible: root.deviceSource
             enabled: DeviceService.connected
             height: visible ? implicitHeight : 0

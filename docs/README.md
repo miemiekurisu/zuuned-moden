@@ -21,6 +21,9 @@ This application snapshot includes libzune as ordinary source files.
 | Compile the public application source | [Building](../BUILDING.md) |
 | Build or assess the Windows port | [Windows port status](WINDOWS_PORT.md) |
 | Compare this app against the original Zune software | [Zune client feature comparison](ZUNE_CLIENT_FEATURES.md) |
+| Check which screens are actually wired to a backend | [UI wiring audit](UI_WIRING_AUDIT.md) |
+| Know which Settings options do something, and which should exist | [Settings inventory](SETTINGS_INVENTORY.md) |
+| Change a sentence on screen, or add a language | [Interface language](I18N.md) |
 | Supply authentication data for a source build | [Building with MTPZ](BUILD_WITH_MTPZ.md) |
 | Use libzune directly | [Library README](../libzune/README.md), [API reference](../libzune/docs/API_REFERENCE.md), [source index](../libzune/docs/TOC.md) |
 | Understand logs and debug reports | [Diagnostics](DIAGNOSTICS.md) |
@@ -62,6 +65,11 @@ for an older migrated executable. Preserve the recorded provenance limitations.
   [port plan](PORT_PLAN.md).
 - Product scope: [what the original Zune software did, what this app does instead, and
   what cannot come back](ZUNE_CLIENT_FEATURES.md).
+- Wiring: [which borrowed screens reach a service, and every entry point no screen can
+  reach](UI_WIRING_AUDIT.md).
+- Settings: [every stored key and what reads it, the two kinds of half-done control, and
+  what the page should offer next](SETTINGS_INVENTORY.md).
+- Interface language: [why wording is a file, the tsv to qm loop, and what the audit checks](I18N.md).
 - Spoken media implementation and remaining hardware gates: [podcasts, audiobooks and deferred HD artist backgrounds](SPOKEN_MEDIA_AND_DEVICE_ART.md).
 - Library usage: [podcast integration and audiobook status](../libzune/docs/SPOKEN_MEDIA.md).
 - Device spoken browser: [inventory, selection and removal verification](../tests/device-spoken/README.md).

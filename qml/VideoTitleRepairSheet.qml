@@ -59,14 +59,14 @@ Popup {
             Layout.rightMargin: Theme.spaceXxl
             spacing: Theme.spaceSm
             Text {
-                text: "use library titles"
+                text: qsTr("use library titles")
                 font.pixelSize: Theme.customizeHeadingSize
                 font.weight: Font.Light
                 color: Theme.textPrimary
             }
             Text {
                 Layout.fillWidth: true
-                text: "Choose the titles to use on your Zune. Episodes match by show, season and episode; movies need one clear match."
+                text: qsTr("Choose the titles to use on your Zune. Episodes match by show, season and episode; movies need one clear match.")
                 wrapMode: Text.WordWrap
                 font.pixelSize: Theme.customizeBodySize
                 color: Theme.textSecondary
@@ -80,12 +80,13 @@ Popup {
             spacing: Theme.spaceMd
             Text {
                 Layout.fillWidth: true
-                text: repair.selectedCount + " selected · " + repair.unchangedCount + " already correct"
+                text: qsTr("%1 selected · %2 already correct")
+                  .arg(repair.selectedCount).arg(repair.unchangedCount)
                 font.pixelSize: Theme.customizeBodySize
                 color: Theme.textMid
             }
             Text {
-                text: repair.selectedCount > 0 ? "clear selection" : "select all"
+                text: repair.selectedCount > 0 ? qsTr("clear selection") : qsTr("select all")
                 font.pixelSize: Theme.customizeBodySize
                 color: Theme.pink
                 opacity: repair.busy ? Theme.disabledOpacity : 1
@@ -198,7 +199,8 @@ Popup {
                 anchors.centerIn: parent
                 width: parent.width - Theme.spaceXxl
                 visible: repair.candidateCount === 0
-                text: repair.blockedReason || "No title changes to review. Unmatched and ambiguous videos are left alone."
+                text: repair.blockedReason
+                      || qsTr("No title changes to review. Unmatched and ambiguous videos are left alone.")
                 wrapMode: Text.WordWrap
                 horizontalAlignment: Text.AlignHCenter
                 font.pixelSize: Theme.customizeBodySize
@@ -213,7 +215,8 @@ Popup {
             spacing: Theme.spaceXs
             Text {
                 Layout.fillWidth: true
-                text: repair.unmatchedCount + " without a match · " + repair.ambiguousCount + " ambiguous"
+                text: qsTr("%1 without a match · %2 ambiguous")
+                  .arg(repair.unmatchedCount).arg(repair.ambiguousCount)
                 font.pixelSize: Theme.customizeCaptionSize
                 color: Theme.textSubtle
             }
@@ -238,7 +241,7 @@ Popup {
             DetailActionButton {
                 Layout.fillWidth: false
                 Layout.preferredWidth: Theme.customizeCompactArt
-                title: "refresh"
+                title: qsTr("refresh")
                 enabled: !repair.busy
                 opacity: enabled ? 1 : Theme.disabledOpacity
                 onClicked: { sheet.resultText = ""; repair.rebuildPreview() }
@@ -247,7 +250,7 @@ Popup {
             DetailActionButton {
                 Layout.fillWidth: false
                 Layout.preferredWidth: Theme.customizeCompactArt
-                title: "close"
+                title: qsTr("close")
                 enabled: !repair.busy
                 opacity: enabled ? 1 : Theme.disabledOpacity
                 onClicked: sheet.close()
@@ -256,7 +259,7 @@ Popup {
                 objectName: "applyVideoTitles"
                 Layout.fillWidth: false
                 Layout.preferredWidth: Theme.customizeThumbSize + Theme.spaceXxl
-                title: repair.busy ? "saving…" : "apply selected"
+                title: repair.busy ? "saving…" : qsTr("apply selected")
                 kind: "primary"
                 enabled: repair.canApply
                 opacity: enabled ? 1 : Theme.disabledOpacity

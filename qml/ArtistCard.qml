@@ -145,7 +145,7 @@ Item {
             Text {
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
-                text: card.missingArtStatus || card.count + (card.count === 1 ? " track" : " tracks")
+                text: card.missingArtStatus || (card.count === 1 ? qsTr("1 track") : qsTr("%1 tracks").arg(card.count))
                 font.pixelSize: 11
                 font.weight: Font.Light
                 color: Theme.textDim

@@ -95,7 +95,7 @@ Item {
             Text {
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
-                text: tile.count + (tile.count === 1 ? " track" : " tracks")
+                text: (tile.count === 1 ? qsTr("1 track") : qsTr("%1 tracks").arg(tile.count))
                 font.pixelSize: 11
                 font.weight: Font.Light
                 color: Theme.textDim

@@ -353,7 +353,7 @@ Rectangle {
                 }
                 TrackPicker {
                     id: subPicker
-                    title: "Subtitles"
+                    title: qsTr("Subtitles")
                     isSubtitles: true
                 }
             }
@@ -367,7 +367,7 @@ Rectangle {
                 }
                 TrackPicker {
                     id: audioPicker
-                    title: "Audio"
+                    title: qsTr("Audio")
                 }
             }
             ChromeChip {
@@ -460,7 +460,7 @@ Rectangle {
                 bottomPadding: 4
             }
             Repeater {
-                model: [{ id: -1, label: "Off",
+                model: [{ id: -1, label: qsTr("Off"),
                           selected: !picker.tracks.some(t => t.selected) }]
                        .concat(picker.tracks.map(t => ({
                            id: t.id,

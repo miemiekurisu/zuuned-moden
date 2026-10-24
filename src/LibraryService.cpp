@@ -38,6 +38,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStringList>
+#include "UiText.h"
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
@@ -110,7 +111,7 @@ LibraryService::LibraryService(QObject *parent) : QObject(parent) {
                     recordArtworkResult(QStringLiteral("album"), context,
                         {{QStringLiteral("status"), QStringLiteral("noArtwork")},
                          {QStringLiteral("reason"),
-                          QStringLiteral("No embedded or folder art in the local files")}});
+                          UiText::tr("No embedded or folder art in the local files")}});
                 } else if (!restoreArtworkResult(QStringLiteral("album"), context, input)) {
                     m_onlineAlbumArt->request(artist, album, input);
                 }
@@ -582,7 +583,7 @@ bool photoIdsFromVariants(const QVariantList &values, QVector<qint64> *ids) {
 
 QVariantMap invalidPhotoAlbumRequest() {
     return {{QStringLiteral("success"), false},
-            {QStringLiteral("error"), QStringLiteral("The album or photo selection is invalid.")}};
+            {QStringLiteral("error"), UiText::tr("The album or photo selection is invalid.")}};
 }
 }
 
@@ -644,7 +645,7 @@ QVariantMap LibraryService::photoAlbumResult(bool success) {
     QString error;
     if (!success) {
         error = m_db ? m_db->lastError() : QString();
-        if (error.isEmpty()) error = QStringLiteral("The photo album could not be saved.");
+        if (error.isEmpty()) error = UiText::tr("The photo album could not be saved.");
     }
     return {{QStringLiteral("success"), success}, {QStringLiteral("error"), error}};
 }
@@ -727,7 +728,7 @@ QVariantMap LibraryService::savePhotoAlbumDraft(double id, const QString &name, 
             || current.value(QStringLiteral("parentId")).toDouble() != originalParent
             || !photoIdsFromVariants(current.value(QStringLiteral("photoIds")).toList(), &previous)
             || originalIds != previous)
-            return fail(QStringLiteral("This album changed or was deleted while editing. Reopen it before saving."));
+            return fail(UiText::tr("This album changed or was deleted while editing. Reopen it before saving."));
         if (!m_db->renamePhotoAlbum(savedId, name) || !m_db->movePhotoAlbum(savedId, qint64(parentId))) return fail();
     } else {
         savedId = m_db->createPhotoAlbum(name, qint64(parentId));
@@ -1063,7 +1064,7 @@ QVariantMap LibraryService::importDevicePlaylist(const QString &name, const QVar
     }
     const qint64 id = m_db->createPlaylistEntries(name.trimmed(), entries);
     if (id < 0)
-        return {{"success", false}, {"id", -1}, {"error", QStringLiteral("Could not save this playlist. Try again.")}};
+        return {{"success", false}, {"id", -1}, {"error", UiText::tr("Could not save this playlist. Try again.")}};
     reloadPlaylists();
     return {{"success", true}, {"id", double(id)}, {"here", here},
         {"pending", int(entries.size()) - here}, {"itemsToPull", toPull}, {"error", QString()}};
@@ -1263,16 +1264,19 @@ void LibraryService::reloadFolders() {
             {"displayPath", PathText::display(stored)},
             {"type", f.type},
             {"importDefault", !receives.isEmpty()},
+            // A list value reaches QML as a sequence with a numeric length
+            // and not as a JavaScript Array -- measured here on 2026-10-24,
+            // Array.isArray() on it is false -- so the QML that reads this
+            // counts and indexes it rather than calling Array methods.
             {"defaultKinds", receives},
-            // A row that receives nothing gets no string at all, rather than a
-            // "default" prefix with nothing after it: the status Text falls back
-            // on the absence of a label, and the gate counts that absence.
-            {"defaultLabel", receives.isEmpty()
-                ? QString()
-                : receives.size() == served.size()
-                    ? QStringLiteral("default")
-                    : QStringLiteral("default \u00b7 ")
-                        + receives.join(QStringLiteral("+"))},
+            // Tokens and nothing else. The word for "default", the separator
+            // and the join are wording, and wording belongs to the language
+            // file: qml/SettingsPage.qml composes the status out of this list
+            // with qsTr(). A row that receives nothing gets an empty list,
+            // which is how the row knows to offer the button instead of a
+            // status, and the gate counts that emptiness.  (Until 2026-10-24
+            // this spelled "default" in English here, which is why a Chinese
+            // interface still painted "default" on three folder rows.)
         });
     }
     emit foldersChanged();
@@ -1435,7 +1439,7 @@ QVariantMap LibraryService::editTrackMetadata(double id, const QVariantMap &fiel
         if (t.id == trackId) { cur = &t; break; }
     if (!cur)
         return {{"success", false}, {"fileWritten", false},
-                {"error", QStringLiteral("This song is no longer in your library. Your edits have not been saved.")}};
+                {"error", UiText::tr("This song is no longer in your library. Your edits have not been saved.")}};
 
     LibTrack t = *cur;
     if (fields.contains(QStringLiteral("title")))
@@ -1458,13 +1462,13 @@ QVariantMap LibraryService::editTrackMetadata(double id, const QVariantMap &fiel
 
     if (t.title.trimmed().isEmpty())
         return {{"success", false}, {"fileWritten", false},
-                {"error", QStringLiteral("Give the song a title before saving.")}};
+                {"error", UiText::tr("Give the song a title before saving.")}};
 
     // Library first — user_edited makes the DB authoritative even if
     // the file write below can't happen (WMA/FLAC, read-only mounts).
     if (!m_db->updateTrackMetadata(trackId, t, /*markUserEdited=*/true))
         return {{"success", false}, {"fileWritten", false},
-                {"error", QStringLiteral("Couldn't save your edits to the library. Try again.")}};
+                {"error", UiText::tr("Couldn't save your edits to the library. Try again.")}};
 
     // ID3 in place for real MPEG files only (magic sniff — a WMA named
     // .mp3 would be corrupted by an MPEG-sync rewrite).
@@ -2475,11 +2479,10 @@ QVariantList LibraryService::healthChecks() const {
             out.append(QVariantMap{
                 {QStringLiteral("id"), QStringLiteral("folder")},
                 {QStringLiteral("ok"), false},
-                {QStringLiteral("label"),
-                 QStringLiteral("watch folder unreachable")},
+                {QStringLiteral("label"), tr("watch folder unreachable")},
                 {QStringLiteral("detail"),
-                 PathText::display(path) + QStringLiteral(" — network mount offline? Fix or"
-                                       " remove it; scans skip it.")}});
+                 tr("%1 — network mount offline? Fix or remove it; scans skip it.")
+                     .arg(PathText::display(path))}});
     }
     const QStorageInfo tmp(QDir::tempPath());
     if (tmp.isValid() && tmp.bytesAvailable() >= 0
@@ -2487,13 +2490,26 @@ QVariantList LibraryService::healthChecks() const {
         out.append(QVariantMap{
             {QStringLiteral("id"), QStringLiteral("tempspace")},
             {QStringLiteral("ok"), false},
-            {QStringLiteral("label"),
-             QStringLiteral("low disk space for transcodes")},
+            {QStringLiteral("label"), tr("low disk space for transcodes")},
             {QStringLiteral("detail"),
-             QStringLiteral("%1 free in %2 — video syncs buffer ~500MB of"
-                            " temp files there.")
+             tr("%1 free in %2 — video syncs buffer ~500MB of temp files there.")
                  .arg(QString::number(tmp.bytesAvailable() / 1e9, 'f', 1)
                       + QStringLiteral(" GB"), QDir::tempPath())}});
+    // The two jobs that go through the ffmpeg command line, said out loud
+    // instead of failing quietly: video thumbnails for the device page
+    // (zune_grab_photo_thumb in libzune/src/util.c) and any open the built-in
+    // library cannot do. Every audio and video conversion runs on the libav*
+    // this executable already links, so a missing PATH entry is a missing
+    // convenience, not a broken sync, and the label says so.
+    if (QStandardPaths::findExecutable("ffmpeg").isEmpty()
+        || QStandardPaths::findExecutable("ffprobe").isEmpty())
+        out.append(QVariantMap{
+            {QStringLiteral("id"), QStringLiteral("ffmpegcli")},
+            {QStringLiteral("ok"), false},
+            {QStringLiteral("label"),
+             tr("FFmpeg command-line tools not found")},
+            {QStringLiteral("detail"),
+             tr("Converting still works: that uses the FFmpeg built into this app. Only device video thumbnails and files the built-in library cannot open need ffmpeg and ffprobe on PATH: https://www.gyan.dev/ffmpeg/builds/")}});
     return out;
 }
 
@@ -2573,11 +2589,11 @@ QByteArray prepareCustomizeImage(const QString &source, QString *error) {
         QFile input(path);
         if ((!url.scheme().isEmpty() && !url.isLocalFile())
             || !input.open(QIODevice::ReadOnly)) {
-            *error = QStringLiteral("That image is no longer available. Choose it again.");
+            *error = UiText::tr("That image is no longer available. Choose it again.");
             return {};
         }
         if (input.size() > 32 * 1024 * 1024) {
-            *error = QStringLiteral("Choose an image smaller than 32 MB.");
+            *error = UiText::tr("Choose an image smaller than 32 MB.");
             return {};
         }
         bytes = input.readAll();
@@ -2588,12 +2604,12 @@ QByteArray prepareCustomizeImage(const QString &source, QString *error) {
     reader.setAutoTransform(true);
     const QSize size = reader.size();
     if (size.isValid() && qint64(size.width()) * size.height() > 100000000) {
-        *error = QStringLiteral("That image is too large to decode. Choose a smaller copy.");
+        *error = UiText::tr("That image is too large to decode. Choose a smaller copy.");
         return {};
     }
     QImage image = reader.read();
     if (image.isNull()) {
-        *error = QStringLiteral("That file could not be read as an image.");
+        *error = UiText::tr("That file could not be read as an image.");
         return {};
     }
     if (image.width() > 780 || image.height() > 1170)
@@ -2602,7 +2618,7 @@ QByteArray prepareCustomizeImage(const QString &source, QString *error) {
     QBuffer output(&encoded);
     output.open(QIODevice::WriteOnly);
     if (!image.save(&output, "JPG", 90)) {
-        *error = QStringLiteral("Could not prepare that image for the library.");
+        *error = UiText::tr("Could not prepare that image for the library.");
         return {};
     }
     return encoded;
@@ -2664,7 +2680,7 @@ void LibraryService::searchCustomizeMusicIdentity(const QString &requestId, cons
         MusicIdentityClient client;
         if (kind == QLatin1String("album")) out.items = client.searchAlbums(query, artistHint, &out.error);
         else if (kind == QLatin1String("artist")) out.items = client.searchArtists(query, provider, &out.error);
-        else out.error = QStringLiteral("This item has no music identity to match.");
+        else out.error = UiText::tr("This item has no music identity to match.");
         return out;
     }));
 }
@@ -2684,7 +2700,7 @@ void LibraryService::searchCustomizeIdentity(const QString &requestId,
         bool ok = false;
         const auto results = tv ? tmdb.searchTV(query.trimmed(), &ok)
                                 : tmdb.searchMovie(query.trimmed(), &ok);
-        if (!ok) out.error = QStringLiteral("TMDB could not be reached. Try again.");
+        if (!ok) out.error = UiText::tr("TMDB could not be reached. Try again.");
         for (const auto &r : results)
             out.items.append(QVariantMap{{"tmdbId", r.id}, {"title", r.title}, {"year", r.year},
                 {"overview", r.overview}, {"posterUrl", r.posterPath.isEmpty() ? QString()
@@ -2790,7 +2806,7 @@ void LibraryService::requestCustomizeArt(const QString &requestId, const QString
             QString path = ctx.value(QStringLiteral("filepath")).toString();
             if (QUrl(path).isLocalFile()) path = QUrl(path).toLocalFile();
             if (path.isEmpty() || !QFileInfo::exists(path)) {
-                out.error = QStringLiteral("The video file is unavailable for frame grabs.");
+                out.error = UiText::tr("The video file is unavailable for frame grabs.");
                 return out;
             }
             const QString dir = cache + QStringLiteral("/vidthumbs");
@@ -2805,7 +2821,7 @@ void LibraryService::requestCustomizeArt(const QString &requestId, const QString
                     && QFileInfo::exists(dest))
                     out.items.append(QUrl::fromLocalFile(dest).toString());
             }
-            if (out.items.isEmpty()) out.error = QStringLiteral("No frames could be extracted from this video.");
+            if (out.items.isEmpty()) out.error = UiText::tr("No frames could be extracted from this video.");
             return out;
         }
         if (kind == QLatin1String("album")) {
@@ -2864,7 +2880,7 @@ void LibraryService::requestCustomizeArt(const QString &requestId, const QString
             return out;
         }
         if (kind != QLatin1String("movie") && kind != QLatin1String("series")) {
-            out.error = QStringLiteral("Artwork is unavailable for this item type.");
+            out.error = UiText::tr("Artwork is unavailable for this item type.");
             return out;
         }
         TmdbClient tmdb;
@@ -2875,7 +2891,7 @@ void LibraryService::requestCustomizeArt(const QString &requestId, const QString
             const QString query = ctx.value(QStringLiteral("title")).toString().trimmed();
             if (query.isEmpty()) return out;
             const auto matches = tv ? tmdb.searchTV(query, &ok) : tmdb.searchMovie(query, &ok);
-            if (!ok) out.error = QStringLiteral("TMDB could not be reached. Try again.");
+            if (!ok) out.error = UiText::tr("TMDB could not be reached. Try again.");
             if (matches.isEmpty()) return out;
             id = matches.first().id;
         }
@@ -2890,7 +2906,7 @@ void LibraryService::requestCustomizeArt(const QString &requestId, const QString
             for (const auto &poster : posters)
                 out.items.append(QStringLiteral("https://image.tmdb.org/t/p/w500") + poster.filePath);
         }
-        if (!ok) out.error = QStringLiteral("The artwork provider could not be reached. Try again.");
+        if (!ok) out.error = UiText::tr("The artwork provider could not be reached. Try again.");
         return out;
     }));
 }
@@ -2898,13 +2914,13 @@ void LibraryService::requestCustomizeArt(const QString &requestId, const QString
 void LibraryService::applyCustomization(const QString &requestId, const QString &kind,
                                         const QVariantMap &context, const QVariantMap &draft) {
     if (m_customizationBusy) {
-        emit customizationFinished(requestId, false, QStringLiteral("Another customization is still saving."));
+        emit customizationFinished(requestId, false, UiText::tr("Another customization is still saving."));
         return;
     }
     const bool music = kind == QLatin1String("album") || kind == QLatin1String("artist");
     const bool collection = kind == QLatin1String("genre") || kind == QLatin1String("mixtape");
     if (!music && !collection && kind != QLatin1String("movie") && kind != QLatin1String("series")) {
-        emit customizationFinished(requestId, false, QStringLiteral("This item type cannot be customized yet."));
+        emit customizationFinished(requestId, false, UiText::tr("This item type cannot be customized yet."));
         return;
     }
     // Stable target IDs, using the same canonical album-owner grouping as
@@ -2924,7 +2940,7 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
             if (!ids.contains(id.toLongLong())) ids.append(id.toLongLong());
     }
     if (ids.isEmpty() && !collection) {
-        emit customizationFinished(requestId, false, QStringLiteral("This item is no longer in the library."));
+        emit customizationFinished(requestId, false, UiText::tr("This item is no longer in the library."));
         return;
     }
     const QString dbPath = Zuuned::ProfilePaths::writableLocation(QStandardPaths::AppDataLocation)
@@ -3006,10 +3022,10 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
         const bool match = mode == QLatin1String("match");
         const bool reset = mode == QLatin1String("reset");
         if (mode != QLatin1String("keep") && !manual && !match && !reset) {
-            out.error = QStringLiteral("Unknown identity choice."); return out;
+            out.error = UiText::tr("Unknown identity choice."); return out;
         }
         if (collection && mode != QLatin1String("keep")) {
-            out.error = QStringLiteral("Only artwork is edited here."); return out;
+            out.error = UiText::tr("Only artwork is edited here."); return out;
         }
         QVariantMap artworkMatch = draft.value(QStringLiteral("artworkMatch")).toMap();
         if (!artworkMatch.isEmpty()) {
@@ -3026,7 +3042,7 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
                 && ((kind == QLatin1String("artist") && scope == QLatin1String("artist"))
                     || (kind == QLatin1String("album") && (scope == QLatin1String("general")
                         || (scope == QLatin1String("exact") && !releaseId.isEmpty()))));
-            if (!valid) { out.error = QStringLiteral("Choose a valid artwork match without changing identity at the same time."); return out; }
+            if (!valid) { out.error = UiText::tr("Choose a valid artwork match without changing identity at the same time."); return out; }
             artworkMatch.insert("providerId", id);
             if (kind == QLatin1String("album")) artworkMatch.insert("releaseGroupId", id);
             artworkMatch.insert("choice", "manual");
@@ -3039,7 +3055,7 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
                 ? client.albumDetails(chosen.value(QStringLiteral("mbid")).toString(), &out.error)
                 : client.artistDetails(chosen.value(QStringLiteral("provider")).toString(), chosen.value(QStringLiteral("providerId")).toString(), &out.error);
             if (!out.error.isEmpty() || musicIdentity.value(QStringLiteral("title")).toString().isEmpty()) {
-                if (out.error.isEmpty()) out.error = QStringLiteral("Could not load that music match. Your changes have not been saved.");
+                if (out.error.isEmpty()) out.error = UiText::tr("Could not load that music match. Your changes have not been saved.");
                 return out;
             }
             fields.insert(QStringLiteral("title"), musicIdentity.value(QStringLiteral("title")));
@@ -3053,14 +3069,14 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
         const QString nameField = !music ? QStringLiteral("title")
             : kind == QLatin1String("album") ? QStringLiteral("album") : QStringLiteral("artist");
         if (manual && fields.value(nameField).toString().trimmed().isEmpty()) {
-            out.error = QStringLiteral("Give this item a name before saving."); return out;
+            out.error = UiText::tr("Give this item a name before saving."); return out;
         }
         for (const QString &key : {QStringLiteral("year"), QStringLiteral("season"), QStringLiteral("episode")}) {
             if (!manual || !fields.contains(key) || fields.value(key).toString().trimmed().isEmpty()) continue;
             bool valid = false;
             const int value = fields.value(key).toString().toInt(&valid);
             if (!valid || value < 0 || value > 9999) {
-                out.error = QStringLiteral("%1 must be a number between 0 and 9999.").arg(key); return out;
+                out.error = UiText::tr("%1 must be a number between 0 and 9999.").arg(key); return out;
             }
         }
         QByteArray art;
@@ -3075,12 +3091,12 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
             const int id = draft.value(QStringLiteral("tmdbId")).toInt();
             if (id <= 0 || !(tv ? tmdb.tvDetails(id, &details) : tmdb.movieDetails(id, &details))
                 || details.id <= 0 || details.title.isEmpty()) {
-                out.error = QStringLiteral("Could not load that match. Your changes have not been saved."); return out;
+                out.error = UiText::tr("Could not load that match. Your changes have not been saved."); return out;
             }
         }
         LibraryDb db;
         if (!db.open(dbPath) || !db.begin()) {
-            out.error = QStringLiteral("Could not open the library for saving: %1").arg(db.lastError()); return out;
+            out.error = UiText::tr("Could not open the library for saving: %1").arg(db.lastError()); return out;
         }
         QVector<LibTrack> changedTracks;
         QVector<LibVideo> changedVideos;
@@ -3098,7 +3114,7 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
             if (from == to || !QFileInfo::exists(from)) return;
             QFile input(from);
             if (!input.open(QIODevice::ReadOnly)) {
-                out.error = QStringLiteral("Could not preserve the existing artwork."); return;
+                out.error = UiText::tr("Could not preserve the existing artwork."); return;
             }
             stageFile(to, input.readAll());
         };
@@ -3112,7 +3128,7 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
                 for (const auto &track : db.allTracks())
                     if ((track.genre.isEmpty() ? QStringLiteral("Unknown Genre") : track.genre) == key) exists = true;
             }
-            if (!exists) { db.rollback(); out.error = QStringLiteral("This collection is no longer in the library."); return out; }
+            if (!exists) { db.rollback(); out.error = UiText::tr("This collection is no longer in the library."); return out; }
             const QString oldPath = db.collectionCustomization(kind, key).value(QStringLiteral("artPath")).toString();
             QString path = oldPath;
             if (!art.isEmpty()) {
@@ -3120,7 +3136,7 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
                     .arg(kind, QUuid::createUuid().toString(QUuid::WithoutBraces));
                 stageFile(path, art);
             } else if (resetArt) path.clear();
-            if (!db.setCollectionCustomization(kind, key, {}, path)) out.error = QStringLiteral("Could not save this collection’s artwork.");
+            if (!db.setCollectionCustomization(kind, key, {}, path)) out.error = UiText::tr("Could not save this collection’s artwork.");
             if (oldPath != path && !oldPath.isEmpty()) stageFile(oldPath, {}, true);
         } else if (music) {
             const bool editMusic = manual || match;
@@ -3155,7 +3171,7 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
                             const auto albumChoice = db.collectionCustomization(QStringLiteral("album"), fromKey);
                             const auto destination = db.collectionCustomization(QStringLiteral("album"), toKey);
                             if (hasManualCollectionChoice(destination)) {
-                                out.error = QStringLiteral("An album under that artist already has custom choices. Choose a different artist name to keep both.");
+                                out.error = UiText::tr("An album under that artist already has custom choices. Choose a different artist name to keep both.");
                                 continue;
                             }
                             if (!albumChoice.isEmpty()) {
@@ -3163,7 +3179,7 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
                                     : albumCache(cache, newOwner, track.album);
                                 if (!db.setCollectionCustomization(QStringLiteral("album"), toKey, albumChoice.value(QStringLiteral("identity")).toMap(), pinnedPath)
                                     || !db.removeCollectionCustomization(QStringLiteral("album"), fromKey))
-                                    out.error = QStringLiteral("Could not preserve an album’s customization during the artist change.");
+                                    out.error = UiText::tr("Could not preserve an album’s customization during the artist change.");
                             }
                         }
                     }
@@ -3185,7 +3201,7 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
                 else if (resetArt || reset) stageFile(path, {}, true);
                 if (editMusic || !art.isEmpty() || resetArt || reset) out.artists.append(name);
             }
-            if (changedTracks.size() != ids.size() && out.error.isEmpty()) out.error = QStringLiteral("Some tracks left the library while this sheet was open.");
+            if (changedTracks.size() != ids.size() && out.error.isEmpty()) out.error = UiText::tr("Some tracks left the library while this sheet was open.");
             if (!changedTracks.isEmpty()) {
                 const auto &first = changedTracks.first();
                 const QString oldKey = kind == QLatin1String("album") ? AlbumArtService::cacheKey(context.value(QStringLiteral("artist")).toString(), context.value(QStringLiteral("album")).toString())
@@ -3195,7 +3211,7 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
                 const auto saved = db.collectionCustomization(kind, oldKey);
                 const auto destination = oldKey == newKey ? QVariantMap() : db.collectionCustomization(kind, newKey);
                 if (hasManualCollectionChoice(destination)) {
-                    out.error = QStringLiteral("That name already belongs to a customized item. Choose a different name to keep both.");
+                    out.error = UiText::tr("That name already belongs to a customized item. Choose a different name to keep both.");
                     db.rollback(); return out;
                 }
                 if (manual) musicIdentity = {{QStringLiteral("provider"), QStringLiteral("manual")}, {QStringLiteral("overview"), fields.value(QStringLiteral("overview"))}};
@@ -3221,7 +3237,7 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
                     ? albumCache(cache, albumOwner(first), first.album) : artistCache(cache, editMusic ? fields.value(QStringLiteral("artist")).toString().trimmed() : context.value(QStringLiteral("name")).toString());
                 if (art.isEmpty() && (resetArt || reset)) artPath.clear();
                 if (!db.setCollectionCustomization(kind, newKey, musicIdentity, artPath)
-                    || (oldKey != newKey && !db.removeCollectionCustomization(kind, oldKey))) out.error = QStringLiteral("Could not save the chosen music identity.");
+                    || (oldKey != newKey && !db.removeCollectionCustomization(kind, oldKey))) out.error = UiText::tr("Could not save the chosen music identity.");
             }
         } else {
             const auto videos = db.allVideos();
@@ -3288,7 +3304,7 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
                 out.videoIds.append(video.id);
                 changedVideos.append(video);
             }
-            if (changedVideos.size() != ids.size()) out.error = QStringLiteral("Some videos left the library while this sheet was open.");
+            if (changedVideos.size() != ids.size()) out.error = UiText::tr("Some videos left the library while this sheet was open.");
         }
         // Prepare rollback copies before changing either the cache or rows.
         for (auto &file : files) {
@@ -3296,7 +3312,7 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
             if (!file.existed) continue;
             QFile input(file.path);
             if (!input.open(QIODevice::ReadOnly)) {
-                out.error = QStringLiteral("The existing artwork could not be opened for saving."); break;
+                out.error = UiText::tr("The existing artwork could not be opened for saving."); break;
             }
             file.original = input.readAll();
         }
@@ -3328,8 +3344,8 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
                 if (file.existed) restored &= writeCustomizeFile(file.path, file.original);
                 else if (QFileInfo::exists(file.path)) restored &= QFile::remove(file.path);
             }
-            out.error = restored ? QStringLiteral("Could not save the customization. Your previous choices were restored.")
-                                 : QStringLiteral("Saving failed and an artwork cache file could not be restored. Your metadata was not changed.");
+            out.error = restored ? UiText::tr("Could not save the customization. Your previous choices were restored.")
+                                 : UiText::tr("Saving failed and an artwork cache file could not be restored. Your metadata was not changed.");
             return out;
         }
         // Tags are an export of the authoritative library. Rewrites can
@@ -3340,7 +3356,7 @@ void LibraryService::applyCustomization(const QString &requestId, const QString 
                 if (!writeId3IfMpeg(track)) ++tagFailures;
         out.success = true;
         if (tagFailures > 0)
-            out.error = QStringLiteral("Saved to your library. Tags could not be written to %1 media file(s).").arg(tagFailures);
+            out.error = UiText::tr("Saved to your library. Tags could not be written to %1 media file(s).").arg(tagFailures);
         return out;
     }));
 }

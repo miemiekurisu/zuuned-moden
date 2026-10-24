@@ -31,6 +31,7 @@
 
 extern "C" {
 #include "zune.h"
+#include "../UiText.h"
 }
 
 // ── Extension sets (LibraryService.swift) ──
@@ -202,12 +203,12 @@ TrackResult resolveTrack(const WorkItem &work, const QSet<QString> &roots) {
         zune_free_metadata(&meta);
     } else {
         zune_free_metadata(&meta);
-        return {{}, QStringLiteral("Could not read this song. The next scan will retry.")};
+        return {{}, UiText::tr("Could not read this song. The next scan will retry.")};
     }
     WorkItem after;
     if (!fingerprint(work.filepath, after) || after.filesize != work.filesize
         || after.mtimeNs != work.mtimeNs || after.ctimeNs != work.ctimeNs)
-        return {{}, QStringLiteral("This song changed while it was being read. The next scan will retry.")};
+        return {{}, UiText::tr("This song changed while it was being read. The next scan will retry.")};
 
     // A reliable tagged performer outranks an unverified folder owner.
     if (t.albumartist.isEmpty() && !t.artist.isEmpty()) t.albumartist = t.artist;
@@ -363,7 +364,7 @@ void LibraryScanner::scan() {
 
     LibraryDb db;
     if (!db.open(m_dbPath)) {
-        emit failed(QStringLiteral("library db open failed: ") + db.lastError());
+        emit failed(UiText::tr("library db open failed: %1").arg(db.lastError()));
         m_running = false;
         return;
     }
@@ -820,7 +821,7 @@ void LibraryScanner::scan() {
         for (const LibTrack &track : sources) {
             if (m_cancel) break;
             lastCopyPath = track.filepath;
-            emit progress(QStringLiteral("checking copies"), copiesVisited++, copyTotal, lastCopyPath);
+            emit progress(UiText::tr("checking copies"), copiesVisited++, copyTotal, lastCopyPath);
             WorkItem before;
             if (!fingerprint(track.filepath, before)) {
                 if (!track.audioFingerprint.isEmpty())
@@ -843,7 +844,7 @@ void LibraryScanner::scan() {
             changed |= db.updateAudioFingerprint(track, hash);
         }
         if (!m_cancel && copyTotal > 0)
-            emit progress(QStringLiteral("checking copies"), copiesVisited, copyTotal, lastCopyPath);
+            emit progress(UiText::tr("checking copies"), copiesVisited, copyTotal, lastCopyPath);
         if (changed) emit chunkCommitted();
     }
 

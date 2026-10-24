@@ -65,7 +65,8 @@ Item {
             objectName: "spokenCardStar"
             anchors.top: parent.top; anchors.left: parent.left; anchors.margins: Theme.spaceXs
             text: card.entry.favorite ? "★" : "☆"
-            Accessible.name: card.entry.favorite ? "Unstar " + card.entry.title : "Star " + card.entry.title
+            Accessible.name: card.entry.favorite ? qsTr("Unstar %1").arg(card.entry.title)
+              : qsTr("Star %1").arg(card.entry.title)
             flat: true; highlighted: !!card.entry.favorite
             width: Theme.spaceXl + Theme.spaceSm
             height: width
@@ -130,6 +131,8 @@ Item {
         spacing: Theme.spaceXxs
         Text { width: parent.width; text: card.entry.title ?? ""; color: Theme.textPrimary; font.pixelSize: Theme.spokenBody; elide: Text.ElideRight }
         Text { width: parent.width; text: card.entry.author ?? ""; color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption; elide: Text.ElideRight }
-        Text { width: parent.width; text: card.book ? ((card.entry.count ?? 0) === 1 ? "1 audio file" : (card.entry.count ?? 0) + " audio files") : (card.entry.count ?? 0) + " episodes"; color: Theme.textDim; font.pixelSize: Theme.spokenCaption; elide: Text.ElideRight }
+        Text { width: parent.width; text: card.book ? ((card.entry.count ?? 0) === 1 ? qsTr("1 audio file")
+          : qsTr("%1 audio files").arg(card.entry.count ?? 0))
+          : qsTr("%1 episodes").arg(card.entry.count ?? 0); color: Theme.textDim; font.pixelSize: Theme.spokenCaption; elide: Text.ElideRight }
     }
 }

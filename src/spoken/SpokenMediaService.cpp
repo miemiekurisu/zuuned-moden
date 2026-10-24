@@ -7,6 +7,7 @@
 #include "PodcastFeed.h"
 #include "SpokenStore.h"
 #include <QBuffer>
+#include "../UiText.h"
 #include <QCollator>
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -58,7 +59,7 @@ Fetch fetch(const QUrl &input, qint64 limit, const std::atomic_bool *cancel,
     const qint64 totalDeadline = output ? 30 * 60 * 1000 : 45000;
     for (int redirects = 0; redirects <= 5; ++redirects) {
         if (!webUrl(url) || (cancel && cancel->load())) {
-            result.error = "Invalid URL or operation cancelled";
+            result.error = UiText::tr("Invalid URL or operation cancelled");
             return result;
         }
         QNetworkRequest req(url);
@@ -124,7 +125,7 @@ Fetch fetch(const QUrl &input, qint64 limit, const std::atomic_bool *cancel,
         if (status >= 300 && status < 400 && !redirect.isEmpty()) {
             const auto next = url.resolved(redirect);
             if (url.scheme() == "https" && next.scheme() != "https") {
-                result.error = "Refused an insecure redirect";
+                result.error = UiText::tr("Refused an insecure redirect");
                 return result;
             }
             url = next;
@@ -133,22 +134,22 @@ Fetch fetch(const QUrl &input, qint64 limit, const std::atomic_bool *cancel,
         if (!ok || status < 200 || status >= 300 || tooLarge || writeFailed) {
             result.bytes.clear();
             result.error =
-                tooLarge      ? "Response exceeds the size limit"
-                : writeFailed ? "Could not save the download"
+                tooLarge      ? UiText::tr("Response exceeds the size limit")
+                : writeFailed ? UiText::tr("Could not save the download")
                 : (cancel && cancel->load())
                     ? "Cancelled"
-                    : QStringLiteral("Provider request failed (HTTP %1). Try again.").arg(status);
+                    : UiText::tr("Provider request failed (HTTP %1). Try again.").arg(status);
             return result;
         }
         result.finalUrl = url;
         return result;
     }
-    result.error = "Too many redirects";
+    result.error = UiText::tr("Too many redirects");
     return result;
 }
 QString prepareCover(const QString &root, const QByteArray &bytes, QString *error) {
     if (bytes.isEmpty() || bytes.size() > 10 * 1024 * 1024) {
-        *error = "Cover must be under 10 MiB";
+        *error = UiText::tr("Cover must be under 10 MiB");
         return {};
     }
     QBuffer input;
@@ -157,19 +158,19 @@ QString prepareCover(const QString &root, const QByteArray &bytes, QString *erro
     QImageReader reader(&input);
     const QByteArray format = reader.format().toLower();
     if (format != "jpeg" && format != "jpg" && format != "png" && format != "webp") {
-        *error = "Choose a JPEG, PNG or WebP cover";
+        *error = UiText::tr("Choose a JPEG, PNG or WebP cover");
         return {};
     }
     const QSize size = reader.size();
     if (!size.isValid() || qint64(size.width()) * size.height() > 40000000) {
-        *error = "Cover dimensions exceed the limit";
+        *error = UiText::tr("Cover dimensions exceed the limit");
         return {};
     }
     reader.setAutoTransform(true);
     reader.setScaledSize(size.scaled(1600, 1600, Qt::KeepAspectRatio));
     const auto image = reader.read();
     if (image.isNull()) {
-        *error = "Cannot decode this cover";
+        *error = UiText::tr("Cannot decode this cover");
         return {};
     }
     QDir().mkpath(root + "/art");
@@ -178,7 +179,7 @@ QString prepareCover(const QString &root, const QByteArray &bytes, QString *erro
         QSaveFile out(path);
         out.setDirectWriteFallback(false);
         if (!out.open(QIODevice::WriteOnly) || !image.save(&out, "JPEG", 93) || !out.commit()) {
-            *error = "Cannot save the cover";
+            *error = UiText::tr("Cannot save the cover");
             return {};
         }
     }
@@ -222,7 +223,7 @@ QVariantMap feedMap(const PodcastFeed &f, const QUrl &requested) {
 QVariantMap readFeed(const QString &root, const QUrl &url, const std::atomic_bool *cancel,
                      QString *error) {
     if (!webUrl(url)) {
-        *error = "Enter an HTTP or HTTPS RSS feed without embedded credentials";
+        *error = UiText::tr("Enter an HTTP or HTTPS RSS feed without embedded credentials");
         return {};
     }
     auto response = fetch(url, Podcasts::MaxFeedBytes, cancel);
@@ -286,7 +287,7 @@ QVariantMap inspectBook(const QString &root, const QList<QUrl> &urls, QString *e
     for (const auto &url : urls) {
         const QString path = QFileInfo(localPath(url)).canonicalFilePath();
         if (path.isEmpty() || paths.contains(path)) {
-            *error = "Missing file or duplicate audiobook part";
+            *error = UiText::tr("Missing file or duplicate audiobook part");
             return {};
         }
         paths.insert(path);
@@ -333,7 +334,7 @@ int writeBook(SpokenStore &s, const QVariantMap &draft, const QString &title, co
     QSet<QString> unique(order.begin(), order.end());
     if (draft.value("kind") != "book" || title.trimmed().isEmpty() || title.size() > 500 ||
         order.size() != parts.size() || unique.size() != order.size()) {
-        *error = "Review the book title and complete part order";
+        *error = UiText::tr("Review the book title and complete part order");
         return -1;
     }
     QVariantMap byPath;
@@ -358,9 +359,7 @@ int writeBook(SpokenStore &s, const QVariantMap &draft, const QString &title, co
     for (const auto &value : existingRows) {
         const auto saved = value.toMap();
         if (saved.value("kind") == "part" && unique.contains(saved.value("path").toString())) {
-            *error = "Some files already belong to a book. Exclude this folder and "
-                     "import only new "
-                     "books.";
+            *error = UiText::tr("Some files already belong to a book. Exclude this folder and import only new books.");
             return -1;
         }
     }
@@ -369,7 +368,7 @@ int writeBook(SpokenStore &s, const QVariantMap &draft, const QString &title, co
         QFileInfo file(path);
         if (p.isEmpty() || !file.isFile() || file.size() != p.value("bytes").toLongLong() ||
             file.lastModified().toMSecsSinceEpoch() != p.value("mtime").toLongLong()) {
-            *error = "A source file changed. Inspect the book again.";
+            *error = UiText::tr("A source file changed. Inspect the book again.");
             return -1;
         }
     }
@@ -579,7 +578,7 @@ void SpokenMediaService::setFavorite(const QString &id, bool favorite) {
             return;
         const auto kind = row.value("kind").toString();
         if (kind != "show" && kind != "episode" && kind != "book") {
-            r.error = "Choose a podcast show, episode or audiobook to star";
+            r.error = UiText::tr("Choose a podcast show, episode or audiobook to star");
             return;
         }
         row["favorite"] = favorite;
@@ -629,7 +628,7 @@ void SpokenMediaService::setPodcastKeepOnDevice(const QString &id, bool keep) {
         if (!r.error.isEmpty())
             return;
         if (row.value("kind") != "episode") {
-            r.error = "Choose a podcast episode to keep on the Zune";
+            r.error = UiText::tr("Choose a podcast episode to keep on the Zune");
             return;
         }
         row["keepOnDevice"] = keep;
@@ -638,12 +637,12 @@ void SpokenMediaService::setPodcastKeepOnDevice(const QString &id, bool keep) {
 }
 void SpokenMediaService::recordDevicePlayed(const QString &token, const QString &serial,
                                            const QVariantList &rows) {
-    run("podcast device listening state",
+    run(UiText::tr("podcast device listening state"),
         [token, serial, rows](SpokenStore &s, Result &r, const std::atomic_bool *cancel) {
             if (token.trimmed().isEmpty() || token.size() > 256 || token.contains(QChar(0)) ||
                 serial.trimmed().isEmpty() || serial != serial.trimmed() || serial.size() > 512 ||
                 serial.contains(QChar(0)) || rows.isEmpty() || rows.size() > 5000) {
-                r.error = "Invalid podcast listening-state request";
+                r.error = UiText::tr("Invalid podcast listening-state request");
                 return;
             }
             if (!s.begin(&r.error))
@@ -666,7 +665,7 @@ void SpokenMediaService::recordDevicePlayed(const QString &token, const QString 
                      row.value("identity") != expected.value("identity") ||
                      show.value("identity") != expected.value("feedUrl") ||
                      row.value("deviceSourceUrl", row.value("sourceUrl")) != expected.value("sourceUrl"))) {
-                    r.error = "Podcast identity or keep-on-device choice changed; cleanup was skipped";
+                    r.error = UiText::tr("Podcast identity or keep-on-device choice changed; cleanup was skipped");
                 }
                 if (!r.error.isEmpty()) {
                     s.rollback();
@@ -728,13 +727,13 @@ QVariantList SpokenMediaService::collectionBooks(const QString &id) const {
 void SpokenMediaService::saveAudiobookCollection(const QString &id, const QString &title,
                                                  const QStringList &bookIds,
                                                  int expectedRevision) {
-    run("save audiobook collection", [id, title, bookIds, expectedRevision](
+    run(UiText::tr("save audiobook collection"), [id, title, bookIds, expectedRevision](
             SpokenStore &s, Result &r, const std::atomic_bool *) {
         r.id = id;
         if (title.trimmed().isEmpty() || title.size() > 500 || title.contains(QChar::Null) ||
             bookIds.size() > 5000 || expectedRevision == INT_MAX ||
             QSet<QString>(bookIds.begin(), bookIds.end()).size() != bookIds.size()) {
-            r.error = "Enter a collection name and a complete list of up to 5,000 distinct books";
+            r.error = UiText::tr("Enter a collection name and a complete list of up to 5,000 distinct books");
             return;
         }
         if (!s.begin(&r.error))
@@ -742,21 +741,21 @@ void SpokenMediaService::saveAudiobookCollection(const QString &id, const QStrin
         QVariantMap row;
         if (id.isEmpty()) {
             if (expectedRevision != 0)
-                r.error = "Start a new collection before saving";
+                r.error = UiText::tr("Start a new collection before saving");
             row = {{"kind", "book-collection"},
                    {"identity", QUuid::createUuid().toString(QUuid::WithoutBraces)}};
         } else {
             row = s.get(id, &r.error);
             if (r.error.isEmpty() && (row.value("kind") != "book-collection" ||
                 expectedRevision < 1 || row.value("revision").toInt() != expectedRevision))
-                r.error = "This collection changed or was removed. Reopen it before saving.";
+                r.error = UiText::tr("This collection changed or was removed. Reopen it before saving.");
         }
         for (const auto &bookId : bookIds) {
             if (!r.error.isEmpty())
                 break;
             const auto book = s.get(bookId, &r.error);
             if (r.error.isEmpty() && book.value("kind") != "book")
-                r.error = "A selected audiobook no longer exists. Review the collection.";
+                r.error = UiText::tr("A selected audiobook no longer exists. Review the collection.");
         }
         if (r.error.isEmpty()) {
             row["title"] = title.trimmed();
@@ -772,7 +771,7 @@ void SpokenMediaService::saveAudiobookCollection(const QString &id, const QStrin
     });
 }
 void SpokenMediaService::deleteAudiobookCollection(const QString &id, int expectedRevision) {
-    run("delete audiobook collection", [id, expectedRevision](
+    run(UiText::tr("delete audiobook collection"), [id, expectedRevision](
             SpokenStore &s, Result &r, const std::atomic_bool *) {
         r.id = id;
         if (!s.begin(&r.error))
@@ -780,7 +779,7 @@ void SpokenMediaService::deleteAudiobookCollection(const QString &id, int expect
         const auto row = s.get(id, &r.error);
         if (r.error.isEmpty() && (row.value("kind") != "book-collection" ||
             expectedRevision < 1 || row.value("revision").toInt() != expectedRevision))
-            r.error = "This collection changed or was removed. Reopen it before deleting.";
+            r.error = UiText::tr("This collection changed or was removed. Reopen it before deleting.");
         if (r.error.isEmpty())
             s.removeAudiobookCollection(id, &r.error);
         if (!r.error.isEmpty() || !s.commit(&r.error))
@@ -842,12 +841,12 @@ void SpokenMediaService::previewFeed(const QUrl &input) {
 void SpokenMediaService::subscribePreview() {
     const auto preview = m_preview;
     if (preview.value("kind") != "show") {
-        emit notification("Preview a feed first");
+        emit notification(UiText::tr("Preview a feed first"));
         return;
     }
     run("subscribe", [preview](SpokenStore &s, Result &r, const std::atomic_bool *) {
         if (saveFeed(s, preview, &r.id, &r.error))
-            r.message = "Podcast saved to your library";
+            r.message = UiText::tr("Podcast saved to your library");
     });
 }
 void SpokenMediaService::refreshFeed(const QString &id) {
@@ -860,14 +859,14 @@ void SpokenMediaService::refreshFeedImpl(const QString &id, bool quiet, std::fun
     run("refresh feed", [id, quiet](SpokenStore &s, Result &r, const std::atomic_bool *c) {
         const auto current = s.get(id, &r.error);
         if (current.value("kind") != "show") {
-            r.error = "Show no longer exists";
+            r.error = UiText::tr("Show no longer exists");
             return;
         }
         auto data = readFeed(s.root(), QUrl(current.value("url").toString()), c, &r.error);
         if (!r.error.isEmpty())
             return;
         if (saveFeed(s, data, &r.id, &r.error) && !quiet)
-            r.message = "Feed refreshed; downloads and your cover were preserved";
+            r.message = UiText::tr("Feed refreshed; downloads and your cover were preserved");
     }, -1, {}, [finished = std::move(finished)](const Result &r) {
         if (finished) finished(r.error.isEmpty());
     });
@@ -881,7 +880,7 @@ void SpokenMediaService::previewBook(const QList<QUrl> &urls) {
         [urls](SpokenStore &store, Result &r, const std::atomic_bool *cancel) {
             r.hasPreview = true;
             if (urls.isEmpty() || urls.size() > 5000) {
-                r.error = "Choose between 1 and 5,000 files for one book";
+                r.error = UiText::tr("Choose between 1 and 5,000 files for one book");
                 return;
             }
             r.preview = inspectBook(store.root(), urls, &r.error, cancel);
@@ -901,10 +900,10 @@ void SpokenMediaService::importBook(const QString &title, const QString &author,
             return;
         }
         if (result == 0) {
-            r.message = "This book is already in your library";
+            r.message = UiText::tr("This book is already in your library");
             return;
         }
-        r.message = "Audiobook imported; original files preserved";
+        r.message = UiText::tr("Audiobook imported; original files preserved");
     });
 }
 void SpokenMediaService::download(const QStringList &ids) {
@@ -913,14 +912,14 @@ void SpokenMediaService::download(const QStringList &ids) {
         int count = 0;
         for (const auto &id : ids) {
             if (cancel->load()) {
-                r.error = "Cancelled; completed downloads were kept";
+                r.error = UiText::tr("Cancelled; completed downloads were kept");
                 return;
             }
             auto row = s.get(id, &r.error);
             if (!r.error.isEmpty())
                 return;
             if (row.value("kind") != "episode") {
-                r.error = "Episode no longer exists";
+                r.error = UiText::tr("Episode no longer exists");
                 return;
             }
             if (QFileInfo::exists(row.value("path").toString()))
@@ -929,7 +928,7 @@ void SpokenMediaService::download(const QStringList &ids) {
             QSaveFile file(path);
             file.setDirectWriteFallback(false);
             if (!file.open(QIODevice::WriteOnly)) {
-                r.error = "Cannot create download file";
+                r.error = UiText::tr("Cannot create download file");
                 return;
             }
             auto response =
@@ -939,7 +938,7 @@ void SpokenMediaService::download(const QStringList &ids) {
                 return;
             }
             if (!file.commit()) {
-                r.error = "Cannot finish download";
+                r.error = UiText::tr("Cannot finish download");
                 return;
             }
             AudiobookPart audio;
@@ -980,19 +979,18 @@ void SpokenMediaService::saveCover(const QString &id, const QUrl &source, bool r
             r.id = id;
             auto row = s.get(id, &r.error);
             if (row.isEmpty()) {
-                r.error = "This item no longer exists";
+                r.error = UiText::tr("This item no longer exists");
                 return;
             }
             if (row.value("coverRevision").toInt() != expected) {
-                r.error = "The cover changed since you opened Customize. Reopen it and "
-                          "try again.";
+                r.error = UiText::tr("The cover changed since you opened Customize. Reopen it and try again.");
                 return;
             }
             QString art;
             if (!reset) {
                 QFile file(localPath(source));
                 if (!file.open(QIODevice::ReadOnly) || file.size() > 10 * 1024 * 1024) {
-                    r.error = "Choose a local image under 10 MiB";
+                    r.error = UiText::tr("Choose a local image under 10 MiB");
                     return;
                 }
                 art = prepareCover(s.root(), file.readAll(), &r.error);
@@ -1002,14 +1000,14 @@ void SpokenMediaService::saveCover(const QString &id, const QUrl &source, bool r
             row["customArt"] = art;
             row["coverRevision"] = expected + 1;
             if (s.put(&row, &r.error))
-                r.message = "Cover saved";
+                r.message = UiText::tr("Cover saved");
         });
 }
 void SpokenMediaService::markPlayed(const QString &id, bool played) {
     run("listening state", [id, played](SpokenStore &s, Result &r, const std::atomic_bool *) {
         auto row = s.get(id, &r.error);
         if (row.isEmpty()) {
-            r.error = "Item no longer exists";
+            r.error = UiText::tr("Item no longer exists");
             return;
         }
         row["played"] = played;
@@ -1020,18 +1018,18 @@ void SpokenMediaService::addBookmark(const QString &id, double position, const Q
     run("bookmark", [id, position, note](SpokenStore &s, Result &r, const std::atomic_bool *) {
         auto row = s.get(id, &r.error);
         if (row.isEmpty() || position < 0 || !std::isfinite(position)) {
-            r.error = "No spoken item is playing";
+            r.error = UiText::tr("No spoken item is playing");
             return;
         }
         auto bookmarks = row.value("bookmarks").toList();
         if (bookmarks.size() >= 10000) {
-            r.error = "Bookmark limit reached";
+            r.error = UiText::tr("Bookmark limit reached");
             return;
         }
         bookmarks.append(QVariantMap{{"positionMs", qint64(position)}, {"note", note.left(1000)}});
         row["bookmarks"] = bookmarks;
         if (s.put(&row, &r.error))
-            r.message = "Bookmark saved";
+            r.message = UiText::tr("Bookmark saved");
     });
 }
 void SpokenMediaService::attachPlayer(PlayerService *player) {
@@ -1091,7 +1089,7 @@ void SpokenMediaService::play(const QString &id, double position) {
     }
     const QString path = row.value("path").toString();
     if (path.isEmpty() || !QFileInfo::exists(path)) {
-        emit notification("Download this episode or restore its source file first");
+        emit notification(UiText::tr("Download this episode or restore its source file first"));
         return;
     }
     savePosition(true);
@@ -1106,7 +1104,7 @@ void SpokenMediaService::play(const QString &id, double position) {
     for (const auto &v : source) {
         const auto part = v.toMap();
         if (!QFileInfo::exists(part.value("path").toString())) {
-            emit notification("A book part is missing. Restore its source file first.");
+            emit notification(UiText::tr("A book part is missing. Restore its source file first."));
             return;
         }
         const bool current = part.value("id").toString() == nextId;
@@ -1130,13 +1128,13 @@ void SpokenMediaService::previewBookFolder(const QUrl &folder, bool collection) 
     emit previewChanged();
     const int generation = ++m_previewGeneration;
     run(
-        "inspect book folder",
+        UiText::tr("inspect book folder"),
         [folder, collection](SpokenStore &store, Result &r, const std::atomic_bool *cancel) {
             r.hasPreview = true;
             const QFileInfo selected(localPath(folder));
             const QString root = selected.canonicalFilePath();
             if (!folder.isLocalFile() || !selected.isDir() || root.isEmpty()) {
-                r.error = "Choose a readable local audiobook folder";
+                r.error = UiText::tr("Choose a readable local audiobook folder");
                 return;
             }
             QMap<QString, QStringList> groups;
@@ -1215,22 +1213,21 @@ void SpokenMediaService::previewBookFolder(const QUrl &folder, bool collection) 
                 return;
             }
             if (stopped == Stopped::TooBig) {
-                r.error = "Folder is too large; choose a smaller book collection";
+                r.error = UiText::tr("Folder is too large; choose a smaller book collection");
                 return;
             }
             if (stopped == Stopped::TooMany) {
-                r.error = "Import up to 5,000 audio files at a time";
+                r.error = UiText::tr("Import up to 5,000 audio files at a time");
                 return;
             }
             if (!walked.complete) {
                 r.error = walked.directories == 0
-                    ? QStringLiteral("Choose a readable local audiobook folder")
-                    : QStringLiteral("A subfolder cannot be read. Fix its access "
-                                     "permissions and try again.");
+                    ? UiText::tr("Choose a readable local audiobook folder")
+                    : UiText::tr("A subfolder cannot be read. Fix its access permissions and try again.");
                 return;
             }
             if (groups.isEmpty()) {
-                r.error = "No supported audiobook files found in this folder";
+                r.error = UiText::tr("No supported audiobook files found in this folder");
                 return;
             }
             QCollator natural{QLocale{QLocale::English}};
@@ -1261,14 +1258,14 @@ void SpokenMediaService::previewBookFolder(const QUrl &folder, bool collection) 
 }
 void SpokenMediaService::importBookFolder(const QVariantList &reviewed) {
     const auto preview = m_preview;
-    run("import book folder", [preview, reviewed](SpokenStore &s, Result &r,
+    run(UiText::tr("import book folder"), [preview, reviewed](SpokenStore &s, Result &r,
                                                   const std::atomic_bool *cancel) {
         const auto books = preview.value("books").toList();
         QSet<int> used;
         int added = 0, reused = 0;
         if (preview.value("kind") != "bookFolder" || reviewed.isEmpty() ||
             reviewed.size() > books.size()) {
-            r.error = "Preview and review the folder first";
+            r.error = UiText::tr("Preview and review the folder first");
             return;
         }
         if (!s.begin(&r.error))
@@ -1277,7 +1274,7 @@ void SpokenMediaService::importBookFolder(const QVariantList &reviewed) {
             const auto edit = value.toMap();
             const int index = edit.value("index", -1).toInt();
             if (cancel->load() || index < 0 || index >= books.size() || used.contains(index)) {
-                r.error = "Cancelled or invalid book selection";
+                r.error = UiText::tr("Cancelled or invalid book selection");
                 s.rollback();
                 return;
             }
@@ -1302,7 +1299,7 @@ void SpokenMediaService::importBookFolder(const QVariantList &reviewed) {
             return;
         }
         r.message =
-            QStringLiteral("%1 books imported; %2 already in your library").arg(added).arg(reused);
+            UiText::tr("%1 books imported; %2 already in your library").arg(added).arg(reused);
     });
 }
 void SpokenMediaService::skipChapter(int direction) {
@@ -1386,7 +1383,7 @@ QVariantList SpokenMediaService::selectPodcastEpisodes(const QString &showId, co
 }
 void SpokenMediaService::setPodcastSyncSelection(const QString &showId, const QString &order,
                                                  int count, bool unplayedOnly) {
-    run("podcast sync selection", [showId, order, count, unplayedOnly](SpokenStore &s, Result &r,
+    run(UiText::tr("podcast sync selection"), [showId, order, count, unplayedOnly](SpokenStore &s, Result &r,
                                                                      const std::atomic_bool *) {
         r.id = showId;
         auto row = s.get(showId, &r.error);
@@ -1394,7 +1391,7 @@ void SpokenMediaService::setPodcastSyncSelection(const QString &showId, const QS
             return;
         if (row.value("kind") != "show" || (order != "newest" && order != "oldest") ||
             count < 1 || count > 5000) {
-            r.error = "Choose a podcast show, newest or oldest, and 1 to 5,000 episodes";
+            r.error = UiText::tr("Choose a podcast show, newest or oldest, and 1 to 5,000 episodes");
             return;
         }
         row["syncOrder"] = order;
@@ -1408,7 +1405,7 @@ void SpokenMediaService::setPodcastSyncSelection(const QString &showId, const QS
 // source fingerprints belong to prepareTransfer, after SyncEngine starts sync.
 void SpokenMediaService::queuePodcasts(const QStringList &ids) {
     if (!m_canTransfer || !m_canTransfer()) {
-        emit notification("Connect a Zune before adding episodes.");
+        emit notification(UiText::tr("Connect a Zune before adding episodes."));
         return;
     }
     if (ids.isEmpty() || ids.size() > 5000)
@@ -1422,7 +1419,7 @@ void SpokenMediaService::queuePodcasts(const QStringList &ids) {
         const auto episode = item(id);
         const auto show = item(episode.value("parent").toString());
         if (episode.value("kind") != "episode" || show.value("kind") != "show") {
-            emit notification("Only podcast episodes can use podcast sync.");
+            emit notification(UiText::tr("Only podcast episodes can use podcast sync."));
             return;
         }
         QString art = episode.value("customArt").toString();
@@ -1459,7 +1456,7 @@ void SpokenMediaService::queuePodcasts(const QStringList &ids) {
 
 void SpokenMediaService::queueAudiobooks(const QStringList &ids) {
     if (!m_canTransfer || !m_canTransfer()) {
-        emit notification("Connect a Zune before adding books.");
+        emit notification(UiText::tr("Connect a Zune before adding books."));
         return;
     }
     if (ids.isEmpty() || ids.size() > 5000)
@@ -1468,7 +1465,7 @@ void SpokenMediaService::queueAudiobooks(const QStringList &ids) {
     for (const auto &id : ids) {
         const auto row = item(id);
         if (row.value("kind") != "part" && row.value("kind") != "book") {
-            emit notification("Choose an audiobook to sync.");
+            emit notification(UiText::tr("Choose an audiobook to sync."));
             return;
         }
         const auto bookId = row.value("kind") == "book" ? id : row.value("parent").toString();
@@ -1514,8 +1511,7 @@ void SpokenMediaService::queueAudiobooks(const QStringList &ids) {
                                        ? chapters[chapter + 1].toMap().value("startMs").toLongLong()
                                        : part.value("durationMs").toLongLong();
                 if (end <= start || end - start > INT_MAX || rows.size() >= 5000) {
-                    emit notification("This book's chapter lengths or part count exceed "
-                                      "the device transfer limits.");
+                    emit notification(UiText::tr("This book's chapter lengths or part count exceed the device transfer limits."));
                     return;
                 }
                 QString title = ranged
@@ -1568,7 +1564,7 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
         return;
     m_transferCancels.insert(token, std::make_shared<std::atomic_bool>(false));
     run(
-        "prepare spoken transfer",
+        UiText::tr("prepare spoken transfer"),
         [queuedRow](SpokenStore &s, Result &r, const std::atomic_bool *cancel) {
             if (queuedRow.value("type") == "audiobook") {
                 const QStringList selected{queuedRow.value("bookId").toString()};
@@ -1579,7 +1575,7 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
                 for (const auto &id : selected) {
                     const auto part = s.get(id, &r.error);
                     if (part.value("kind") != "part" && part.value("kind") != "book") {
-                        r.error = "An audiobook is missing";
+                        r.error = UiText::tr("An audiobook is missing");
                         return;
                     }
                     books[part.value("kind") == "book" ? id : part.value("parent").toString()] = {};
@@ -1587,7 +1583,7 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
                 for (auto b = books.begin(); b != books.end(); ++b) {
                     const auto book = s.get(b.key(), &r.error);
                     if (book.value("kind") != "book" || !r.error.isEmpty()) {
-                        r.error = "The audiobook is missing";
+                        r.error = UiText::tr("The audiobook is missing");
                         return;
                     }
                     QVariantList ordered;
@@ -1601,7 +1597,7 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
                                          b.toMap().value("order").toInt();
                               });
                     if (ordered.isEmpty() || ordered.size() > 65535) {
-                        r.error = "This book has too many parts for the Zune";
+                        r.error = UiText::tr("This book has too many parts for the Zune");
                         return;
                     }
                     QCryptographicHash bookHash(QCryptographicHash::Sha256);
@@ -1619,8 +1615,7 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
                         if (!file.isFile() || file.size() != part.value("bytes").toLongLong() ||
                             file.lastModified().toMSecsSinceEpoch() !=
                                 part.value("mtime").toLongLong()) {
-                            r.error = "An audiobook file changed since import. Review and "
-                                      "import the book again before syncing.";
+                            r.error = UiText::tr("An audiobook file changed since import. Review and import the book again before syncing.");
                             return;
                         }
                         AudiobookPart probe;
@@ -1628,7 +1623,7 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
                             return;
                         QFile source(file.filePath());
                         if (!source.open(QIODevice::ReadOnly)) {
-                            r.error = "Cannot read audiobook audio";
+                            r.error = UiText::tr("Cannot read audiobook audio");
                             return;
                         }
                         QCryptographicHash hash(QCryptographicHash::Sha256);
@@ -1639,7 +1634,7 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
                             }
                             const auto chunk = source.read(1024 * 1024);
                             if (chunk.isEmpty() && source.error() != QFile::NoError) {
-                                r.error = "Could not read the complete audiobook";
+                                r.error = UiText::tr("Could not read the complete audiobook");
                                 return;
                             }
                             hash.addData(chunk);
@@ -1648,7 +1643,7 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
                         if (file.size() != part.value("bytes").toLongLong() ||
                             file.lastModified().toMSecsSinceEpoch() !=
                                 part.value("mtime").toLongLong()) {
-                            r.error = "Audiobook changed during preparation";
+                            r.error = UiText::tr("Audiobook changed during preparation");
                             return;
                         }
                         const auto fingerprint = hash.result();
@@ -1667,8 +1662,7 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
                                                    ? probe.chapters[chapter + 1].startMs
                                                    : probe.durationMs;
                             if (end <= start || end - start > INT_MAX || number >= 5000) {
-                                r.error = "This book's chapter lengths or part count exceed "
-                                          "the device transfer limits.";
+                                r.error = UiText::tr("This book's chapter lengths or part count exceed the device transfer limits.");
                                 return;
                             }
                             QString title = ranged ? probe.chapters[chapter].title.trimmed()
@@ -1712,15 +1706,14 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
                     }
                 }
                 if (r.transfers.size() > 5000)
-                    r.error = "Choose fewer books for this transfer (maximum 5,000 "
-                              "chapters).";
+                    r.error = UiText::tr("Choose fewer books for this transfer (maximum 5,000 chapters).");
                 if (!r.error.isEmpty())
                     r.transfers.clear();
 
                 return;
             }
             if (queuedRow.value("type") != "podcast") {
-                r.error = "Unknown spoken transfer type";
+                r.error = UiText::tr("Unknown spoken transfer type");
                 return;
             }
             auto row = s.get(queuedRow.value("spokenId").toString(), &r.error);
@@ -1730,14 +1723,13 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
             if (row.value("kind") != "episode" || show.value("kind") != "show" ||
                 row.value("identity") != queuedRow.value("identity") ||
                 show.value("identity") != queuedRow.value("feedUrl")) {
-                r.error = "The queued episode no longer matches your library.";
+                r.error = UiText::tr("The queued episode no longer matches your library.");
                 return;
             }
             const auto source = queuedRow.value("sourceUrl").toString();
             if (source.isEmpty() || (row.contains("deviceSourceUrl") &&
                                      row.value("deviceSourceUrl").toString() != source)) {
-                r.error = "The episode's saved device identity changed. Remove it "
-                          "from the queue and add it again.";
+                r.error = UiText::tr("The episode's saved device identity changed. Remove it from the queue and add it again.");
                 return;
             }
             const auto all = s.rows(&r.error);
@@ -1747,8 +1739,7 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
                     other.value("parent") == row.value("parent") &&
                     other.value("id") != row.value("id") &&
                     other.value("deviceSourceUrl", other.value("sourceUrl")).toString() == source) {
-                    r.error = "This feed reuses one audio URL for different episode "
-                              "IDs; device identity needs review.";
+                    r.error = UiText::tr("This feed reuses one audio URL for different episode IDs; device identity needs review.");
                     return;
                 }
             }
@@ -1761,7 +1752,7 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
                 QSaveFile file(path);
                 file.setDirectWriteFallback(false);
                 if (!file.open(QIODevice::WriteOnly)) {
-                    r.error = "Cannot create download file";
+                    r.error = UiText::tr("Cannot create download file");
                     return;
                 }
                 const auto response = fetch(QUrl(row.value("sourceUrl").toString()),
@@ -1771,7 +1762,7 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
                     return;
                 }
                 if (!file.commit()) {
-                    r.error = "Cannot finish download";
+                    r.error = UiText::tr("Cannot finish download");
                     return;
                 }
                 AudiobookPart audio;
@@ -1798,7 +1789,7 @@ void SpokenMediaService::prepareTransfer(const QString &token, const QVariantMap
                 }
             }
             if (cancel->load()) {
-                r.error = "Cancelled; completed downloads were kept";
+                r.error = UiText::tr("Cancelled; completed downloads were kept");
                 return;
             }
             row["deviceSourceUrl"] = source;

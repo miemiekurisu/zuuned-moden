@@ -108,6 +108,10 @@ Item {
                 id: topPivots
                 objectName: "spokenTopPivots"
                 tabs: page.books ? ["Books", "Libraries", "Starred"] : ["Shows", "Starred shows", "Starred episodes"]
+                labels: page.books
+                    ? [qsTr("Books"), qsTr("Libraries"), qsTr("Starred")]
+                    : [qsTr("Shows"), qsTr("Starred shows"),
+                       qsTr("Starred episodes")]
                 current: page.pivot
                 Layout.minimumWidth: implicitWidth
                 onCurrentChanged: {
@@ -116,10 +120,10 @@ Item {
                 }
             }
             Item { Layout.fillWidth: true }
-            SpokenButton { objectName: "spokenNewCollection"; visible: page.books && page.pivot === "Libraries" && page.width >= Theme.spokenSheetWidth; text: "+ library"; onClicked: page.editLibrary({}) }
-            SpokenButton { visible: page.books && page.width > Theme.spokenSheetWidth; text: "+ book folder"; enabled: !SpokenMediaService.busy; onClicked: folderImport.begin() }
-            SpokenButton { objectName: page.books ? "spokenAddBook" : "spokenAddFeed"; text: page.width < Theme.spokenSheetWidth ? "+" : page.books ? "+ books" : "+ podcast"; Accessible.name: page.books ? "Add books" : "Add podcast"; enabled: !SpokenMediaService.busy; onClicked: page.books ? bookImportMenu.popup() : importSheet.openFeed() }
-            ZuneSearchField { id: search; objectName: "spokenSearch"; visible: !page.collectionId; placeholderText: page.books ? page.browsingShelves ? "search libraries" : "search books" : page.pivot === "Starred episodes" ? "search episodes" : "search shows"; Layout.fillWidth: true; Layout.maximumWidth: Theme.spokenSearchWidth; Layout.preferredWidth: Theme.spokenSearchWidth; Layout.minimumWidth: Theme.spaceHuge }
+            SpokenButton { objectName: "spokenNewCollection"; visible: page.books && page.pivot === "Libraries" && page.width >= Theme.spokenSheetWidth; text: qsTr("+ library"); onClicked: page.editLibrary({}) }
+            SpokenButton { visible: page.books && page.width > Theme.spokenSheetWidth; text: qsTr("+ book folder"); enabled: !SpokenMediaService.busy; onClicked: folderImport.begin() }
+            SpokenButton { objectName: page.books ? "spokenAddBook" : "spokenAddFeed"; text: page.width < Theme.spokenSheetWidth ? "+" : page.books ? qsTr("+ books") : qsTr("+ podcast"); Accessible.name: page.books ? qsTr("Add books") : qsTr("Add podcast"); enabled: !SpokenMediaService.busy; onClicked: page.books ? bookImportMenu.popup() : importSheet.openFeed() }
+            ZuneSearchField { id: search; objectName: "spokenSearch"; visible: !page.collectionId; placeholderText: page.books ? page.browsingShelves ? qsTr("search libraries") : qsTr("search books") : page.pivot === "Starred episodes" ? qsTr("search episodes") : qsTr("search shows"); Layout.fillWidth: true; Layout.maximumWidth: Theme.spokenSearchWidth; Layout.preferredWidth: Theme.spokenSearchWidth; Layout.minimumWidth: Theme.spaceHuge }
         }
         PodcastCleanupControl {
             visible: !page.books && !page.collectionId
@@ -140,14 +144,14 @@ Item {
             visible: !!page.shelfId && !page.collectionId
             Layout.leftMargin: Gallery.spine(page.width)
             Layout.rightMargin: Theme.spaceXxxl
-            Text { Layout.fillWidth: true; text: page.containers.length + " books · your reading order"; color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
-            SpokenButton { objectName: "spokenEditCollection"; text: "edit library"; onClicked: page.editLibrary(page.shelf) }
+            Text { Layout.fillWidth: true; text: qsTr("%1 books · your reading order").arg(page.containers.length); color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
+            SpokenButton { objectName: "spokenEditCollection"; text: qsTr("edit library"); onClicked: page.editLibrary(page.shelf) }
         }
         RowLayout {
             visible: SpokenMediaService.foregroundBusy && SpokenMediaService.status !== "position"
             Layout.fillWidth: true
             Text { text: SpokenMediaService.status + "…"; color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption; Layout.fillWidth: true }
-            SpokenButton { text: "cancel task"; onClicked: SpokenMediaService.cancelWork() }
+            SpokenButton { text: qsTr("cancel task"); onClicked: SpokenMediaService.cancelWork() }
         }
         GalleryView {
             id: grid
@@ -193,7 +197,7 @@ Item {
                             MouseArea { anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton; cursorShape: Qt.PointingHandCursor; onClicked: mouse => { if (mouse.button === Qt.RightButton) page.editLibrary(modelData); else { page.shelfId = modelData.id; grid.letterFilter = "" } } }
                         }
                         Text { width: parent.width; text: modelData.title || ""; color: Theme.textPrimary; font.pixelSize: Theme.spokenBody; elide: Text.ElideRight }
-                        Text { text: (modelData.bookIds?.length || 0) + " books"; color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
+                        Text { text: qsTr("%1 books").arg(modelData.bookIds?.length || 0); color: Theme.textSecondary; font.pixelSize: Theme.spokenCaption }
                     }
                 }
             }
@@ -201,7 +205,8 @@ Item {
                 anchors.centerIn: parent
                 visible: page.galleryRows.length === 0
                 width: Math.min(parent.width, Theme.spokenEmptyWidth)
-                text: search.text ? "No matching titles" : (page.pivot === "Starred" || page.pivot === "Starred shows") ? "Your favorites belong here.\nStar a " + (page.books ? "book" : "show") + " to keep it close." : page.browsingShelves ? "Keep a series together.\nCreate a library and drag books into its island." : page.books ? "A place for every story.\nAdd a book folder or audio files to get started." : "Follow the signal.\nAdd an RSS feed, then choose your episodes."
+                text: search.text ? qsTr("No matching titles") : (page.pivot === "Starred" || page.pivot === "Starred shows") ? page.books ? qsTr("Your favorites belong here.\nStar a book to keep it close.")
+                  : qsTr("Your favorites belong here.\nStar a show to keep it close.") : page.browsingShelves ? qsTr("Keep a series together.\nCreate a library and drag books into its island.") : page.books ? qsTr("A place for every story.\nAdd a book folder or audio files to get started.") : qsTr("Follow the signal.\nAdd an RSS feed, then choose your episodes.")
                 horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                 color: Theme.textSecondary; font.pixelSize: Theme.spokenBody; lineHeight: Theme.spokenLineHeight
             }
@@ -276,10 +281,10 @@ Item {
                     }
                     return all.length + " episodes · " + available + " downloaded"
                 }
-                SpokenButton { objectName: "spokenDetailPlay"; flat: true; text: "▶ resume"; enabled: page.rows.some(e => !!e.path); onClicked: page.playCollection(page.collection) }
+                SpokenButton { objectName: "spokenDetailPlay"; flat: true; text: qsTr("▶ resume"); enabled: page.rows.some(e => !!e.path); onClicked: page.playCollection(page.collection) }
                 SplitAddButton { objectName: "spokenDetailAdd"; showPick: !page.books; enabled: page.books && BookTrayState.building ? !BookTrayState.locked : DeviceService.connected && page.deviceTransferReady; onAddAll: page.books ? page.addBook(page.collectionId) : SpokenMediaService.queuePodcastSelection(page.collectionId); onPickParts: page.pick(this, page.collection) }
-                SpokenButton { objectName: "spokenDetailStar"; text: page.collection.favorite ? "★ starred" : "☆ star"; flat: true; highlighted: !!page.collection.favorite; onClicked: SpokenMediaService.setFavorite(page.collectionId, !page.collection.favorite) }
-                SpokenButton { visible: !page.books; flat: true; text: "↻ refresh feed"; enabled: !SpokenMediaService.busy; onClicked: SpokenMediaService.refreshFeed(page.collectionId) }
+                SpokenButton { objectName: "spokenDetailStar"; text: page.collection.favorite ? qsTr("★ starred") : qsTr("☆ star"); flat: true; highlighted: !!page.collection.favorite; onClicked: SpokenMediaService.setFavorite(page.collectionId, !page.collection.favorite) }
+                SpokenButton { visible: !page.books; flat: true; text: qsTr("↻ refresh feed"); enabled: !SpokenMediaService.busy; onClicked: SpokenMediaService.refreshFeed(page.collectionId) }
             }
         }
         ColumnLayout {
@@ -293,19 +298,23 @@ Item {
             PivotBar {
                 id: detailPivots
                 tabs: page.books ? ["chapters", "bookmarks", "files"] : ["all", "unplayed", "downloaded", "starred"]
+                labels: page.books
+                    ? [qsTr("chapters"), qsTr("bookmarks"), qsTr("files")]
+                    : [qsTr("all"), qsTr("unplayed"), qsTr("downloaded"),
+                       qsTr("starred")]
                 current: page.filter === "all" && page.books ? "chapters" : page.filter
                 onCurrentChanged: { if (current !== (page.books && page.filter === "all" ? "chapters" : page.filter)) { page.filter = current; page.checks = {} } }
             }
                 Item { Layout.fillWidth: true }
-                SpokenButton { visible: !page.books; flat: true; text: Object.keys(page.checks).length === page.rows.length && page.rows.length ? "clear selection" : "select all"; onClicked: { let selected = {}; if (Object.keys(page.checks).length !== page.rows.length) for (const e of page.rows) selected[e.id] = true; page.checks = selected } }
+                SpokenButton { visible: !page.books; flat: true; text: Object.keys(page.checks).length === page.rows.length && page.rows.length ? qsTr("clear selection") : qsTr("select all"); onClicked: { let selected = {}; if (Object.keys(page.checks).length !== page.rows.length) for (const e of page.rows) selected[e.id] = true; page.checks = selected } }
             }
             Flow {
                 objectName: "spokenSelectionActions"
                 visible: !page.books && Object.keys(page.checks).length > 0
                 Layout.fillWidth: true
                 spacing: Theme.spaceSm
-                SpokenButton { flat: true; visible: Object.keys(page.checks).length > 0; text: "+ Zune · " + Object.keys(page.checks).length; enabled: DeviceService.connected; onClicked: page.queueItems(Object.keys(page.checks)) }
-                SpokenButton { flat: true; visible: Object.keys(page.checks).length > 0; text: "↓ download · " + Object.keys(page.checks).length; enabled: !SpokenMediaService.busy; onClicked: SpokenMediaService.download(Object.keys(page.checks)) }
+                SpokenButton { flat: true; visible: Object.keys(page.checks).length > 0; text: qsTr("+ Zune · %1").arg(Object.keys(page.checks).length); enabled: DeviceService.connected; onClicked: page.queueItems(Object.keys(page.checks)) }
+                SpokenButton { flat: true; visible: Object.keys(page.checks).length > 0; text: qsTr("↓ download · %1").arg(Object.keys(page.checks).length); enabled: !SpokenMediaService.busy; onClicked: SpokenMediaService.download(Object.keys(page.checks)) }
             }
         }
         ListView {
@@ -397,8 +406,10 @@ Item {
                             visible: !rowGroup.modelData.detail && !!rowGroup.deviceStatus.onDevice
                             size: Theme.locationRowBadgeSize
                         }
-                        SpokenButton { id: rowStar; opacity: rowGroup.modelData.favorite || area.containsMouse || hovered || activeFocus ? 1 : 0; objectName: "spokenEpisodeStar"; visible: !page.books && !rowGroup.modelData.detail; flat: true; text: rowGroup.modelData.favorite ? "★" : "☆"; highlighted: !!rowGroup.modelData.favorite; Accessible.name: (rowGroup.modelData.favorite ? "Unstar " : "Star ") + rowGroup.modelData.title; onClicked: SpokenMediaService.setFavorite(rowGroup.modelData.id, !rowGroup.modelData.favorite) }
-                        SpokenButton { flat: true; opacity: area.containsMouse || hovered || activeFocus ? 1 : 0; text: rowGroup.modelData.path ? "▶" : "↓"; Accessible.name: (rowGroup.modelData.path ? "Play " : "Download ") + rowGroup.modelData.title; enabled: !!rowGroup.modelData.path || !SpokenMediaService.busy; onClicked: rowGroup.modelData.path ? SpokenMediaService.play(rowGroup.modelData.id, rowGroup.modelData.detail ? rowGroup.modelData.durationMs : -1) : SpokenMediaService.download([rowGroup.modelData.id]) }
+                        SpokenButton { id: rowStar; opacity: rowGroup.modelData.favorite || area.containsMouse || hovered || activeFocus ? 1 : 0; objectName: "spokenEpisodeStar"; visible: !page.books && !rowGroup.modelData.detail; flat: true; text: rowGroup.modelData.favorite ? "★" : "☆"; highlighted: !!rowGroup.modelData.favorite; Accessible.name: rowGroup.modelData.favorite
+                          ? qsTr("Unstar %1").arg(rowGroup.modelData.title) : qsTr("Star %1").arg(rowGroup.modelData.title); onClicked: SpokenMediaService.setFavorite(rowGroup.modelData.id, !rowGroup.modelData.favorite) }
+                        SpokenButton { flat: true; opacity: area.containsMouse || hovered || activeFocus ? 1 : 0; text: rowGroup.modelData.path ? "▶" : "↓"; Accessible.name: rowGroup.modelData.path
+                          ? qsTr("Play %1").arg(rowGroup.modelData.title) : qsTr("Download %1").arg(rowGroup.modelData.title); enabled: !!rowGroup.modelData.path || !SpokenMediaService.busy; onClicked: rowGroup.modelData.path ? SpokenMediaService.play(rowGroup.modelData.id, rowGroup.modelData.detail ? rowGroup.modelData.durationMs : -1) : SpokenMediaService.download([rowGroup.modelData.id]) }
                     }
                 }
                 DragGhost {
@@ -407,7 +418,7 @@ Item {
                     area: area; dragKind: page.books ? "audiobook-books" : "podcasts"; dragName: rowGroup.modelData.title
                     dragTracks: () => page.books ? [page.collectionId] : page.checks[rowGroup.modelData.id] ? Object.keys(page.checks) : [rowGroup.modelData.id]
                     Rectangle { width: Theme.spokenDragWidth; height: Theme.spokenRowHeight; color: Theme.surfaceBg; radius: Theme.radiusMd; border.width: Theme.hairline; border.color: Theme.pink
-                        Text { anchors.centerIn: parent; text: page.books ? (page.collection.title || "") : Math.max(1, Object.keys(page.checks).length) + " episodes"; font.pixelSize: Theme.spokenBody; color: Theme.textPrimary }
+                        Text { anchors.centerIn: parent; text: page.books ? (page.collection.title || "") : qsTr("%1 episodes").arg(Math.max(1, Object.keys(page.checks).length)); font.pixelSize: Theme.spokenBody; color: Theme.textPrimary }
                     }
                 }
             }
@@ -415,7 +426,7 @@ Item {
                 anchors.centerIn: parent
                 width: Math.min(parent.width, Theme.spokenEmptyWidth)
                 visible: list.count === 0 && !page.books && page.pivot === "Starred episodes"
-                text: search.text ? "No matching episodes" : "Keep your favorite episodes close.\nStar an episode in any show to find it here."
+                text: search.text ? qsTr("No matching episodes") : qsTr("Keep your favorite episodes close.\nStar an episode in any show to find it here.")
                 wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter
                 font.pixelSize: Theme.spokenBody; color: Theme.textSecondary
             }
@@ -428,38 +439,38 @@ Item {
         objectName: "spokenContextMenu"
         property var entry: ({})
         ZuneMenuItem {
-            text: contextMenu.entry.favorite ? "Unstar" : "Star"
+            text: contextMenu.entry.favorite ? qsTr("Unstar") : qsTr("Star")
             visible: ["show", "episode", "book"].includes(contextMenu.entry.kind)
             height: visible ? implicitHeight : 0
             onTriggered: SpokenMediaService.setFavorite(contextMenu.entry.id, !contextMenu.entry.favorite)
         }
         ZuneMenuItem {
-            text: "Add to Library…"
+            text: qsTr("Add to Library…")
             visible: contextMenu.entry.kind === "book"
             height: visible ? implicitHeight : 0
             onTriggered: bookLibraryMenu.popup()
         }
         ZuneMenuItem {
             objectName: "podcastKeepOnDevice"
-            text: contextMenu.entry.keepOnDevice ? "Allow Automatic Cleanup" : "Keep on Zune"
+            text: contextMenu.entry.keepOnDevice ? qsTr("Allow Automatic Cleanup") : qsTr("Keep on Zune")
             visible: contextMenu.entry.kind === "episode"
             height: visible ? implicitHeight : 0
             enabled: !SyncEngine.isSyncing && !SpokenMediaService.busy
             onTriggered: SpokenMediaService.setPodcastKeepOnDevice(contextMenu.entry.id, !contextMenu.entry.keepOnDevice)
         }
         ZuneMenuItem {
-            text: "Customize…"
+            text: qsTr("Customize…")
             onTriggered: coverSheet.openFor(SpokenMediaService.item(contextMenu.entry.id))
         }
         ZuneMenuItem {
-            text: "Refresh Feed"
+            text: qsTr("Refresh Feed")
             visible: contextMenu.entry.kind === "show"
             height: visible ? implicitHeight : 0
             enabled: !SpokenMediaService.busy
             onTriggered: SpokenMediaService.refreshFeed(contextMenu.entry.id)
         }
         ZuneMenuItem {
-            text: contextMenu.entry.played ? "Mark Unplayed" : "Mark Played"
+            text: contextMenu.entry.played ? qsTr("Mark Unplayed") : qsTr("Mark Played")
             visible: contextMenu.entry.kind === "episode" || contextMenu.entry.kind === "part"
             height: visible ? implicitHeight : 0
             onTriggered: SpokenMediaService.markPlayed(contextMenu.entry.id, !contextMenu.entry.played)
@@ -467,8 +478,8 @@ Item {
     }
     ZuneMenu {
         id: bookLibraryMenu
-        ZuneMenuItem { text: "Add to current library draft"; visible: BookTrayState.building; height: visible ? implicitHeight : 0; enabled: !BookTrayState.locked; onTriggered: BookTrayState.addBooks([contextMenu.entry.id]) }
-        ZuneMenuItem { text: "New library…"; onTriggered: page.editLibrary({}, contextMenu.entry.id) }
+        ZuneMenuItem { text: qsTr("Add to current library draft"); visible: BookTrayState.building; height: visible ? implicitHeight : 0; enabled: !BookTrayState.locked; onTriggered: BookTrayState.addBooks([contextMenu.entry.id]) }
+        ZuneMenuItem { text: qsTr("New library…"); onTriggered: page.editLibrary({}, contextMenu.entry.id) }
         Repeater {
             model: page.shelves
             ZuneMenuItem { required property var modelData; text: modelData.title; onTriggered: page.editLibrary(modelData, contextMenu.entry.id) }
@@ -476,14 +487,14 @@ Item {
     }
     ZuneMenu {
         id: bookImportMenu
-        ZuneMenuItem { text: "New library…"; onTriggered: page.editLibrary({}) }
-        ZuneMenuItem { text: "Import book folder…"; onTriggered: folderImport.begin() }
-        ZuneMenuItem { text: "Choose audio files…"; onTriggered: bookPicker.open() }
+        ZuneMenuItem { text: qsTr("New library…"); onTriggered: page.editLibrary({}) }
+        ZuneMenuItem { text: qsTr("Import book folder…"); onTriggered: folderImport.begin() }
+        ZuneMenuItem { text: qsTr("Choose audio files…"); onTriggered: bookPicker.open() }
     }
 
     PodcastSyncPicker { id: picker; objectName: "spokenTransferPicker"; onPicked: ids => page.queueItems(ids) }
     SpokenCoverSheet { id: coverSheet; objectName: "spokenCoverSheet" }
     SpokenImportSheet { id: importSheet }
     SpokenFolderImport { id: folderImport; objectName: "spokenFolderSheet" }
-    FileDialog { id: bookPicker; title: "Choose the audio files for one book"; fileMode: FileDialog.OpenFiles; nameFilters: ["Audiobooks (*.m4b *.m4a *.mp3 *.flac *.ogg *.opus *.wav *.wma)"]; onAccepted: importSheet.openBook(selectedFiles) }
+    FileDialog { id: bookPicker; title: qsTr("Choose the audio files for one book"); fileMode: FileDialog.OpenFiles; nameFilters: ["Audiobooks (*.m4b *.m4a *.mp3 *.flac *.ogg *.opus *.wav *.wma)"]; onAccepted: importSheet.openBook(selectedFiles) }
 }

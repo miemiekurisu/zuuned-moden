@@ -10,7 +10,7 @@ TextField {
     font.pixelSize: 13
     font.weight: Font.Light
     color: Theme.textPrimary
-    placeholderText: "search"
+    placeholderText: qsTr("search")
     placeholderTextColor: Theme.textDim
     leftPadding: Theme.spaceMd
     rightPadding: Theme.spaceMd

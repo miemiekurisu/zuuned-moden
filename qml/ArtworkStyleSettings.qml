@@ -9,9 +9,9 @@ ColumnLayout {
     property url sampleSource: ""
     property bool fineTuning: false
     readonly property string style: AppSettings.artworkStyle
-    readonly property string styleLabel: style === "cleanInk" ? "clean ink"
-                                        : style === "halftone" ? "halftone"
-                                        : style === "wornPrint" ? "worn print" : "original"
+    readonly property string styleLabel: style === "cleanInk" ? qsTr("clean ink")
+                                        : style === "halftone" ? qsTr("halftone")
+                                        : style === "wornPrint" ? qsTr("worn print") : qsTr("original")
     Layout.fillWidth: true
     Layout.maximumWidth: Theme.artworkSettingsMaxWidth
     spacing: Theme.spaceLg
@@ -126,10 +126,10 @@ ColumnLayout {
         spacing: Theme.spaceMd
         Repeater {
             model: [
-                { label: "original", value: "original" },
-                { label: "clean ink", value: "cleanInk" },
-                { label: "halftone", value: "halftone" },
-                { label: "worn print", value: "wornPrint" }
+                { label: qsTr("original"), value: "original" },
+                { label: qsTr("clean ink"), value: "cleanInk" },
+                { label: qsTr("halftone"), value: "halftone" },
+                { label: qsTr("worn print"), value: "wornPrint" }
             ]
             delegate: PrintAction {
                 required property var modelData
@@ -170,7 +170,7 @@ ColumnLayout {
                 }
             }
             Text {
-                text: "your original"
+                text: qsTr("your original")
                 font.pixelSize: Theme.customizeCaptionSize
                 color: Theme.textSecondary
             }
@@ -204,7 +204,7 @@ ColumnLayout {
     Text {
         visible: root.sampleSource.toString().length === 0
         Layout.fillWidth: true
-        text: "Your collection artwork will appear here."
+        text: qsTr("Your collection artwork will appear here.")
         font.pixelSize: Theme.customizeCaptionSize
         color: Theme.textSecondary
         wrapMode: Text.WordWrap
@@ -213,9 +213,9 @@ ColumnLayout {
     PrintAction {
         objectName: "artworkFineTune"
         visible: root.style !== "original"
-        text: root.fineTuning ? "fine-tune −" : "fine-tune +"
+        text: root.fineTuning ? qsTr("fine-tune −") : qsTr("fine-tune +")
         selected: root.fineTuning
-        Accessible.name: "Fine-tune " + root.styleLabel
+        Accessible.name: qsTr("Fine-tune %1").arg(root.styleLabel)
         onClicked: root.fineTuning = !root.fineTuning
     }
 
@@ -227,21 +227,21 @@ ColumnLayout {
         PrintSlider {
             objectName: "artworkCleanDetail"
             visible: root.style === "cleanInk"
-            label: "Detail"
+            label: qsTr("Detail")
             amount: AppSettings.artworkCleanDetail
             onMoved: (amount) => AppSettings.artworkCleanDetail = amount
         }
         PrintSlider {
             objectName: "artworkHalftoneTexture"
             visible: root.style === "halftone"
-            label: "Print strength"
+            label: qsTr("Print strength")
             amount: AppSettings.artworkHalftoneTexture
             onMoved: (amount) => AppSettings.artworkHalftoneTexture = amount
         }
         PrintSlider {
             objectName: "artworkHalftoneDotSize"
             visible: root.style === "halftone"
-            label: "Dot size"
+            label: qsTr("Dot size")
             startLabel: "fine"
             endLabel: "comic"
             amount: AppSettings.artworkHalftoneDotSize
@@ -252,13 +252,13 @@ ColumnLayout {
             spacing: Theme.spaceMd
             PrintAction {
                 objectName: "artworkHalftoneColor"
-                text: "color"
+                text: qsTr("color")
                 selected: !AppSettings.artworkHalftoneMonochrome
                 onClicked: AppSettings.artworkHalftoneMonochrome = false
             }
             PrintAction {
                 objectName: "artworkHalftoneMonochrome"
-                text: "black & white"
+                text: qsTr("black & white")
                 selected: AppSettings.artworkHalftoneMonochrome
                 onClicked: AppSettings.artworkHalftoneMonochrome = true
             }
@@ -266,13 +266,13 @@ ColumnLayout {
         PrintSlider {
             objectName: "artworkWornTexture"
             visible: root.style === "wornPrint"
-            label: "Wear"
+            label: qsTr("Wear")
             amount: AppSettings.artworkWornTexture
             onMoved: (amount) => AppSettings.artworkWornTexture = amount
         }
         PrintAction {
             objectName: "artworkResetLook"
-            text: "reset this look"
+            text: qsTr("reset this look")
             onClicked: AppSettings.resetArtworkStyle()
         }
     }

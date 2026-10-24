@@ -22,6 +22,27 @@ Item {
         return Theme.textSecondary
     }
 
+    // The row chip and the download-status suffix have to say the same thing
+    // the type pills at the bottom of the section say, and every one of those
+    // words lives in the language file rather than here.
+    function typeLabel(t) {
+        if (t === "music") return qsTr("music")
+        if (t === "movies") return qsTr("movies")
+        if (t === "tv") return qsTr("tv")
+        if (t === "anime") return qsTr("anime")
+        if (t === "photos") return qsTr("photos")
+        // Two vocabularies meet here.  A watch folder's own type is
+        // music | movies | tv | anime | photos | all (src/library/LibraryTypes.h),
+        // while the import mark a row carries names a kind -- music | photos |
+        // video -- because movies, tv and anime all share one video
+        // destination.  Both are keys, so both take their words from the
+        // language file.  A key nobody recognised is echoed as it arrived: that
+        // is a fact about the data, not a word this file may invent.
+        if (t === "all") return qsTr("all")
+        if (t === "video") return qsTr("video")
+        return t
+    }
+
     function pickFolder(t) {
         mediaFolderDialog.pendingType = t
         mediaFolderDialog.open()
@@ -49,6 +70,13 @@ Item {
         font.pixelSize: 12
         font.weight: Font.Light
         color: Theme.textGhost
+        // Every one of these is prose sitting inside an Sblk, so it keeps
+        // the same measure as the Sblk desc above it. Left unwrapped it
+        // reports its whole sentence as implicitWidth, and that is what
+        // made Settings > Device 2263 logical px wide.
+        wrapMode: Text.WordWrap
+        Layout.fillWidth: true
+        Layout.maximumWidth: 760
     }
 
     component GlassCard: Rectangle {
@@ -276,6 +304,79 @@ Item {
     // A section row: label (fills) + right-aligned value/status, with the
     // mock's hairline under each row (`.statrow` border-bottom; set
     // divider: false on the last row of a group). Used by Health.
+    // One provider API key, editable. Until 2026-10-24 both keys were
+    // ini-only while the code that reads them shipped, which is the same
+    // dishonesty as a control with no reader seen from the other side. Masked
+    // by default -- a key is a secret you just typed in front of somebody --
+    // with an explicit reveal, and it commits when the field loses focus.
+    component ApiKeyField: RowLayout {
+        id: keyField
+        property string label: ""
+        property string placeholder: ""
+        property string saved: ""
+        property bool revealed: false
+        signal committed(string value)
+        Layout.fillWidth: true
+        spacing: Theme.spaceSm
+        Text {
+            Layout.preferredWidth: 82
+            text: keyField.label
+            font.pixelSize: 12
+            font.weight: Font.Light
+            color: Theme.textDim
+        }
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.maximumWidth: 420
+            implicitHeight: 34
+            radius: Theme.radiusMd
+            color: Theme.cardBg
+            border.color: Theme.borderLight
+            border.width: 1
+            TextField {
+                id: keyEdit
+                anchors.fill: parent
+                leftPadding: Theme.spaceMd
+                rightPadding: Theme.spaceLg
+                background: null
+                font.pixelSize: 13
+                font.weight: Font.Light
+                color: Theme.textPrimary
+                placeholderText: keyField.placeholder
+                placeholderTextColor: Theme.textGhost
+                echoMode: keyField.revealed ? TextField.Normal : TextField.Password
+                selectByMouse: true
+                text: keyField.saved
+                onActiveFocusChanged:
+                    if (!activeFocus) keyField.committed(text.trim())
+                onEditingFinished: keyField.committed(text.trim())
+            }
+            Text {
+                anchors.right: parent.right
+                anchors.rightMargin: Theme.spaceSm
+                anchors.verticalCenter: parent.verticalCenter
+                text: keyField.revealed ? qsTr("hide") : qsTr("show")
+                font.pixelSize: 11
+                color: Theme.textSecondary
+                font.underline: keyHover.containsMouse
+                MouseArea {
+                    id: keyHover
+                    anchors.fill: parent
+                    anchors.margins: -4
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: keyField.revealed = !keyField.revealed
+                }
+            }
+        }
+        Text {
+            Layout.preferredWidth: 58
+            text: keyField.saved.length > 0 ? qsTr("saved") : qsTr("not set")
+            font.pixelSize: 11
+            color: keyField.saved.length > 0 ? Theme.pink : Theme.textGhost
+        }
+    }
+
     component StatRow: ColumnLayout {
         property string label: ""
         property string value: ""
@@ -333,6 +434,8 @@ Item {
                 Layout.maximumWidth: 640
                 Layout.alignment: Qt.AlignVCenter
                 tabs: ["Appearance", "Library", "Device", "Mixtapes", "Health"]
+                labels: [qsTr("Appearance"), qsTr("Library"), qsTr("Device"),
+                         qsTr("Mixtapes"), qsTr("Health")]
             // QA harness (screenshot runs): `--settings-tab Device`
             Component.onCompleted: {
                 const args = Qt.application.arguments
@@ -355,7 +458,19 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ZuneScrollBar {}
 
-            StackLayout {
+            // A plain visibility stack, NOT a StackLayout. A StackLayout
+            // sizes EVERY child to the widest child's implicit width and
+            // overflows its own bounds doing so -- the same trap Main.qml
+            // documents for the page stack -- and a Layout child cannot opt
+            // out of it: `width: stack.width` and `implicitWidth: ...` are
+            // both overwritten (measured with qml.exe against this Qt,
+            // build/art6/stacktest.qml). On the Chinese Settings > Device
+            // tab one unwrapped sentence made every tab 2263 px wide, so
+            // the 这台 Zune values were painted at x~2200 -- off any screen
+            // -- while their labels stayed put. Anchoring each tab to this
+            // Item pins it to the frame the page actually has, in either
+            // language and at any window width.
+            Item {
                 id: stack
                 // Settings fills the page's standard frame like every
                 // other section (2026-09-06: 760 felt too narrow next
@@ -364,15 +479,73 @@ Item {
                 x: Gallery.spine(root.width)
                 width: Math.min(Gallery.frameW(root.width),
                                 flick.width - x - Theme.spaceXl)
-                currentIndex: pivots.tabs.indexOf(pivots.current)
+                property int currentIndex: pivots.tabs.indexOf(pivots.current)
+                // What the StackLayout used to report: the tallest tab, so
+                // the scroll extent does not jump when the pivot changes.
+                implicitHeight: Math.max(tabAppearance.implicitHeight,
+                                         tabLibrary.implicitHeight,
+                                         tabDevice.implicitHeight,
+                                         tabMixtapes.implicitHeight,
+                                         tabHealth.implicitHeight)
+                height: implicitHeight
 
                 // ── APPEARANCE ──
                 ColumnLayout {
+                    id: tabAppearance
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    visible: stack.currentIndex === 0
                     spacing: Theme.spaceXl
 
+                    // Language (2026-10-24): the page had no UI-language
+                    // control at all -- the only row with "language" in it is
+                    // Preferred audio language, which picks an audio *track*.
+                    // The choice is read once at launch, so the card says so
+                    // instead of pretending to repaint.
                     Sblk {
-                        title: "Now-playing player"
-                        desc: "how music looks while it spins — everywhere: now-playing, ribbon, mini-player, and video."
+                        title: qsTr("Language")
+                        desc: qsTr("which language zuuned writes its own interface in. Your files, tags and what the Zune itself displays are untouched.")
+                        RowLayout {
+                            spacing: Theme.spaceLg
+                            Seg {
+                                Layout.alignment: Qt.AlignVCenter
+                                // The two language names stay in their own
+                                // script on purpose: a menu that calls Chinese
+                                // "中文" is findable whichever language
+                                // you happen to read, in either direction.
+                                options: [{ label: qsTr("Follow system"), value: "system" },
+                                          { label: qsTr("English"), value: "en" },
+                                          { label: "简体中文", value: "zh_CN" }]
+                                current: AppSettings.uiLanguage
+                                onPicked: (v) => AppSettings.uiLanguage = v
+                            }
+                        }
+                        StatRow {
+                            label: qsTr("Now showing")
+                            value: DiagnosticsService.uiLanguage() === "zh_CN"
+                                   ? "简体中文" : "English"
+                        }
+                        PhaseNote {
+                            text: {
+                                const wanted = AppSettings.uiLanguage === "system"
+                                             ? DiagnosticsService.systemUiLanguage()
+                                             : AppSettings.uiLanguage
+                                if (wanted === DiagnosticsService.uiLanguage())
+                                    return qsTr("Applied — this is what zuuned is showing right now.")
+                                return qsTr("Restart zuuned to write its interface in %1 — the language is read once, at launch.")
+                                       .arg(wanted === "zh_CN" ? "简体中文" : "English")
+                        }
+                        }
+                        PhaseNote {
+                            visible: DiagnosticsService.uiLanguage() === "zh_CN"
+                            text: qsTr("Chinese covers the menus, pages and Settings of this build. Wording the language file does not carry yet stays English.")
+                        }
+                    }
+
+                    Sblk {
+                        title: qsTr("Now-playing player")
+                        desc: qsTr("how music looks while it spins — everywhere: now-playing, ribbon, mini-player, and video.")
                         RowLayout {
                             spacing: Theme.spaceLg
                             Item {
@@ -404,8 +577,8 @@ Item {
                             }
                             Seg {
                                 Layout.alignment: Qt.AlignVCenter
-                                options: [{ label: "Disc", value: "disc" },
-                                          { label: "Vinyl", value: "vinyl" }]
+                                options: [{ label: qsTr("Disc"), value: "disc" },
+                                          { label: qsTr("Vinyl"), value: "vinyl" }]
                                 current: Prefs.playerStyle
                                 onPicked: (v) => Prefs.playerStyle = v
                             }
@@ -413,8 +586,8 @@ Item {
                     }
 
                     Sblk {
-                        title: "Artwork print"
-                        desc: "your art, your ink — choose a look, then make it yours."
+                        title: qsTr("Artwork print")
+                        desc: qsTr("your art, your ink — choose a look, then make it yours.")
                         ArtworkStyleSettings {
                             sampleSource: {
                                 const covers = LibraryService.artPaths
@@ -432,8 +605,8 @@ Item {
                     }
 
                     Sblk {
-                        title: "Backdrop"
-                        desc: "behind the whole app — keep it clean, or drop in your own image (dimmed)."
+                        title: qsTr("Backdrop")
+                        desc: qsTr("behind the whole app — keep it clean, or drop in your own image (dimmed).")
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: Theme.spaceLg
@@ -460,7 +633,7 @@ Item {
                                 Text {
                                     anchors.centerIn: parent
                                     visible: AppSettings.backgroundImagePath.length === 0
-                                    text: "default ambient"
+                                    text: qsTr("default ambient")
                                     font.pixelSize: 12; font.weight: Font.Light
                                     color: Theme.textDim
                                 }
@@ -471,10 +644,10 @@ Item {
                                 Layout.alignment: Qt.AlignTop
                                 spacing: Theme.spaceMd
                                 Seg {
-                                    options: [{ label: "None", value: "none" },
-                                              { label: "Grime", value: "grime" },
-                                              { label: "Dusk", value: "dusk" },
-                                              { label: "Your image…", value: "image" }]
+                                    options: [{ label: qsTr("None"), value: "none" },
+                                              { label: qsTr("Grime"), value: "grime" },
+                                              { label: qsTr("Dusk"), value: "dusk" },
+                                              { label: qsTr("Your image…"), value: "image" }]
                                     current: AppSettings.backgroundImagePath.length > 0
                                              ? "image" : AppSettings.backdropPreset
                                     onPicked: (v) => {
@@ -491,7 +664,7 @@ Item {
                                     spacing: Theme.spaceMd
                                     Text {
                                         Layout.preferredWidth: 58
-                                        text: "dimness"
+                                        text: qsTr("dimness")
                                         font.pixelSize: 12; font.weight: Font.Light
                                         color: Theme.textDim
                                     }
@@ -506,7 +679,7 @@ Item {
                                     spacing: Theme.spaceMd
                                     Text {
                                         Layout.preferredWidth: 58
-                                        text: "blur"
+                                        text: qsTr("blur")
                                         font.pixelSize: 12; font.weight: Font.Light
                                         color: Theme.textDim
                                     }
@@ -521,8 +694,8 @@ Item {
                     }
 
                     Sblk {
-                        title: "Ambient glow"
-                        desc: "the grime particles that bloom behind the app while a Zune is connected."
+                        title: qsTr("Ambient glow")
+                        desc: qsTr("the grime particles that bloom behind the app while a Zune is connected.")
                         RowLayout {
                             spacing: Theme.spaceMd
                             Sw {
@@ -531,7 +704,7 @@ Item {
                             }
                             Text {
                                 Layout.alignment: Qt.AlignVCenter
-                                text: AppSettings.ambientSpray ? "on" : "off"
+                                text: AppSettings.ambientSpray ? qsTr("on") : qsTr("off")
                                 font.pixelSize: 13
                                 font.weight: Font.Light
                                 color: Theme.textSecondary
@@ -540,8 +713,8 @@ Item {
                     }
 
                     Sblk {
-                        title: "Letter breaks"
-                        desc: "break the grids into A–Z sections with marker headers. Off, the grid stays one clean block and the side rail filters by letter."
+                        title: qsTr("Letter breaks")
+                        desc: qsTr("break the grids into A–Z sections with marker headers. Off, the grid stays one clean block and the side rail filters by letter.")
                         RowLayout {
                             spacing: Theme.spaceMd
                             Sw {
@@ -550,7 +723,7 @@ Item {
                             }
                             Text {
                                 Layout.alignment: Qt.AlignVCenter
-                                text: AppSettings.letterBreaks ? "sectioned" : "clean grid"
+                                text: AppSettings.letterBreaks ? qsTr("sectioned") : qsTr("clean grid")
                                 font.pixelSize: 13
                                 font.weight: Font.Light
                                 color: Theme.textSecondary
@@ -559,9 +732,9 @@ Item {
                     }
 
                     Sblk {
-                        title: "Display font"
+                        title: qsTr("Display font")
                         divider: false
-                        desc: "the accent face for page titles and identity moments."
+                        desc: qsTr("the accent face for page titles and identity moments.")
                         RowLayout {
                             spacing: Theme.spaceLg
                             GradientText {
@@ -586,12 +759,17 @@ Item {
 
                 // ── LIBRARY ──
                 ColumnLayout {
+                    id: tabLibrary
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    visible: stack.currentIndex === 1
                     spacing: Theme.spaceXl
 
                     Sblk {
                         visible: (LibraryService.musicProbeFailures || []).length > 0
-                        title: "Songs waiting for another read"
-                        desc: "These files could not be read. Your saved song information stays intact; the next scan will retry."
+                        title: qsTr("Songs waiting for another read")
+                        desc: qsTr("These files could not be read. Your saved song information stays intact; the next scan will retry.")
                         Repeater {
                             model: (LibraryService.musicProbeFailures || []).slice(0, 5)
                             delegate: Text {
@@ -605,12 +783,12 @@ Item {
                         }
                         CaptionText {
                             visible: (LibraryService.musicProbeFailures || []).length > 5
-                            text: (LibraryService.musicProbeFailures || []).length + " songs will retry."
+                            text: qsTr("%1 songs will retry.").arg((LibraryService.musicProbeFailures || []).length)
                         }
                     }
 
                     Sblk {
-                        title: "Podcasts"
+                        title: qsTr("Podcasts")
                         PodcastPreferences {
                             Layout.fillWidth: true
                             enabled: !SyncEngine.isSyncing
@@ -624,21 +802,19 @@ Item {
                     }
 
                     Sblk {
-                        title: "Audiobook folders"
-                        desc: "Import a book folder or a collection of book folders. Review titles and part order before adding them. Run this import again when you add book folders; this is not a watched folder."
+                        title: qsTr("Audiobook folders")
+                        desc: qsTr("Import a book folder or a collection of book folders. Review titles and part order before adding them. Run this import again when you add book folders; this is not a watched folder.")
                         SpokenButton {
                             objectName: "settingsImportAudiobooks"
-                            text: "import audiobook folder…"
+                            text: qsTr("import audiobook folder…")
                             enabled: !SpokenMediaService.busy
                             onClicked: audiobookFolderImport.begin()
                         }
                     }
 
                     Sblk {
-                        title: "Watch folders"
-                        desc: "where zuuned scans — music · movies · tv · anime · other · photos. "
-                              + "Downloads off a Zune land in the default folder for that media; "
-                              + "without one, the first folder added is the default."
+                        title: qsTr("Watch folders")
+                        desc: qsTr("where zuuned scans — music · movies · tv · anime · other · photos. Downloads off a Zune land in the default folder for that media; without one, the first folder added is the default.")
 
                         // D2: health strip — only FAILING checks appear.
                         Repeater {
@@ -651,8 +827,8 @@ Item {
                                     && !DeviceService.udevRuleOk
                                     && DeviceService.udevRulesApply)
                                     rows.push({
-                                        label: "USB permission rule missing",
-                                        detail: "Open Settings → Zune → USB access to install or repair the permission rules."
+                                        label: qsTr("USB permission rule missing"),
+                                        detail: qsTr("Open Settings → Zune → USB access to install or repair the permission rules.")
                                     })
                                 return rows
                             }
@@ -714,12 +890,12 @@ Item {
                                     }
                                     readonly property string countLabel: {
                                         const t = modelData.type
-                                        if (t === "music") return fc.tracks + " tracks"
-                                        if (t === "movies") return fc.videos + " movies"
+                                        if (t === "music") return qsTr("%1 tracks").arg(fc.tracks)
+                                        if (t === "movies") return qsTr("%1 movies").arg(fc.videos)
                                         if (t === "tv" || t === "anime")
-                                            return fc.videos + " episodes"
-                                        if (t === "photos") return fc.photos + " photos"
-                                        return (fc.tracks + fc.videos + fc.photos) + " items"
+                                            return qsTr("%1 episodes").arg(fc.videos)
+                                        if (t === "photos") return qsTr("%1 photos").arg(fc.photos)
+                                        return qsTr("%1 items").arg(fc.tracks + fc.videos + fc.photos)
                                     }
                                     Layout.fillWidth: true
                                     implicitHeight: 50
@@ -748,7 +924,7 @@ Item {
                                             Text {
                                                 id: wfChip
                                                 anchors.centerIn: parent
-                                                text: wfRow.modelData.type
+                                                text: root.typeLabel(wfRow.modelData.type)
                                                 font.pixelSize: 10
                                                 font.weight: Font.Light
                                                 color: root.typeColor(wfRow.modelData.type)
@@ -784,11 +960,21 @@ Item {
                                         Text {
                                             visible: wfRow.modelData.importDefault === true
                                             Layout.alignment: Qt.AlignVCenter
-                                            // Spelled by C++, which knows the kinds:
-                                            // a folder typed "all" that only receives
-                                            // videos has to say so, or the row reads as
-                                            // the destination for songs it will never get.
-                                            text: wfRow.modelData.defaultLabel || "default"
+                                            // C++ names the kinds a row receives and
+                                            // stops there: which word means "default"
+                                            // and how the kinds are joined is wording,
+                                            // so it is composed here out of the language
+                                            // file. A folder typed "all" that only
+                                            // receives videos still has to say so, or
+                                            // the row reads as the destination for songs
+                                            // it will never get.
+                                            text: {
+                                                const kinds = wfRow.modelData.defaultKinds || []
+                                                const names = kinds.map(t => root.typeLabel(t))
+                                                return names.length > 0
+                                                       ? qsTr("default · %1").arg(names.join("+"))
+                                                       : qsTr("default")
+                                            }
                                             font.pixelSize: 11
                                             font.weight: Font.DemiBold
                                             color: Theme.pink
@@ -796,12 +982,12 @@ Item {
                                         GlassButton {
                                             visible: wfRow.modelData.importDefault !== true
                                             small: true
-                                            text: "default"
+                                            text: qsTr("default")
                                             onClicked: LibraryService.setImportDefault(wfRow.modelData.id)
                                         }
                                         GlassButton {
                                             small: true
-                                            text: "type"
+                                            text: qsTr("type")
                                             onClicked: {
                                                 treatAsPopup.folderId = wfRow.modelData.id
                                                 treatAsPopup.parent = wfRow
@@ -810,7 +996,7 @@ Item {
                                         }
                                         GlassButton {
                                             small: true
-                                            text: "remove"
+                                            text: qsTr("remove")
                                             onClicked: LibraryService.removeWatchFolder(wfRow.modelData.id)
                                         }
                                     }
@@ -832,22 +1018,22 @@ Item {
                             spacing: Theme.spaceMd
                             Text {
                                 Layout.fillWidth: true
-                                text: "add a folder"
+                                text: qsTr("add a folder")
                                 font.pixelSize: 13; font.weight: Font.Light
                                 color: Theme.textDim
                             }
                             Seg {
                                 id: addType
-                                options: [{ label: "music", value: "music" },
-                                          { label: "movies", value: "movies" },
-                                          { label: "tv", value: "tv" },
-                                          { label: "anime", value: "anime" },
-                                          { label: "photos", value: "photos" }]
+                                options: [{ label: qsTr("music"), value: "music" },
+                                          { label: qsTr("movies"), value: "movies" },
+                                          { label: qsTr("tv"), value: "tv" },
+                                          { label: qsTr("anime"), value: "anime" },
+                                          { label: qsTr("photos"), value: "photos" }]
                                 current: "music"
                                 onPicked: (v) => current = v
                             }
                             GlassButton {
-                                text: "browse…"
+                                text: qsTr("browse…")
                                 onClicked: root.pickFolder(addType.current)
                             }
                         }
@@ -876,10 +1062,9 @@ Item {
                                     Text {
                                         anchors.verticalCenter: parent.verticalCenter
                                         visible: manualPath.text.length === 0
-                                        text: "…or type a path (e.g. "
-                                              + (Qt.platform.os === "windows"
-                                                 ? "C:\\Users\\you\\Music" : "/mnt/MissionControl/music")
-                                              + ")"
+                                        text: qsTr("…or type a path (e.g. %1)")
+                                              .arg(Qt.platform.os === "windows"
+                                                   ? "C:\\Users\\you\\Music" : "/mnt/MissionControl/music")
                                         color: Theme.textGhost
                                         font.pixelSize: 12
                                     }
@@ -887,7 +1072,7 @@ Item {
                             }
                             GlassButton {
                                 small: true
-                                text: "add path"
+                                text: qsTr("add path")
                                 disabled: manualPath.text.trim().length <= 1
                                 onClicked: {
                                     LibraryService.addWatchFolder(manualPath.text.trim(),
@@ -900,13 +1085,45 @@ Item {
                     }
 
                     Sblk {
-                        title: "Artwork source"
-                        desc: "movie & tv posters, fan art — applies to new lookups"
+                        title: qsTr("Artwork source")
+                        desc: qsTr("movie & tv posters, fan art — applies to new lookups")
                         Seg {
                             options: [{ label: "TMDB", value: "tmdb" },
-                                      { label: "Fanart.tv", value: "fanart" }]
+                                      { label: qsTr("Fanart.tv"), value: "fanart" }]
                             current: AppSettings.posterSource
                             onPicked: (v) => AppSettings.posterSource = v
+                        }
+                    }
+
+                    Sblk {
+                        title: qsTr("Lookup API keys")
+                        desc: qsTr("optional. Your own key beats the one this build ships with, for new lookups.")
+
+                        // Both readers shipped long before this card existed:
+                        // src/library/TmdbClient.cpp:98 prefers this key over the
+                        // bundled one, and src/library/MusicIdentityClient.cpp:580
+                        // over the shared Fanart.tv key. Nothing asked for that
+                        // key over the network unless a lookup was already opted
+                        // into (see Music artwork above), so an empty field here
+                        // changes nothing at all.
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spaceMd
+                            ApiKeyField {
+                                label: "TMDB"
+                                placeholder: qsTr("v3 API key")
+                                saved: AppSettings.tmdbApiKey
+                                onCommitted: (v) => AppSettings.tmdbApiKey = v
+                            }
+                            ApiKeyField {
+                                label: qsTr("Fanart.tv")
+                                placeholder: qsTr("personal API key")
+                                saved: AppSettings.fanarttvApiKey
+                                onCommitted: (v) => AppSettings.fanarttvApiKey = v
+                            }
+                        }
+                        PhaseNote {
+                            text: qsTr("A key is stored in plain text in the settings file next to the library, in your own user profile, and is sent only to the provider it belongs to. Clearing the field and scanning away falls back to the bundled key.")
                         }
                     }
 
@@ -914,12 +1131,12 @@ Item {
                     // pass; picking here kicks a rescan so it applies
                     // now (and keepBoth resurrects the dropped format).
                     Sblk {
-                        title: "Duplicate formats"
-                        desc: "when an album ships FLAC + MP3 of the same tracks — applies on the spot"
+                        title: qsTr("Duplicate formats")
+                        desc: qsTr("when an album ships FLAC + MP3 of the same tracks — applies on the spot")
                         Seg {
-                            options: [{ label: "Keep both", value: "keepBoth" },
-                                      { label: "Prefer FLAC", value: "flac" },
-                                      { label: "Prefer MP3", value: "mp3" }]
+                            options: [{ label: qsTr("Keep both"), value: "keepBoth" },
+                                      { label: qsTr("Prefer FLAC"), value: "flac" },
+                                      { label: qsTr("Prefer MP3"), value: "mp3" }]
                             current: AppSettings.duplicateFormats
                             onPicked: (v) => {
                                 AppSettings.duplicateFormats = v
@@ -929,33 +1146,33 @@ Item {
                     }
 
                     Sblk {
-                        title: "Re-lookup"
-                        desc: LibraryService.videoCount + " videos in library, "
-                              + LibraryService.unmatchedVideoCount
-                              + " without a TMDB match"
+                        title: qsTr("Re-lookup")
+                        desc: qsTr("%1 videos in library, %2 without a TMDB match")
+                              .arg(LibraryService.videoCount)
+                              .arg(LibraryService.unmatchedVideoCount)
                         GlassButton {
-                            text: "retry unmatched lookups ("
-                                  + LibraryService.unmatchedVideoCount + ")"
+                            text: qsTr("retry unmatched lookups (%1)")
+                                  .arg(LibraryService.unmatchedVideoCount)
                             disabled: LibraryService.unmatchedVideoCount === 0
                             onClicked: LibraryService.requeueAllUnmatched()
                         }
                     }
 
                     Sblk {
-                        title: "Music artwork"
-                                                desc: "Covers are read from your own files first: an embedded picture or a folder image never needs the network, and art you already have is never replaced. An album that stays blank can ask a music store for its cover - its right-click menu does that for one album, this switch lets the library do it for every blank one, and it starts off. Portraits and tag lookups go to MusicBrainz and stay off until you ask."
+                        title: qsTr("Music artwork")
+                                                desc: qsTr("Covers are read from your own files first: an embedded picture or a folder image never needs the network, and art you already have is never replaced. An album that stays blank can ask a music store for its cover - its right-click menu does that for one album, this switch lets the library do it for every blank one, and it starts off. Portraits and tag lookups go to MusicBrainz and stay off until you ask.")
                         RowLayout {
                             spacing: Theme.spaceSm
                             SpokenCheckBox {
                                 objectName: "albumCoverLookupToggle"
                                 checked: AppSettings.albumCoverLookup
-                                Accessible.name: "look up missing album covers from the music store"
+                                Accessible.name: qsTr("look up missing album covers from the music store")
                                 onClicked: AppSettings.albumCoverLookup =
                                     !AppSettings.albumCoverLookup
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: "look up missing album covers from the music store"
+                                text: qsTr("look up missing album covers from the music store")
                                 color: Theme.textSecondary
                                 font.pixelSize: 13
                                 font.weight: Font.Light
@@ -967,13 +1184,13 @@ Item {
                             SpokenCheckBox {
                                 objectName: "autoMetadataLookupToggle"
                                 checked: AppSettings.autoMetadataLookup
-                                Accessible.name: "look up artist portraits and tags online"
+                                Accessible.name: qsTr("look up artist portraits and tags online")
                                 onClicked: AppSettings.autoMetadataLookup =
                                     !AppSettings.autoMetadataLookup
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: "look up artist portraits and tags online (MusicBrainz)"
+                                text: qsTr("look up artist portraits and tags online (MusicBrainz)")
                                 color: Theme.textSecondary
                                 font.pixelSize: 13
                                 font.weight: Font.Light
@@ -981,19 +1198,19 @@ Item {
                             }
                         }
                         GlassButton {
-                            text: "find missing artwork"
+                            text: qsTr("find missing artwork")
                             disabled: LibraryService.trackCount === 0
                             onClicked: LibraryService.retryMissingArtwork()
                         }
                     }
 
                     Sblk {
-                        title: "Rescan"
-                        desc: "re-read every watch folder now"
+                        title: qsTr("Rescan")
+                        desc: qsTr("re-read every watch folder now")
                         divider: false
                         GlassButton {
                             primary: true
-                            text: "rescan library"
+                            text: qsTr("rescan library")
                             disabled: LibraryService.scanning
                                      || LibraryService.watchFolders.length === 0
                             onClicked: LibraryService.rescan()
@@ -1035,13 +1252,18 @@ Item {
 
                 // ── DEVICE ──
                 ColumnLayout {
+                    id: tabDevice
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    visible: stack.currentIndex === 2
                     spacing: Theme.spaceXl
 
                     Sblk {
-                        title: "USB access"
+                        title: qsTr("USB access")
                         desc: DeviceService.udevRulesApply
-                            ? "let zuuned own the Zune without sudo each time."
-                            : "Windows claims the Zune through a WinUSB driver - no rules, no sudo."
+                            ? qsTr("let zuuned own the Zune without sudo each time.")
+                            : qsTr("Windows claims the Zune through a WinUSB driver - no rules, no sudo.")
                         // Windows has no udev: name WinUSB instead of offering a rule install.
                         ColumnLayout {
                             id: usbAccessCol
@@ -1056,10 +1278,10 @@ Item {
                                 DeviceService.devicePresent && DeviceService.usbAccessProblem
                             Text {
                                 text: usbAccessCol.blocked
-                                      ? "Zune plugged in, but not visible to libusb"
+                                      ? qsTr("Zune plugged in, but not visible to libusb")
                                       : DeviceService.devicePresent
-                                        ? "Zune visible to libusb"
-                                        : "No Zune visible to libusb"
+                                        ? qsTr("Zune visible to libusb")
+                                        : qsTr("No Zune visible to libusb")
                                 font.pixelSize: 14; font.weight: Font.Light
                                 color: DeviceService.devicePresent && !usbAccessCol.blocked
                                        ? Theme.textPrimary : Theme.warning
@@ -1079,10 +1301,7 @@ Item {
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: "zuuned talks to the Zune through libusb, which on Windows "
-                                      + "needs a WinUSB driver bound to the device. If a plugged-in "
-                                      + "Zune never shows up here, install WinUSB for it with the "
-                                      + "Zadig utility, then replug. zuuned never installs a driver."
+                                text: qsTr("zuuned talks to the Zune through libusb, which on Windows needs a WinUSB driver bound to the device. If a plugged-in Zune never shows up here, install WinUSB for it with the Zadig utility, then replug. zuuned never installs a driver.")
                                 font.pixelSize: 11; font.weight: Font.Light
                                 color: Theme.textDim
                                 wrapMode: Text.WordWrap
@@ -1097,12 +1316,12 @@ Item {
                                 Layout.fillWidth: true
                                 spacing: 2
                                 Text {
-                                    text: DeviceService.udevRuleOk ? "Rule installed" : "Rule missing"
+                                    text: DeviceService.udevRuleOk ? qsTr("Rule installed") : qsTr("Rule missing")
                                     font.pixelSize: 14; font.weight: Font.Light
                                     color: DeviceService.udevRuleOk ? Theme.textPrimary : Theme.warning
                                 }
                                 Text {
-                                    text: "installs with one click (asks for your password)"
+                                    text: qsTr("installs with one click (asks for your password)")
                                     font.pixelSize: 11; font.weight: Font.Light
                                     color: Theme.textDim
                                 }
@@ -1111,7 +1330,7 @@ Item {
                                 visible: DeviceService.udevRulesApply && !DeviceService.udevRuleOk
                                 Layout.alignment: Qt.AlignVCenter
                                 primary: true
-                                text: "install rule"
+                                text: qsTr("install rule")
                                 onClicked: DeviceService.installUdevRule()
                             }
                             // Read-only state light; flipping it while
@@ -1143,23 +1362,23 @@ Item {
                     }
 
                     Sblk {
-                        title: "Transcode acceleration"
-                        desc: "hardware video decode when your GPU supports it — ~4x faster transcodes."
+                        title: qsTr("Transcode acceleration")
+                        desc: qsTr("hardware video decode when your GPU supports it — ~4x faster transcodes.")
                         Seg {
-                            options: [{ label: "Auto", value: "auto" },
-                                      { label: "NVIDIA", value: "nvenc" },
-                                      { label: "AMD", value: "amd" },
-                                      { label: "CPU", value: "cpu" }]
+                            options: [{ label: qsTr("Auto"), value: "auto" },
+                                      { label: qsTr("NVIDIA"), value: "nvenc" },
+                                      { label: qsTr("AMD"), value: "amd" },
+                                      { label: qsTr("CPU"), value: "cpu" }]
                             current: AppSettings.transcodeAccel
                             onPicked: (v) => AppSettings.transcodeAccel = v
                         }
-                        PhaseNote { text: "Auto tries NVDEC, then VAAPI, then software. A missing GPU falls back to software either way." }
+                        PhaseNote { text: qsTr("Auto tries NVDEC, then VAAPI, then software. A missing GPU falls back to software either way.") }
                     }
 
                     Sblk {
                         id: videoProfileCard
-                        title: "Default video profile"
-                        desc: "quality & size for videos sent to the Zune."
+                        title: qsTr("Default video profile")
+                        desc: qsTr("quality & size for videos sent to the Zune.")
 
                         // Family (0xD21A) → profile, resolved live from the
                         // connected Zune. -1 when nothing is plugged in.
@@ -1187,10 +1406,10 @@ Item {
                             Text {
                                 text: {
                                     if (AppSettings.videoProfile >= 0)
-                                        return "manual override"
+                                        return qsTr("manual override")
                                     if (!DeviceService.connected)
-                                        return "auto — detects when a zune connects"
-                                    return "auto-detected from this zune"
+                                        return qsTr("auto — detects when a zune connects")
+                                    return qsTr("auto-detected from this zune")
                                 }
                                 font.pixelSize: 12; font.weight: Font.Light
                                 color: AppSettings.videoProfile >= 0
@@ -1198,7 +1417,7 @@ Item {
                             }
                             Text {
                                 visible: AppSettings.videoProfile >= 0
-                                text: "reset to auto"
+                                text: qsTr("reset to auto")
                                 font.pixelSize: 12
                                 color: Theme.textSecondary
                                 font.underline: true
@@ -1213,10 +1432,10 @@ Item {
                         // Mock's pills, real profiles: nothing lit while
                         // unplugged with no override (shownProfile -1).
                         Seg {
-                            options: [{ label: "Zune 30 (WMV)", value: "0" },
-                                      { label: "Classic (H.264)", value: "1" },
-                                      { label: "HD 480p", value: "2" },
-                                      { label: "HD 720p", value: "3" }]
+                            options: [{ label: qsTr("Zune 30 (WMV)"), value: "0" },
+                                      { label: qsTr("Classic (H.264)"), value: "1" },
+                                      { label: qsTr("HD 480p"), value: "2" },
+                                      { label: qsTr("HD 720p"), value: "3" }]
                             current: videoProfileCard.shownProfile >= 0
                                      ? String(videoProfileCard.shownProfile) : ""
                             onPicked: (v) => AppSettings.videoProfile = parseInt(v)
@@ -1224,27 +1443,69 @@ Item {
 
                     }
 
+                    Sblk {
+                        title: qsTr("Video size floor")
+                        desc: qsTr("the smallest video the library will index.")
+
+                        // Wired, and long overdue: the scan reads this key on
+                        // every pass (src/library/LibraryScanner.cpp:426) and
+                        // when it refuses a file it prints "Settings > Device >
+                        // ... or lower videoMinSizeMB"
+                        // (src/library/LibraryScanner.cpp:876) -- advice about a
+                        // control that did not exist on any tab, on either
+                        // platform, until now.
+                        //
+                        // "Auto" is not a number: it is the per-folder-type rule
+                        // in VideoNaming::videoSkipReason(), 50 MB only where a
+                        // folder declares itself movies and 5 MB for every other
+                        // type including "all", because a phone clip in a mixed
+                        // folder is routinely 20 MB. Any number here wins over
+                        // the folder type, which is the whole point.
+                        Seg {
+                            options: [{ label: qsTr("Auto (by folder type)"), value: "0" },
+                                      { label: qsTr("5 MB"), value: "5" },
+                                      { label: qsTr("25 MB"), value: "25" },
+                                      { label: qsTr("50 MB"), value: "50" },
+                                      { label: qsTr("100 MB"), value: "100" }]
+                            current: String(AppSettings.videoMinSizeMB)
+                            onPicked: (v) => AppSettings.videoMinSizeMB = parseInt(v)
+                        }
+                        PhaseNote {
+                            text: AppSettings.videoMinSizeMB > 0
+                                  ? qsTr("Any video under %1 MB is not indexed, whatever the folder is typed as. Applies on the next scan.")
+                                        .arg(AppSettings.videoMinSizeMB)
+                                  : qsTr("Right now a folder typed movies needs 50 MB and every other type 5 MB. Applies on the next scan.")
+                        }
+                        // The floor screens guesses, never requests: whatever the
+                        // app pulled off a player into its own download folder is
+                        // exempt, because a device-sized transcode is a few MB
+                        // and the user asked for that file by right-clicking.
+                        PhaseNote {
+                            text: qsTr("Nothing this app downloaded from a Zune is ever refused for size, and a refusal is counted and named by the scan rather than kept quiet.")
+                        }
+                    }
+
                     // Not in the mock — kept deliberately: transcode needs
                     // a language pick for multi-audio sources.
                     Sblk {
-                        title: "Preferred audio language"
-                        desc: "picked when a video carries more than one audio track."
+                        title: qsTr("Preferred audio language")
+                        desc: qsTr("picked when a video carries more than one audio track.")
                         divider: false
 
                         ComboBox {
                             id: langBox
                             implicitWidth: 200
                             model: [
-                                { text: "English", tag: "eng" },
-                                { text: "Japanese", tag: "jpn" },
-                                { text: "Spanish", tag: "spa" },
-                                { text: "French", tag: "fre" },
-                                { text: "German", tag: "ger" },
-                                { text: "Korean", tag: "kor" },
-                                { text: "Chinese", tag: "chi" },
-                                { text: "Portuguese", tag: "por" },
-                                { text: "Italian", tag: "ita" },
-                                { text: "Russian", tag: "rus" }
+                                { text: qsTr("English"), tag: "eng" },
+                                { text: qsTr("Japanese"), tag: "jpn" },
+                                { text: qsTr("Spanish"), tag: "spa" },
+                                { text: qsTr("French"), tag: "fre" },
+                                { text: qsTr("German"), tag: "ger" },
+                                { text: qsTr("Korean"), tag: "kor" },
+                                { text: qsTr("Chinese"), tag: "chi" },
+                                { text: qsTr("Portuguese"), tag: "por" },
+                                { text: qsTr("Italian"), tag: "ita" },
+                                { text: qsTr("Russian"), tag: "rus" }
                             ]
                             textRole: "text"
                             currentIndex: {
@@ -1315,16 +1576,266 @@ Item {
                         }
                     }
 
+                    Sblk {
+                        title: qsTr("This Zune")
+                        desc: DeviceService.connected
+                              ? qsTr("read from the player on this connection.")
+                              : qsTr("nothing is connected right now.")
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+                            visible: DeviceService.connected
+                            StatRow { label: qsTr("Name"); value: DeviceService.name }
+                            StatRow {
+                                label: qsTr("Model")
+                                value: DeviceService.modelName.length > 0
+                                       ? DeviceService.modelName : DeviceService.model
+                            }
+                            StatRow { label: qsTr("Serial"); value: DeviceService.deviceSerial }
+                            StatRow {
+                                label: qsTr("Storage")
+                                value: DeviceService.capacityGB > 0
+                                       ? qsTr("%1 GB free of %2 GB")
+                                             .arg(DeviceService.freeGB.toFixed(1))
+                                             .arg(DeviceService.capacityGB.toFixed(1))
+                                       : qsTr("not reported")
+                            }
+                            StatRow {
+                                label: qsTr("Music / video / photos")
+                                value: DeviceService.musicGB.toFixed(2) + " / "
+                                       + DeviceService.videoGB.toFixed(2) + " / "
+                                       + DeviceService.photoGB.toFixed(2) + " GB"
+                            }
+                            StatRow {
+                                label: qsTr("Battery")
+                                value: DeviceService.battery >= 0
+                                       ? DeviceService.battery + "%" : qsTr("not reported")
+                                divider: false
+                            }
+                        }
+                        // No firmware row, on purpose: libzune exposes a serial and a
+                        // model and nothing else, so a firmware number here would be
+                        // invented rather than read.
+                        PhaseNote {
+                            visible: !DeviceService.connected
+                            text: qsTr("Plug a Zune in and this card fills itself in from the device.")
+                        }
+                    }
+
+                    Sblk {
+                        title: qsTr("Previously connected")
+                        desc: qsTr("every Zune this app has talked to, so a player you plug in next month is still recognised.")
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+                            visible: DeviceService.deviceHistory.count > 0
+                            Repeater {
+                                model: DeviceService.deviceHistory.devices
+                                delegate: ColumnLayout {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    spacing: 0
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Layout.topMargin: 5
+                                        Layout.bottomMargin: 5
+                                        spacing: Theme.spaceMd
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 1
+                                            Text {
+                                                text: modelData.name.length > 0
+                                                      ? modelData.name : qsTr("Unnamed Zune")
+                                                font.pixelSize: 13; font.weight: Font.Medium
+                                                color: Theme.textPrimary
+                                                elide: Text.ElideRight
+                                            }
+                                            Text {
+                                                text: [modelData.model,
+                                                       modelData.capacityGB > 0
+                                                           ? modelData.capacityGB.toFixed(0) + " GB" : "",
+                                                       qsTr("serial %1").arg(modelData.serial),
+                                                       (modelData.connects === 1 ? qsTr("%1 visit") : qsTr("%1 visits")).arg(modelData.connects),
+                                                       qsTr("last seen %1").arg(modelData.lastSeenDate)]
+                                                      .filter(function (s) { return s.length > 0 })
+                                                      .join("  ·  ")
+                                                font.pixelSize: 11; font.weight: Font.Light
+                                                color: Theme.textDim
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+                                        GlassButton {
+                                            text: qsTr("forget")
+                                            small: true
+                                            onClicked: DeviceService.deviceHistory.forget(modelData.key)
+                                        }
+                                    }
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        implicitHeight: 1
+                                        color: Theme.separator
+                                    }
+                                }
+                            }
+                        }
+                        RowLayout {
+                            visible: DeviceService.deviceHistory.count > 0
+                            spacing: Theme.spaceMd
+                            GlassButton {
+                                text: qsTr("clear all")
+                                small: true
+                                onClicked: DeviceService.deviceHistory.clearAll()
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: DeviceService.deviceHistory.storePath
+                                font.pixelSize: 10; font.weight: Font.Light
+                                color: Theme.textGhost
+                                elide: Text.ElideMiddle
+                            }
+                        }
+                        PhaseNote {
+                            visible: DeviceService.deviceHistory.count === 0
+                            text: qsTr("Nothing yet. This list is written the first time a Zune connects.")
+                        }
+                    }
+
+                    Sblk {
+                        id: audioConversionCard
+                        title: qsTr("Audio conversion")
+                        desc: qsTr("what happens to a file that a Zune cannot play as it stands.")
+                        readonly property var tools: DiagnosticsService.conversionTools()
+
+                        Seg {
+                            options: [{ label: "MP3", value: "mp3" },
+                                      { label: "WMA", value: "wma",
+                                        disabled: !audioConversionCard.tools.wmaEncoder }]
+                            current: AppSettings.syncAudioFormat
+                            onPicked: (v) => AppSettings.syncAudioFormat = v
+                        }
+                        // One decision, which is what the original client
+                        // shipped (a quality preset, not a codec matrix). These
+                        // four are the same constant bit rates the card used to
+                        // list as bare numbers and the same stored key
+                        // underneath, so a preset is a name over a value rather
+                        // than a second source of truth. Both encoders honour
+                        // it: LAME for MP3, and for WMA wmav2, which takes
+                        // 32-320 kbps and has no VBR mode at all (measured with
+                        // `ffmpeg -h encoder=wmav2` on this build).
+                        Seg {
+                            options: [{ label: qsTr("Space saving 128"), value: "128" },
+                                      { label: qsTr("Standard 192"), value: "192" },
+                                      { label: qsTr("High 256"), value: "256" },
+                                      { label: qsTr("Best 320"), value: "320" }]
+                            current: String(AppSettings.syncAudioBitrate)
+                            onPicked: (v) => AppSettings.syncAudioBitrate = parseInt(v)
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+                            StatRow {
+                                label: "MP3"
+                                value: audioConversionCard.tools.mp3Encoder
+                                       ? qsTr("LAME, constant bit rate, ID3v2.3")
+                                       : qsTr("no encoder in this build")
+                                valueColor: audioConversionCard.tools.mp3Encoder
+                                            ? Theme.textDim : Theme.warning
+                            }
+                            StatRow {
+                                label: "WMA"
+                                value: audioConversionCard.tools.wmaEncoder
+                                       ? qsTr("libavcodec wmav2 in ASF — lossy")
+                                       : qsTr("no encoder in this build")
+                                valueColor: audioConversionCard.tools.wmaEncoder
+                                            ? Theme.textDim : Theme.warning
+                            }
+                            StatRow {
+                                label: qsTr("Already the right format")
+                                value: AppSettings.copyNativeAudio
+                                       && AppSettings.syncAudioFormat === "wma"
+                                       ? qsTr("sent as-is") : qsTr("converted")
+                                divider: false
+                            }
+                        }
+
+                        RowLayout {
+                            spacing: Theme.spaceMd
+                            Sw {
+                                Layout.alignment: Qt.AlignVCenter
+                                on: AppSettings.copyNativeAudio
+                                onToggled: AppSettings.copyNativeAudio = !AppSettings.copyNativeAudio
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: qsTr("keep a WMA already on the computer byte for byte")
+                                font.pixelSize: 13; font.weight: Font.Light
+                                color: Theme.textPrimary
+                            }
+                        }
+
+                        // The honest half, said out loud rather than left to the
+                        // user to discover through a silent quality loss.
+                        PhaseNote {
+                            text: qsTr("WMA Lossless cannot be encoded here. The FFmpeg this build links carries wmav1 and wmav2 as its only WMA encoders (measured: `ffmpeg -encoders`), and Windows ships no WMA lossless ACM codec either, so every encoder reachable from here is a downgrade from lossless. What keeps a WMA Lossless track intact is the switch above: the bytes go over untouched instead of being converted. FLAC, WAV and APE have no lossless destination on a Zune at all, so syncing one is always a lossy convert to the format chosen above.")
+                        }
+                        PhaseNote {
+                            text: qsTr("Bit rate is constant only. A variable-bitrate MP3 header is not written by this build - measured, the LAME/Xing frame is absent and the player then reports a track three minutes shorter than it is - so VBR is not offered.")
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+                            StatRow {
+                                label: qsTr("Conversion library")
+                                value: qsTr("FFmpeg %1 (built in)").arg(audioConversionCard.tools.bundledLibav)
+                            }
+                            StatRow {
+                                label: qsTr("FFmpeg command-line tools")
+                                value: audioConversionCard.tools.commandLineTools
+                                       ? qsTr("found on PATH") : qsTr("not found")
+                                dot: audioConversionCard.tools.commandLineTools
+                                     ? Theme.green : Theme.warning
+                                valueColor: audioConversionCard.tools.commandLineTools
+                                            ? Theme.textDim : Theme.warning
+                                divider: false
+                            }
+                        }
+                        RowLayout {
+                            visible: !audioConversionCard.tools.commandLineTools
+                            spacing: Theme.spaceMd
+                            Text {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                text: qsTr("Converting inside the app needs nothing else installed. The command-line ffmpeg and ffprobe are used for two jobs only: video thumbnails for the device page, and reading a file the built-in library cannot open. Without them those two things quietly do not happen.")
+                                font.pixelSize: 12; font.weight: Font.Light
+                                color: Theme.textDim
+                            }
+                            GlassButton {
+                                text: qsTr("download FFmpeg ↗")
+                                small: true
+                                onClicked: Qt.openUrlExternally(audioConversionCard.tools.downloadUrl)
+                            }
+                        }
+                    }
+
                     Item { Layout.fillHeight: true }
                 }
 
                 // ── MIXTAPES ──
                 ColumnLayout {
+                    id: tabMixtapes
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    visible: stack.currentIndex === 3
                     spacing: Theme.spaceXl
 
                     Sblk {
-                        title: "Your mixtapes"
-                        desc: "built here, synced to the Zune."
+                        title: qsTr("Your mixtapes")
+                        desc: qsTr("built here, synced to the Zune.")
                         ColumnLayout {
                             Layout.fillWidth: true
                             Layout.topMargin: Theme.spaceXs
@@ -1429,11 +1940,11 @@ Item {
                                                 elide: Text.ElideRight
                                             }
                                             Text {
-                                                text: (modelData.count !== undefined
-                                                       ? modelData.count : 0) + " tracks"
+                                                text: qsTr("%1 tracks").arg(
+                                                      modelData.count !== undefined ? modelData.count : 0)
                                                       + (mixRow.missing > 0
-                                                         ? " · " + mixRow.missing
-                                                           + " not in library" : "")
+                                                         ? qsTr(" · %1 not in library").arg(mixRow.missing)
+                                                         : "")
                                                 font.pixelSize: 11; font.weight: Font.Light
                                                 color: Theme.textDim
                                             }
@@ -1441,9 +1952,9 @@ Item {
                                         // mock ".sy"/".ns" — pulling while an
                                         // import fills in; blank when unplugged
                                         Text {
-                                            text: mixRow.pullingNow ? "pulling…"
+                                            text: mixRow.pullingNow ? qsTr("pulling…")
                                                   : !DeviceService.connected ? ""
-                                                  : onZune ? "on zune" : "not synced"
+                                                  : onZune ? qsTr("on zune") : qsTr("not synced")
                                             font.pixelSize: 11; font.weight: Font.Light
                                             color: onZune && !mixRow.pullingNow
                                                    ? Theme.green : Theme.textGhost
@@ -1461,20 +1972,20 @@ Item {
                         Text {
                             visible: LibraryService.playlists.length === 0
                             Layout.topMargin: Theme.spaceXs
-                            text: "no mixtapes yet — build one from the tray"
+                            text: qsTr("no mixtapes yet — build one from the tray")
                             font.pixelSize: 14; font.weight: Font.Light
                             color: Theme.textSecondary
                         }
                     }
 
                     Sblk {
-                        title: "Import & export"
-                        desc: "move mixtapes as .m3u — the escape hatch from our schema."
+                        title: qsTr("Import & export")
+                        desc: qsTr("move mixtapes as .m3u — the escape hatch from our schema.")
                         divider: false
                         RowLayout {
                             spacing: Theme.spaceMd
                             GlassButton {
-                                text: "export all (.m3u)"
+                                text: qsTr("export all (.m3u)")
                                 disabled: LibraryService.playlists.length === 0
                                 onClicked: {
                                     const dir = LibraryService.exportPlaylistsM3U()
@@ -1482,7 +1993,7 @@ Item {
                                 }
                             }
                             GlassButton {
-                                text: "import a playlist…"
+                                text: qsTr("import a playlist…")
                                 onClicked: m3uImportDialog.open()
                             }
                         }
@@ -1493,6 +2004,11 @@ Item {
 
                 // ── HEALTH ──
                 ColumnLayout {
+                    id: tabHealth
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    visible: stack.currentIndex === 4
                     spacing: Theme.spaceXl
 
                     DiagnosticsSettings {
@@ -1502,8 +2018,8 @@ Item {
                     }
 
                     Sblk {
-                        title: "Status"
-                        desc: "everything zuuned needs to run right."
+                        title: qsTr("Status")
+                        desc: qsTr("everything zuuned needs to run right.")
 
                         // Watch folders reachable — total minus any failing
                         // folder checks the scanner reports.
@@ -1514,22 +2030,22 @@ Item {
                                 return LibraryService.healthChecks()
                                     .filter(c => c.id === "folder").length
                             }
-                            label: "Watch folders reachable"
-                            value: (total - failing) + " of " + total
+                            label: qsTr("Watch folders reachable")
+                            value: qsTr("%1 of %2").arg(total - failing).arg(total)
                             dot: failing === 0 ? Theme.green : Theme.warning
                         }
                         StatRow {
                             readonly property double gb: LibraryService.tempFreeGB()
-                            label: "Temp space for transcodes"
-                            value: gb < 0 ? "unknown"
-                                          : gb.toFixed(gb < 100 ? 1 : 0) + " GB free"
+                            label: qsTr("Temp space for transcodes")
+                            value: gb < 0 ? qsTr("unknown")
+                                          : qsTr("%1 GB free").arg(gb.toFixed(gb < 100 ? 1 : 0))
                             dot: gb < 0 ? Theme.textDim
                                         : (gb >= 2 ? Theme.green : Theme.warning)
                         }
                         StatRow {
                             visible: DeviceService.udevRulesApply
-                            label: "USB rule installed"
-                            value: DeviceService.udevRuleOk ? "installed" : "missing or outdated"
+                            label: qsTr("USB rule installed")
+                            value: DeviceService.udevRuleOk ? qsTr("installed") : qsTr("missing or outdated")
                             dot: DeviceService.udevRuleOk ? Theme.green : Theme.warning
                         }
                         // Files a folder holds that its declared type will not
@@ -1544,19 +2060,19 @@ Item {
                                 required property var modelData
                                 label: ZPathText.display(modelData.folder)
                                 readonly property string wrongKind:
-                                    (modelData.videos > 0 ? modelData.videos + " video " : "")
-                                    + (modelData.photos > 0 ? modelData.photos + " photo " : "")
-                                    + (modelData.audio > 0 ? modelData.audio + " audio " : "")
+                                    (modelData.videos > 0 ? qsTr("%1 video ").arg(modelData.videos) : "")
+                                    + (modelData.photos > 0 ? qsTr("%1 photo ").arg(modelData.photos) : "")
+                                    + (modelData.audio > 0 ? qsTr("%1 audio ").arg(modelData.audio) : "")
                                 readonly property string underFloor:
                                     modelData.sizeSkipped > 0
-                                    ? modelData.sizeSkipped
-                                      + " video under the size floor — set as download folder"
+                                    ? qsTr("%1 video under the size floor — set as download folder")
+                                          .arg(modelData.sizeSkipped)
                                     : ""
                                 // Two complaints, because a folder that holds the
                                 // wrong kind of media and a folder whose size
                                 // guess said no are fixed by two different things.
                                 value: wrongKind
-                                     ? wrongKind + "held — type \"" + modelData.type + "\" skips them"
+                                     ? wrongKind + qsTr("held — type \"%1\" skips them").arg(root.typeLabel(modelData.type))
                                        + (underFloor ? " · " + underFloor : "")
                                      : underFloor
                                 valueColor: Theme.warning
@@ -1564,27 +2080,27 @@ Item {
                             }
                         }
                         StatRow {
-                            label: "Zune connected"
-                            value: DeviceService.connected ? "ready" : "unplugged"
+                            label: qsTr("Zune connected")
+                            value: DeviceService.connected ? qsTr("ready") : qsTr("unplugged")
                             dot: DeviceService.connected ? Theme.green : Theme.warning
                             divider: false
                         }
                     }
 
                     Sblk {
-                        title: "Library"
-                        desc: "what's indexed right now."
-                        StatRow { label: "Tracks"; value: LibraryService.trackCount
+                        title: qsTr("Library")
+                        desc: qsTr("what's indexed right now.")
+                        StatRow { label: qsTr("Tracks"); value: LibraryService.trackCount
                                   valueColor: Theme.textPrimary }
-                        StatRow { label: "Videos"; value: LibraryService.videoCount
+                        StatRow { label: qsTr("Videos"); value: LibraryService.videoCount
                                   valueColor: Theme.textPrimary }
-                        StatRow { label: "Photos"; value: LibraryService.photoCount
+                        StatRow { label: qsTr("Photos"); value: LibraryService.photoCount
                                   valueColor: Theme.textPrimary; divider: false }
                     }
 
                     Sblk {
-                        title: "Backups & tour"
-                        desc: "keep your library safe; see the tour again."
+                        title: qsTr("Backups & tour")
+                        desc: qsTr("keep your library safe; see the tour again.")
 
                         RowLayout {
                             Layout.fillWidth: true
@@ -1594,21 +2110,21 @@ Item {
                                 Layout.fillWidth: true
                                 spacing: 2
                                 Text {
-                                    text: "Back up library DB"
+                                    text: qsTr("Back up library DB")
                                     font.pixelSize: 14; font.weight: Font.Light
                                     color: Theme.textPrimary
                                 }
                                 Text {
                                     id: backupWhen
                                     property string label: LibraryService.lastBackupLabel()
-                                    text: label.length > 0 ? "last backup: " + label
-                                                           : "never backed up"
+                                    text: label.length > 0
+                                      ? qsTr("last backup: %1").arg(label) : qsTr("never backed up")
                                     font.pixelSize: 11; font.weight: Font.Light
                                     color: Theme.textDim
                                 }
                             }
                             GlassButton {
-                                text: "back up now"
+                                text: qsTr("back up now")
                                 onClicked: {
                                     const when = LibraryService.backupDatabase()
                                     if (when.length > 0) {
@@ -1635,39 +2151,39 @@ Item {
                                 Layout.fillWidth: true
                                 spacing: 2
                                 Text {
-                                    text: "Replay the walkthrough"
+                                    text: qsTr("Replay the walkthrough")
                                     font.pixelSize: 14; font.weight: Font.Light
                                     color: Theme.textPrimary
                                 }
                                 Text {
-                                    text: "the first-run tour"
+                                    text: qsTr("the first-run tour")
                                     font.pixelSize: 11; font.weight: Font.Light
                                     color: Theme.textDim
                                 }
                             }
                             GlassButton {
-                                text: "show me"
+                                text: qsTr("show me")
                                 onClicked: Window.window.showOnboarding = true
                             }
                         }
                     }
 
                     Sblk {
-                        title: "About"
+                        title: qsTr("About")
                         divider: true
                         Text {
                             Layout.fillWidth: true
                             wrapMode: Text.WordWrap
-                            text: "Zuuned " + (Qt.application.version || "development build")
-                                  + " · " + (Qt.platform.os === "windows" ? "windows" : "linux")
-                                  + " · your data stays local."
+                            text: qsTr("Zuuned %1 · %2 · your data stays local.")
+                                      .arg(Qt.application.version || qsTr("development build"))
+                                      .arg(Qt.platform.os === "windows" ? "windows" : "linux")
                             font.pixelSize: 13; font.weight: Font.Light
                             color: Theme.textDim
                         }
                     }
 
                     Sblk {
-                        title: "Powered by"
+                        title: qsTr("Powered by")
                         divider: false
                         RowLayout {
                             spacing: Theme.spaceXxl
@@ -1682,15 +2198,13 @@ Item {
                                 color: Qt.rgba(0.73, 0.28, 0.56, 1)
                             }
                             Text {
-                                text: "fanart.tv"
+                                text: qsTr("fanart.tv")
                                 font.pixelSize: 14; font.weight: Font.Bold
                                 color: Qt.rgba(0.04, 0.55, 1.0, 1)
                             }
                         }
                         CaptionText {
-                            text: "This product uses the TMDB API but is not endorsed or certified "
-                                  + "by TMDB. Music metadata powered by MusicBrainz and AcoustID. "
-                                  + "Art powered by Fanart.tv and the Cover Art Archive."
+                            text: qsTr("This product uses the TMDB API but is not endorsed or certified by TMDB. Music metadata powered by MusicBrainz and AcoustID. Art powered by Fanart.tv and the Cover Art Archive.")
                         }
                     }
 
@@ -1705,7 +2219,7 @@ Item {
     FolderDialog {
         id: mediaFolderDialog
         property string pendingType: "music"
-        title: "Choose a " + pendingType + " folder"
+        title: qsTr("Choose a %1 folder").arg(root.typeLabel(pendingType))
         onAccepted: {
             console.warn("[settings] folder accepted:", selectedFolder)
             // canonical(), not a hand-stripped scheme: file:///E:/Music has to
@@ -1743,7 +2257,10 @@ Item {
                         anchors.left: parent.left
                         anchors.leftMargin: Theme.spaceSm
                         anchors.verticalCenter: parent.verticalCenter
-                        text: modelData
+                        // The Treat-As menu offers folder keys and must show
+                        // words: the key is still what gets sent, the label is
+                        // the language file's.
+                        text: root.typeLabel(modelData)
                         font.pixelSize: 12
                         font.weight: Font.Light
                         color: root.typeColor(modelData)
@@ -1765,7 +2282,7 @@ Item {
 
     FileDialog {
         id: wallpaperDialog
-        title: "Choose a background image"
+        title: qsTr("Choose a background image")
         nameFilters: ["Images (*.png *.jpg *.jpeg *.webp *.bmp)"]
         onAccepted: {
             // Store a plain local path (mac stores url.path); the mac also
@@ -1779,7 +2296,7 @@ Item {
     // Mixtapes: import a plain .m3u playlist
     FileDialog {
         id: m3uImportDialog
-        title: "Import a playlist (.m3u)"
+        title: qsTr("Import a playlist (.m3u)")
         nameFilters: ["Playlists (*.m3u *.m3u8)"]
         onAccepted: {
             const res = LibraryService.importPlaylistM3U(selectedFile.toString())

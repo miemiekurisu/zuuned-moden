@@ -63,6 +63,16 @@ if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
     . (Join-Path $Deps 'msvc-env.ps1')
 }
 
+# The Qt and ffmpeg directories are part of the environment every child needs, not
+# just the instrumented launches.  Start-Zuuned and the single-instance rival name
+# PATH themselves; `Invoke-Proc -File $libraryTool -Arguments @('names')` and the
+# other tool checks do not, so they inherited it from whoever ran the gate.  From a
+# shell without Qt on PATH every one of those tools died at 0xC0000135
+# (DLL_NOT_FOUND) before printing a line, 27 checks failed, the seed library never
+# got built, and the page, settings-tab and compact cases SKIPPED themselves while
+# the app itself was fine.  A gate must not pass or fail on its caller's shell.
+$env:PATH = (Join-Path $QtDir 'bin') + ';' + $FfmpegDir + ';' + $env:PATH
+
 $script:checks = 0
 $script:failures = 0
 $script:skips = 0

@@ -5,6 +5,7 @@
 #include <QJsonObject>
 #include <QUuid>
 #include <sqlite3.h>
+#include "../UiText.h"
 
 namespace {
 struct Statement {
@@ -18,14 +19,14 @@ void bind(sqlite3_stmt *p, int n, const QString &s) {
 QVariantMap decode(sqlite3_stmt *p, QString *error) {
     const int size = sqlite3_column_bytes(p, 0);
     if (size < 2 || size > 4 * 1024 * 1024) {
-        *error = QStringLiteral("Invalid spoken-media record size");
+        *error = UiText::tr("Invalid spoken-media record size");
         return {};
     }
     QJsonParseError parse;
     auto doc = QJsonDocument::fromJson(
         QByteArray(reinterpret_cast<const char *>(sqlite3_column_text(p, 0)), size), &parse);
     if (parse.error != QJsonParseError::NoError || !doc.isObject()) {
-        *error = QStringLiteral("Invalid spoken-media record");
+        *error = UiText::tr("Invalid spoken-media record");
         return {};
     }
     return doc.object().toVariantMap();
@@ -50,7 +51,7 @@ bool SpokenStore::open(QString *error) {
         m_db = nullptr;
     }
     if (!QDir().mkpath(m_root)) {
-        *error = QStringLiteral("Cannot create spoken-media storage");
+        *error = UiText::tr("Cannot create spoken-media storage");
         return false;
     }
     const QString path = m_root + QStringLiteral("/spoken.db");
@@ -69,7 +70,7 @@ bool SpokenStore::open(QString *error) {
     const QByteArray databasePath = path.toUtf8();
     if (sqlite3_open_v2(databasePath.constData(), &m_db,
                         SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) != SQLITE_OK) {
-        *error = QStringLiteral("Cannot open spoken-media database");
+        *error = UiText::tr("Cannot open spoken-media database");
         return false;
     }
     sqlite3_busy_timeout(m_db, 5000);
@@ -77,14 +78,14 @@ bool SpokenStore::open(QString *error) {
     Statement version;
     if (sqlite3_prepare_v2(m_db, "PRAGMA user_version", -1, &version.p, nullptr) != SQLITE_OK ||
         sqlite3_step(version.p) != SQLITE_ROW) {
-        *error = QStringLiteral("Cannot inspect spoken-media schema");
+        *error = UiText::tr("Cannot inspect spoken-media schema");
         return false;
     }
     const int v = sqlite3_column_int(version.p, 0);
     sqlite3_finalize(version.p);
     version.p = nullptr;
     if (v != 0 && v != 1) {
-        *error = QStringLiteral("This spoken-media database requires a newer Zuuned");
+        *error = UiText::tr("This spoken-media database requires a newer Zuuned");
         return false;
     }
     if (!exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;", error))
@@ -114,7 +115,7 @@ QVariantList SpokenStore::rows(QString *error) const {
     int rc;
     while ((rc = sqlite3_step(stmt.p)) == SQLITE_ROW) {
         if (result.size() >= 100000) {
-            *error = QStringLiteral("Spoken collection exceeds the current 100,000-item limit");
+            *error = UiText::tr("Spoken collection exceeds the current 100,000-item limit");
             return {};
         }
         auto row = decode(stmt.p, error);
@@ -162,7 +163,7 @@ QVariantMap SpokenStore::find(const QString &kind, const QString &parent, const 
 }
 bool SpokenStore::put(QVariantMap *row, QString *error) {
     if (row->value("kind").toString().isEmpty() || row->value("identity").toString().isEmpty()) {
-        *error = QStringLiteral("Missing spoken-media identity");
+        *error = UiText::tr("Missing spoken-media identity");
         return false;
     }
     if (row->value("id").toString().isEmpty())
@@ -170,7 +171,7 @@ bool SpokenStore::put(QVariantMap *row, QString *error) {
     const auto json =
         QJsonDocument(QJsonObject::fromVariantMap(*row)).toJson(QJsonDocument::Compact);
     if (json.size() > 4 * 1024 * 1024) {
-        *error = QStringLiteral("Spoken-media record too large");
+        *error = UiText::tr("Spoken-media record too large");
         return false;
     }
     Statement stmt;
@@ -193,7 +194,7 @@ bool SpokenStore::put(QVariantMap *row, QString *error) {
     if (sqlite3_step(stmt.p) == SQLITE_DONE) {
         if (sqlite3_changes(m_db) > 0)
             return true;
-        *error = QStringLiteral("Collection limit reached or immutable identity changed");
+        *error = UiText::tr("Collection limit reached or immutable identity changed");
         return false;
     }
     *error = QString::fromUtf8(sqlite3_errmsg(m_db));
@@ -212,7 +213,7 @@ bool SpokenStore::removeAudiobookCollection(const QString &id, QString *error) {
         return false;
     }
     if (sqlite3_changes(m_db) != 1) {
-        *error = QStringLiteral("Audiobook collection no longer exists");
+        *error = UiText::tr("Audiobook collection no longer exists");
         return false;
     }
     return true;

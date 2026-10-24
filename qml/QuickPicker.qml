@@ -84,7 +84,7 @@ Popup {
     contentItem: ColumnLayout {
         spacing: 6
         Text {
-            text: "PICK FROM \"" + picker.heading.toUpperCase() + "\""
+            text: qsTr("PICK FROM \"%1\"").arg(picker.heading.toUpperCase())
             font.pixelSize: 9
             font.bold: true
             font.letterSpacing: 1.2
@@ -196,7 +196,7 @@ Popup {
         RowLayout {
             Layout.fillWidth: true
             Text {
-                text: picker.checkedCount + " selected"
+                text: qsTr("%1 selected").arg(picker.checkedCount)
                 font.pixelSize: 11
                 color: Theme.textDim
                 Layout.fillWidth: true

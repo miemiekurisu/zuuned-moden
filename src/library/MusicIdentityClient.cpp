@@ -1,5 +1,6 @@
 #include "MusicIdentityClient.h"
 #include "../ProfilePaths.h"
+#include "../UiText.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -335,7 +336,7 @@ QJsonObject MusicIdentityClient::json(const QUrl &url, const QString &provider,
             return {};
         }
         request = QSharedPointer<JsonRequest>::create();
-        request->error = QStringLiteral("Could not reach ") + provider + QStringLiteral(". Try again later.");
+        request->error = UiText::tr("Could not reach %1. Try again later.").arg(provider);
         jsonRequests.insert(path, request);
     }
     const auto publish = qScopeGuard([&] {
@@ -348,11 +349,11 @@ QJsonObject MusicIdentityClient::json(const QUrl &url, const QString &provider,
     const bool missing = missingIsEmpty && (response.status == 404 || response.status == 410);
     if (!response.success() && !missing) {
         if (response.status == 429 || response.status == 503)
-            request->error = provider + QStringLiteral(" is busy. Try again shortly.");
+            request->error = UiText::tr("%1 is busy. Try again shortly.").arg(provider);
         else if (response.status == 401 || response.status == 403)
-            request->error = provider + QStringLiteral(" refused the lookup. Check provider settings or try again later.");
+            request->error = UiText::tr("%1 refused the lookup. Check provider settings or try again later.").arg(provider);
         else if (response.status == 404 || response.status == 410)
-            request->error = QStringLiteral("That ") + provider + QStringLiteral(" identity is no longer available. Search for another match.");
+            request->error = UiText::tr("That %1 identity is no longer available. Search for another match.").arg(provider);
         if (response.status == 401 || response.status == 403 || response.status == 404 || response.status == 410) {
             // An authoritative refusal/removal invalidates the old data.
             // A later outage must not resurrect that rejected identity.
@@ -384,7 +385,7 @@ QJsonObject MusicIdentityClient::json(const QUrl &url, const QString &provider,
     const auto body = document.object();
     if (!missing && (response.body.size() > kMaxJsonBytes || parseError.error != QJsonParseError::NoError
             || !document.isObject() || body.contains(QStringLiteral("error")) || !valid(body))) {
-        request->error = provider + QStringLiteral(" returned an unreadable response. Try again.");
+        request->error = UiText::tr("%1 returned an unreadable response. Try again.").arg(provider);
         if (error) *error = request->error;
         return {};
     }
@@ -513,7 +514,7 @@ QVariantList MusicIdentityClient::searchArtists(const QString &query, const QStr
     if (error) error->clear();
     if (query.trimmed().isEmpty()) return {};
     const bool mb = provider == QLatin1String("musicbrainz");
-    if (!mb && provider != QLatin1String("deezer")) { if (error) *error = QStringLiteral("Choose MusicBrainz or Deezer for artist identity."); return {}; }
+    if (!mb && provider != QLatin1String("deezer")) { if (error) *error = UiText::tr("Choose MusicBrainz or Deezer for artist identity."); return {}; }
     QUrl url(mb ? QStringLiteral("https://musicbrainz.org/ws/2/artist/") : QStringLiteral("https://api.deezer.com/search/artist"));
     QUrlQuery parameters;
     parameters.addQueryItem(mb ? QStringLiteral("query") : QStringLiteral("q"), mb ? QStringLiteral("artist:") + quoted(query.trimmed()) : query.trimmed());
@@ -540,7 +541,7 @@ QVariantList MusicIdentityClient::searchArtists(const QString &query, const QStr
 
 QVariantMap MusicIdentityClient::albumDetails(const QString &mbid, QString *error) const {
     if (error) error->clear();
-    if (!validMbid(mbid)) { if (error) *error = QStringLiteral("Choose a valid MusicBrainz album match."); return {}; }
+    if (!validMbid(mbid)) { if (error) *error = UiText::tr("Choose a valid MusicBrainz album match."); return {}; }
     QUrl url(QStringLiteral("https://musicbrainz.org/ws/2/release-group/%1").arg(mbid.toLower()));
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("fmt"), QStringLiteral("json"));
@@ -556,7 +557,7 @@ QVariantMap MusicIdentityClient::artistDetails(const QString &provider, const QS
     if (error) error->clear();
     const bool mb = provider == QLatin1String("musicbrainz");
     if ((mb && !validMbid(id)) || (!mb && (provider != QLatin1String("deezer") || deezerId(QJsonValue(id)).isEmpty()))) {
-        if (error) *error = QStringLiteral("Choose a valid artist match.");
+        if (error) *error = UiText::tr("Choose a valid artist match.");
         return {};
     }
     QUrl url(mb ? QStringLiteral("https://musicbrainz.org/ws/2/artist/%1").arg(id.toLower())
@@ -585,7 +586,7 @@ QUrl MusicIdentityClient::fanartUrl(const QString &path) const {
 
 QStringList MusicIdentityClient::fanartArtistUrls(const QString &mbid, QString *error) const {
     if (error) error->clear();
-    if (!validMbid(mbid)) { if (error) *error = QStringLiteral("Choose a MusicBrainz artist to find Fanart portraits."); return {}; }
+    if (!validMbid(mbid)) { if (error) *error = UiText::tr("Choose a MusicBrainz artist to find Fanart portraits."); return {}; }
     const auto body = json(fanartUrl(QLatin1Char('/') + mbid.toLower()), QStringLiteral("Fanart.tv"),
         [mbid](const auto &o) {
             // Fanart v3 deliberately returns HTTP200 {} for an unknown
@@ -620,7 +621,7 @@ QStringList MusicIdentityClient::searchFanartArtistUrls(const QString &name, QSt
 
 QStringList MusicIdentityClient::fanartAlbumUrls(const QString &releaseGroupMbid, QString *error) const {
     if (error) error->clear();
-    if (!validMbid(releaseGroupMbid)) { if (error) *error = QStringLiteral("Choose a MusicBrainz album to find Fanart covers."); return {}; }
+    if (!validMbid(releaseGroupMbid)) { if (error) *error = UiText::tr("Choose a MusicBrainz album to find Fanart covers."); return {}; }
     const QString id = releaseGroupMbid.toLower();
     const auto body = json(fanartUrl(QStringLiteral("/albums/") + id), QStringLiteral("Fanart.tv"),
         [](const auto &o) { return o.isEmpty() || o.value(QStringLiteral("albums")).isObject() || o.value(QStringLiteral("albumcover")).isArray(); },
@@ -633,9 +634,9 @@ QStringList MusicIdentityClient::fanartAlbumUrls(const QString &releaseGroupMbid
 
 QStringList MusicIdentityClient::caaAlbumUrls(const QString &releaseGroupMbid, QString *error) const {
     if (error) error->clear();
-    if (!validMbid(releaseGroupMbid)) { if (error) *error = QStringLiteral("Choose a MusicBrainz album to find its covers."); return {}; }
+    if (!validMbid(releaseGroupMbid)) { if (error) *error = UiText::tr("Choose a MusicBrainz album to find its covers."); return {}; }
     const auto body = json(QUrl(QStringLiteral("https://coverartarchive.org/release-group/%1").arg(releaseGroupMbid.toLower())),
-        QStringLiteral("Cover Art Archive"), [](const auto &o) { return o.value(QStringLiteral("images")).isArray(); },
+        UiText::tr("Cover Art Archive"), [](const auto &o) { return o.value(QStringLiteral("images")).isArray(); },
         [](const auto &o) { return o.value(QStringLiteral("images")).toArray().isEmpty(); }, error, true);
     QStringList out;
     for (const auto &value : body.value(QStringLiteral("images")).toArray()) {
@@ -667,7 +668,7 @@ QString MusicIdentityClient::automaticAlbumImageUrl(const QString &artist, const
         // Never remove edition qualifiers or pick the first fuzzy match.
         const auto exact = exactIdentityIds(matches, owner, title, nullptr);
         if (exact.size() != 1) {
-            if (error && exact.size() > 1) *error = QStringLiteral("Ambiguous album; choose a match in Customize.");
+            if (error && exact.size() > 1) *error = UiText::tr("Ambiguous album; choose a match in Customize.");
             return {};
         }
         id = exact.first();
@@ -692,7 +693,7 @@ QString MusicIdentityClient::automaticArtistImageUrl(const QString &name, const 
             && ((provider == QLatin1String("musicbrainz") && !validMbid(id))
                 || (provider == QLatin1String("deezer") && deezerId(QJsonValue(id)).isEmpty())
                 || (provider != QLatin1String("musicbrainz") && provider != QLatin1String("deezer")))) {
-        if (error) *error = QStringLiteral("Choose a valid artist identity in Customize.");
+        if (error) *error = UiText::tr("Choose a valid artist identity in Customize.");
         return {};
     }
     if (provider == QLatin1String("deezer") && !id.isEmpty())
@@ -723,7 +724,7 @@ QString MusicIdentityClient::automaticArtistImageUrl(const QString &name, const 
                 }
             }
             if (evidence.size() != 1 || !candidates.contains(*evidence.cbegin())) {
-                if (error) *error = QStringLiteral("Several artists share that name; album evidence could not resolve them. Choose the artist in Customize.");
+                if (error) *error = UiText::tr("Several artists share that name; album evidence could not resolve them. Choose the artist in Customize.");
                 return {};
             }
             id = *evidence.cbegin();
@@ -788,7 +789,7 @@ MusicIdentityClient::MatchResult MusicIdentityClient::resolveArtistArtwork(const
         if ((provider != "musicbrainz" && provider != "deezer") ||
             (provider == "musicbrainz" && !validMbid(id)) ||
             (provider == "deezer" && deezerId(QJsonValue(id)).isEmpty())) {
-            result.reason = "Choose a valid saved artist match."; return result;
+            result.reason = UiText::tr("Choose a valid saved artist match."); return result;
         }
         chosen = artistDetails(provider, id, &error);
     } else {
@@ -819,7 +820,7 @@ MusicIdentityClient::MatchResult MusicIdentityClient::resolveArtistArtwork(const
     }
     if (chosen.isEmpty()) {
         result.status = error.isEmpty() ? "needsMatch" : "providerUnavailable";
-        result.reason = error.isEmpty() ? "Artist identity needs a match; available credits do not establish one artist." : error;
+        result.reason = error.isEmpty() ? UiText::tr("Artist identity needs a match; available credits do not establish one artist.") : error;
         return result;
     }
     provider = chosen.value("provider").toString(); id = chosen.value("providerId").toString();
@@ -837,7 +838,7 @@ MusicIdentityClient::MatchResult MusicIdentityClient::resolveArtistArtwork(const
         error = !portraitError.isEmpty() ? portraitError : detailsError;
     } else result.imageUrl = chosen.value("portraitUrl").toString();
     result.status = !result.imageUrl.isEmpty() ? "ready" : error.isEmpty() ? "noArtwork" : "providerUnavailable";
-    result.reason = !result.imageUrl.isEmpty() ? "Portrait belongs to the resolved artist." : error.isEmpty() ? "Artist matched; no portrait is available." : error;
+    result.reason = !result.imageUrl.isEmpty() ? UiText::tr("Portrait belongs to the resolved artist.") : error.isEmpty() ? UiText::tr("Artist matched; no portrait is available.") : error;
     return result;
 }
 
@@ -853,11 +854,11 @@ MusicIdentityClient::MatchResult MusicIdentityClient::resolveAlbumArtwork(const 
     if (groupId.isEmpty() && provider != "manual") groupId = context.value("mbid").toString();
     if ((!provider.isEmpty() && provider != "musicbrainz" && provider != "manual") ||
         (!groupId.isEmpty() && !validMbid(groupId)) || (!releaseId.isEmpty() && !validMbid(releaseId))) {
-        result.reason = "Choose a valid saved album match."; return result;
+        result.reason = UiText::tr("Choose a valid saved album match."); return result;
     }
     groupId = groupId.toLower(); releaseId = releaseId.toLower();
     const auto title = albumTitle(album);
-    if (title.base.isEmpty() || artist.trimmed().isEmpty()) { result.reason = "Artist and album are required."; return result; }
+    if (title.base.isEmpty() || artist.trimmed().isEmpty()) { result.reason = UiText::tr("Artist and album are required."); return result; }
     const QString artistId = context.value("artistMbid").toString();
     auto fetchRelease = [&](const QString &id, QString *failure) {
         QUrl url("https://musicbrainz.org/ws/2/release/" + id);
@@ -871,7 +872,7 @@ MusicIdentityClient::MatchResult MusicIdentityClient::resolveAlbumArtwork(const 
         if (selectedRelease.isEmpty()) { result.status = "providerUnavailable"; result.reason = error; return result; }
         const QString actualGroup = selectedRelease.value("release-group").toObject().value("id").toString();
         if ((!groupId.isEmpty() && actualGroup != groupId) || !validMbid(actualGroup)) {
-            result.reason = "Saved release and album identity disagree."; return result;
+            result.reason = UiText::tr("Saved release and album identity disagree."); return result;
         }
         groupId = actualGroup;
     }
@@ -885,7 +886,7 @@ MusicIdentityClient::MatchResult MusicIdentityClient::resolveAlbumArtwork(const 
         }
         if (!error.isEmpty() || incomplete || result.candidates.size() != 1) {
             result.status = error.isEmpty() ? "needsMatch" : "providerUnavailable";
-            result.reason = error.isEmpty() ? "Album candidates need a match; no unique complete artist and title match." : error;
+            result.reason = error.isEmpty() ? UiText::tr("Album candidates need a match; no unique complete artist and title match.") : error;
             return result;
         }
         groupId = result.candidates.first().toMap().value("providerId").toString();
@@ -990,7 +991,7 @@ MusicIdentityClient::MatchResult MusicIdentityClient::resolveAlbumArtwork(const 
         std::sort(ranked.begin(), ranked.end(), [](const auto &a, const auto &b) { return a.score > b.score; });
         if (complete && !ranked.isEmpty() && ranked.first().score >= 85 && (ranked.size() == 1 || ranked.first().score - ranked[1].score >= 10)) {
             selectedRelease = ranked.first().release; releaseId = selectedRelease.value("id").toString();
-            result.identity.insert("evidence", QStringLiteral("Track positions, titles, supported edition hints and available dates; score %1.").arg(ranked.first().score));
+            result.identity.insert("evidence", UiText::tr("Track positions, titles, supported edition hints and available dates; score %1.").arg(ranked.first().score));
         }
     }
     if (!selectedRelease.isEmpty()) {
@@ -999,7 +1000,7 @@ MusicIdentityClient::MatchResult MusicIdentityClient::resolveAlbumArtwork(const 
         if (!releaseCovers.isEmpty()) result.imageUrl = releaseCovers.first();
         if (!result.imageUrl.isEmpty()) {
             result.status = "ready"; result.identity.insert("artworkScope", "exactRelease");
-            result.reason = "Cover belongs to the established release."; return result;
+            result.reason = UiText::tr("Cover belongs to the established release."); return result;
         }
     }
     QString coverError; auto covers = caaAlbumUrls(groupId, &coverError);
@@ -1008,24 +1009,24 @@ MusicIdentityClient::MatchResult MusicIdentityClient::resolveAlbumArtwork(const 
         result.identity.remove("releaseId");
         result.imageUrl = covers.first(); result.status = "ready";
         result.identity.insert("artworkScope", "generalAlbum");
-        result.reason = "Using the matched album cover; exact edition artwork is unavailable or uncertain.";
+        result.reason = UiText::tr("Using the matched album cover; exact edition artwork is unavailable or uncertain.");
         if (context.value("choice").toString() == "manual" &&
             (context.value("scope").toString() == "general" || context.value("artworkScope").toString() == "generalAlbum")) {
             result.status = "ready";
             result.identity.insert("choice", "manual"); result.identity.insert("scope", "general");
-            result.reason = "Using your confirmed general album cover.";
+            result.reason = UiText::tr("Using your confirmed general album cover.");
         }
     } else {
         if (error.isEmpty()) error = coverError;
         result.status = error.isEmpty() ? "noArtwork" : "providerUnavailable";
-        result.reason = error.isEmpty() ? "Album matched; no cover is available." : error;
+        result.reason = error.isEmpty() ? UiText::tr("Album matched; no cover is available.") : error;
     }
     return result;
 }
 
 QStringList MusicIdentityClient::caaReleaseUrls(const QString &releaseMbid, QString *error) const {
     if (error) error->clear();
-    if (!validMbid(releaseMbid)) { if (error) *error = "Choose a valid MusicBrainz release."; return {}; }
+    if (!validMbid(releaseMbid)) { if (error) *error = UiText::tr("Choose a valid MusicBrainz release."); return {}; }
     const auto body = json(QUrl("https://coverartarchive.org/release/" + releaseMbid.toLower()), "Cover Art Archive",
         [](const auto &o) { return o.value("images").isArray(); },
         [](const auto &o) { return o.value("images").toArray().isEmpty(); }, error, true);
@@ -1061,7 +1062,7 @@ MusicIdentityClient::MatchResult MusicIdentityClient::resolveStoreAlbumArtwork(
     const QString owner = normalizedName(artist), title = normalizedName(album);
     if (owner.isEmpty() || title.isEmpty() || owner == QLatin1String("unknown artist")
             || title == QLatin1String("unknown album")) {
-        result.reason = QStringLiteral("Artist and album are required.");
+        result.reason = UiText::tr("Artist and album are required.");
         return result;
     }
     bool sawRows = false;
@@ -1109,17 +1110,17 @@ MusicIdentityClient::MatchResult MusicIdentityClient::resolveStoreAlbumArtwork(
             {QStringLiteral("providerId"), chosen.value(QStringLiteral("providerId"))},
             {QStringLiteral("country"), country},
             {QStringLiteral("artworkScope"), QStringLiteral("storeAlbum")}};
-        result.reason = QStringLiteral("Cover comes from the %1 catalogue of the music store.")
+        result.reason = UiText::tr("Cover comes from the %1 catalogue of the music store.")
                             .arg(country.toUpper());
         return result;
     }
     // Candidates stay empty on purpose. Customize offers MusicBrainz matches,
     // and a store row cannot be confirmed, corrected or re-picked there.
     if (sawRows) {
-        result.reason = QStringLiteral("No music store release matches this artist and album exactly.");
+        result.reason = UiText::tr("No music store release matches this artist and album exactly.");
     } else {
         result.status = QStringLiteral("noArtwork");
-        result.reason = QStringLiteral("No music store carries this album.");
+        result.reason = UiText::tr("No music store carries this album.");
     }
     return result;
 }

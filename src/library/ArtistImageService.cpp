@@ -26,6 +26,7 @@
 #include <cerrno>
 #include <utility>
 #include <unistd.h>
+#include "../UiText.h"
 
 namespace {
 QByteArray portraitJpeg(const QByteArray &bytes) {
@@ -161,7 +162,7 @@ void ArtistImageService::requestImage(const QString &name, const QVariantMap &id
         && identity.value("providerId").toString().isEmpty()
         && identity.value("mbid").toString().isEmpty()) {
         m_terminal.insert(key);
-        emit discoveryResult(trimmed, {{"status", "needsMatch"}, {"reason", "Artist metadata is missing"}});
+        emit discoveryResult(trimmed, {{"status", "needsMatch"}, {"reason", UiText::tr("Artist metadata is missing")}});
         emit imageReady(trimmed, {}, false);
         return;
     }
@@ -207,7 +208,7 @@ void ArtistImageService::fetch(const Request &request) {
             } else {
                 if (result.value("status").toString() == "ready") {
                     result["status"] = "providerUnavailable";
-                    result["reason"] = "Could not save artwork";
+                    result["reason"] = UiText::tr("Could not save artwork");
                 }
                 m_terminal.insert(key);
                 const qint64 deadline = QDateTime::currentMSecsSinceEpoch() + m_retryDelayMs;
@@ -250,7 +251,7 @@ void ArtistImageService::fetch(const Request &request) {
                 bytes = portraitJpeg(download(url));
             if (bytes.isEmpty()) {
                 result["status"] = "providerUnavailable";
-                result["reason"] = "Portrait download failed or returned an invalid image";
+                result["reason"] = UiText::tr("Portrait download failed or returned an invalid image");
             } else result["_bytes"] = bytes;
         }
         return result;

@@ -58,7 +58,7 @@ Popup {
             Layout.fillWidth: true
             Layout.margins: Theme.spaceLg
             Text {
-                text: "TMDB LOOKUP"
+                text: qsTr("TMDB LOOKUP")
                 font.pixelSize: 11
                 font.letterSpacing: 1
                 color: Theme.textDim
@@ -66,12 +66,12 @@ Popup {
             Item { Layout.fillWidth: true }
             Text {
                 text: sheet.targetIds.length > 1
-                    ? "applies to " + sheet.targetIds.length + " files" : ""
+                    ? qsTr("applies to %1 files").arg(sheet.targetIds.length) : ""
                 font.pixelSize: 11
                 color: Theme.textSecondary
             }
             Text {
-                text: "Cancel"
+                text: qsTr("Cancel")
                 font.pixelSize: 13
                 color: Theme.textSecondary
                 MouseArea {
@@ -91,7 +91,7 @@ Popup {
             ZuneSearchField {
                 id: queryField
                 Layout.fillWidth: true
-                placeholderText: "Search TMDB..."
+                placeholderText: qsTr("Search TMDB...")
                 onAccepted: sheet.search()
             }
 
@@ -131,7 +131,7 @@ Popup {
             }
 
             Text {
-                text: "Search"
+                text: qsTr("Search")
                 font.pixelSize: 13
                 color: queryField.text === "" ? Theme.textDim : Theme.pink
                 MouseArea {
@@ -146,7 +146,7 @@ Popup {
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: Theme.spaceLg
             visible: sheet.searching
-            text: "searching..."
+            text: qsTr("searching...")
             font.pixelSize: 12
             color: Theme.textDim
         }
@@ -215,7 +215,7 @@ Popup {
                     }
 
                     Text {
-                        text: "Select"
+                        text: qsTr("Select")
                         font.pixelSize: 13
                         color: Theme.pink
                         Layout.alignment: Qt.AlignTop

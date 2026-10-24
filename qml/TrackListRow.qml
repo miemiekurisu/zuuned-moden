@@ -213,7 +213,7 @@ Rectangle {
             objectName: "trackSyncAction"
             // While the playlist tray is building, the row's add feeds
             // the tray (UX-2) — say so.
-            text: TrayState.building ? "Add to Playlist" : "Add to Sync Queue"
+            text: TrayState.building ? qsTr("Add to Playlist") : qsTr("Add to Sync Queue")
             implicitHeight: 30
             contentItem: Text {
                 text: syncMenuItem.text
@@ -235,7 +235,7 @@ Rectangle {
 
         ZuneMenuItem {
             objectName: "trackPlayNextAction"
-            text: "Play Next"
+            text: qsTr("Play Next")
             visible: row.playable
             height: visible ? implicitHeight : 0
             onTriggered: {
@@ -244,7 +244,7 @@ Rectangle {
         }
         ZuneMenuItem {
             objectName: "trackNowPlayingAction"
-            text: "Add to Now Playing"
+            text: qsTr("Add to Now Playing")
             visible: row.playable
             height: visible ? implicitHeight : 0
             onTriggered: {
@@ -254,7 +254,7 @@ Rectangle {
 
         MenuItem {
             id: editMenuItem
-            text: "Edit Info…"
+            text: qsTr("Edit Info…")
             implicitHeight: 30
             visible: row.playlistable
             height: row.playlistable ? implicitHeight : 0
@@ -277,7 +277,7 @@ Rectangle {
         // cover could be found, and its album art already came off the player.
         MenuItem {
             id: lookupMenuItem
-            text: "Search Cover Online"
+            text: qsTr("Search Cover Online")
             implicitHeight: 30
             visible: row.playlistable
             height: row.playlistable ? implicitHeight : 0
@@ -304,7 +304,7 @@ Rectangle {
         MenuItem {
             id: saveMenuItem
             objectName: "trackSaveAction"
-            text: "Save to Library"
+            text: qsTr("Save to Library")
             implicitHeight: 30
             visible: row.saveable
             enabled: DeviceService.connected
@@ -327,7 +327,7 @@ Rectangle {
         MenuItem {
             id: deleteMenuItem
             objectName: "trackDeleteAction"
-            text: "Delete from Device"
+            text: qsTr("Delete from Device")
             implicitHeight: 30
             visible: row.deletable
             enabled: DeviceService.connected

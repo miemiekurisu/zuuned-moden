@@ -171,7 +171,7 @@ Item {
             Layout.preferredWidth: implicitWidth
             Layout.alignment: Qt.AlignVCenter
             hoverEnabled: true
-            Accessible.name: "Dismiss notification"
+            Accessible.name: qsTr("Dismiss notification")
             contentItem: Text {
                 text: "×"
                 font.pixelSize: Theme.spaceXl

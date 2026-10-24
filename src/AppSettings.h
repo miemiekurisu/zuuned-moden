@@ -29,6 +29,55 @@ class AppSettings : public QObject {
                  "podcastAutoCleanup", false, toBool)
     ZUNE_SETTING(bool, podcastAutoQueue, setPodcastAutoQueue,
                  "podcastAutoQueue", false, toBool)
+
+    // What music becomes on the way to the player.
+    //
+    // MP3 is the default because it is the one target proven on hardware here:
+    // the Windows round trip sent MP3 and read it back. WMA is offered because
+    // the linked libavcodec carries wmav2 — measured, not assumed — but no Zune
+    // has ever played a WMA this application made, so it stays opt-in.
+    //
+    // There is deliberately no VBR option: the MP3 this app writes carries a
+    // hand-built ID3v2.3 tag and no Xing/Info header, so a VBR file would seek
+    // by guesswork. See the measured account in transcode/libav_transcode.c.
+    //
+    // WMA Lossless cannot be encoded at all — no wmalossless encoder exists in
+    // this libavcodec and Windows ships no ACM codec for it — which is what
+    // copyNativeAudio below is for.
+    Q_PROPERTY(QString syncAudioFormat READ syncAudioFormat WRITE setSyncAudioFormat NOTIFY changed)
+public:
+    QString syncAudioFormat() const {
+        return m_store.value("syncAudioFormat", QStringLiteral("mp3")).toString()
+                   .compare(QLatin1String("wma"), Qt::CaseInsensitive) == 0
+                   ? QStringLiteral("wma") : QStringLiteral("mp3");
+    }
+    void setSyncAudioFormat(const QString &value) {
+        const auto canonical = value.compare(QLatin1String("wma"), Qt::CaseInsensitive) == 0
+                                   ? QStringLiteral("wma") : QStringLiteral("mp3");
+        if (syncAudioFormat() == canonical) return;
+        m_store.setValue("syncAudioFormat", canonical);
+        emit changed();
+    }
+    Q_PROPERTY(int syncAudioBitrate READ syncAudioBitrate WRITE setSyncAudioBitrate NOTIFY changed)
+public:
+    int syncAudioBitrate() const {
+        bool valid = false;
+        const int kbps = m_store.value("syncAudioBitrate", 320).toInt(&valid);
+        return valid ? qBound(32, kbps, 320) : 320;
+    }
+    void setSyncAudioBitrate(int value) {
+        const int kbps = qBound(32, value, 320);
+        if (syncAudioBitrate() == kbps) return;
+        m_store.setValue("syncAudioBitrate", kbps);
+        emit changed();
+    }
+    // Send audio that is already in the chosen format byte for byte instead of
+    // decoding and re-encoding it. On by default, and it is the only way a
+    // WMA Lossless file survives a sync: nothing here can encode WMA Lossless,
+    // so converting one is a permanent downgrade. Turn it off to force a
+    // re-encode, which is what the original client always did.
+    ZUNE_SETTING(bool, copyNativeAudio, setCopyNativeAudio,
+                 "copyNativeAudio", true, toBool)
     Q_PROPERTY(int podcastAutoQueueCount READ podcastAutoQueueCount WRITE setPodcastAutoQueueCount NOTIFY changed)
 public:
     int podcastAutoQueueCount() const {
@@ -100,16 +149,36 @@ public:
     // in Settings → Appearance; default on.
     ZUNE_SETTING(bool, ambientSpray, setAmbientSpray,
                  "ambientSpray", true, toBool)
-    ZUNE_SETTING(QString, miniPlayerFrame, setMiniPlayerFrame,
-                 "miniPlayerFrame", QString(), toString)
+    // Which language Zuuned writes its own words in: "system" follows the OS,
+    // otherwise "en" or "zh_CN". Read once at launch by src/main.cpp, because a
+    // QML string is translated when its binding is first evaluated -- there is
+    // nothing to retranslate afterwards, so the card that writes this says
+    // "next launch" rather than implying it repaints. Anything unrecognised is
+    // "system": a typo in an ini must not silently pick a language nobody chose.
+    Q_PROPERTY(QString uiLanguage READ uiLanguage WRITE setUiLanguage NOTIFY changed)
+public:
+    QString uiLanguage() const {
+        const auto value = m_store.value("uiLanguage", QStringLiteral("system")).toString();
+        return value == QLatin1String("en") || value == QLatin1String("zh_CN")
+                   ? value : QStringLiteral("system");
+    }
+    void setUiLanguage(const QString &value) {
+        const auto canonical =
+            value == QLatin1String("en") || value == QLatin1String("zh_CN")
+                ? value : QStringLiteral("system");
+        if (uiLanguage() == canonical) return;
+        m_store.setValue("uiLanguage", canonical);
+        emit changed();
+    }
     // Music player volume (0-100) — restored at launch, saved on change
     ZUNE_SETTING(double, playerVolume, setPlayerVolume,
                  "playerVolume", 100.0, toDouble)
-    // Video player disc style: "vinyl" = full 400px multi-groove disc
-    // (grooves = chapters), "disc" = smaller single-ring seeker (one
-    // revolution = the whole file, the audio-disc look).
-    ZUNE_SETTING(QString, videoControlsStyle, setVideoControlsStyle,
-                 "videoControlsStyle", QStringLiteral("vinyl"), toString)
+    // Retired 2026-10-24 by the Settings audit (docs/SETTINGS_INVENTORY.md):
+    // "miniPlayerFrame" and "videoControlsStyle" were declared, defaulted, and
+    // then neither written by a control nor read by anybody -- scaffolding a
+    // previous session left behind. A dead key is worse than no key, because it
+    // survives in a user's ini looking like a setting. A leftover value there is
+    // simply never read again.
 
     // Online metadata/artwork lookup is opt-in: the user asks, per item.
     // An automatic pass (library load, import, browsing the artist grid)

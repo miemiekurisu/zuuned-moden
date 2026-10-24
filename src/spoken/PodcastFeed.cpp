@@ -2,6 +2,7 @@
 
 #include <QHash>
 #include <QXmlStreamReader>
+#include "../UiText.h"
 
 namespace {
 constexpr auto Itunes = "http://www.itunes.com/dtds/podcast-1.0.dtd";
@@ -53,7 +54,7 @@ QString text(QXmlStreamReader &r)
     // Rich descriptions remain inert text here. UI consumers must not enable
     // remote HTML resources or execute feed markup.
     auto value = r.readElementText(QXmlStreamReader::IncludeChildElements).trimmed();
-    if (value.size() > 65536) r.raiseError(QStringLiteral("Feed text exceeds 64 KiB"));
+    if (value.size() > 65536) r.raiseError(UiText::tr("Feed text exceeds 64 KiB"));
     return value;
 }
 
@@ -92,7 +93,7 @@ void readEpisode(QXmlStreamReader &r, const QUrl &parent, PodcastEpisode &e)
             const auto mime = r.attributes().value(u"type").toString().trimmed().toLower();
             if (url.isValid() && (mime.startsWith(u"audio/") || mime.startsWith(u"video/") || mime == u"application/ogg")) {
                 if (e.enclosureUrl.isValid() && e.enclosureUrl != url) {
-                    r.raiseError(QStringLiteral("Episode has multiple different playable enclosures"));
+                    r.raiseError(UiText::tr("Episode has multiple different playable enclosures"));
                     return;
                 }
                 e.enclosureUrl = url;
@@ -132,7 +133,7 @@ void readChannel(QXmlStreamReader &r, const QUrl &parent, PodcastFeed &feed)
                 } else r.skipCurrentElement();
             }
         } else if (ns.isEmpty() && name == u"item") {
-            if (++items > Podcasts::MaxEpisodes) { r.raiseError(QStringLiteral("Feed exceeds episode limit")); return; }
+            if (++items > Podcasts::MaxEpisodes) { r.raiseError(UiText::tr("Feed exceeds episode limit")); return; }
             PodcastEpisode e;
             readEpisode(r, base, e);
             if (r.hasError()) return;
@@ -141,7 +142,7 @@ void readChannel(QXmlStreamReader &r, const QUrl &parent, PodcastFeed &feed)
             if (existing != seen.cend()) {
                 const auto &previous = feed.episodes[*existing];
                 if (previous.title != e.title || previous.enclosureUrl != e.enclosureUrl || previous.mimeType != e.mimeType) {
-                    r.raiseError(QStringLiteral("Feed repeats an episode identity with conflicting content")); return;
+                    r.raiseError(UiText::tr("Feed repeats an episode identity with conflicting content")); return;
                 }
                 continue;
             }
@@ -174,9 +175,9 @@ bool Podcasts::parseRss(const QByteArray &bytes, const QUrl &url, PodcastFeed *o
     if (error) error->clear();
     const auto fail = [error](const QString &message) { if (error) *error = message; return false; };
     if (!out || bytes.isEmpty() || bytes.size() > MaxFeedBytes)
-        return fail(QStringLiteral("Feed is empty or exceeds 8 MiB"));
+        return fail(UiText::tr("Feed is empty or exceeds 8 MiB"));
     const auto source = mediaUrl(url.toString(QUrl::FullyEncoded), {});
-    if (!source.isValid()) return fail(QStringLiteral("Feed requires an HTTP or HTTPS response URL"));
+    if (!source.isValid()) return fail(UiText::tr("Feed requires an HTTP or HTTPS response URL"));
     // Validate every token, even unknown extensions, before skipCurrentElement.
     // Qt does not fetch external entities; rejecting DTDs also prevents internal
     // entity expansion and gives a deterministic bounded parsing contract.
@@ -185,28 +186,28 @@ bool Podcasts::parseRss(const QByteArray &bytes, const QUrl &url, PodcastFeed *o
     while (!validation.atEnd()) {
         const auto token = validation.readNext();
         if (token == QXmlStreamReader::DTD || token == QXmlStreamReader::EntityReference)
-            return fail(QStringLiteral("DTD and entity declarations are not supported"));
+            return fail(UiText::tr("DTD and entity declarations are not supported"));
         if (token == QXmlStreamReader::StartElement && ++depth > 32)
-            return fail(QStringLiteral("Feed nesting exceeds limit"));
+            return fail(UiText::tr("Feed nesting exceeds limit"));
         if (token == QXmlStreamReader::EndElement) --depth;
     }
     if (validation.hasError()) return fail(validation.errorString());
     QXmlStreamReader r(bytes);
     if (!r.readNextStartElement() || !r.namespaceUri().isEmpty() || r.name() != u"rss" ||
-        r.attributes().value(u"version") != u"2.0") return fail(QStringLiteral("Expected an RSS 2.0 feed"));
+        r.attributes().value(u"version") != u"2.0") return fail(UiText::tr("Expected an RSS 2.0 feed"));
     const QUrl base = elementBase(r, source);
     PodcastFeed feed;
     feed.sourceUrl = source;
     bool channel = false;
     while (r.readNextStartElement()) {
         if (r.namespaceUri().isEmpty() && r.name() == u"channel") {
-            if (channel) return fail(QStringLiteral("Feed contains multiple channels"));
+            if (channel) return fail(UiText::tr("Feed contains multiple channels"));
             channel = true;
             readChannel(r, base, feed);
         } else r.skipCurrentElement();
     }
     if (r.hasError()) return fail(r.errorString());
-    if (!channel || feed.title.isEmpty()) return fail(QStringLiteral("Feed is missing its channel title"));
+    if (!channel || feed.title.isEmpty()) return fail(UiText::tr("Feed is missing its channel title"));
     *out = std::move(feed);
     return true;
 }

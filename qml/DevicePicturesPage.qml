@@ -125,13 +125,13 @@ Item {
                 Layout.preferredWidth: 96
                 Layout.alignment: Qt.AlignVCenter
                 tabs: ["Albums"]
+                labels: [qsTr("Albums")]
             }
             Item { Layout.fillWidth: true }
             Text {
                 text: root.openAlbum === null
-                    ? root.albums.length + " albums · "
-                      + DeviceService.photosList.length + " photos"
-                    : root.shownPhotos.length + " photos"
+                    ? qsTr("%1 albums · %2 photos").arg(root.albums.length).arg(DeviceService.photosList.length)
+                    : qsTr("%1 photos").arg(root.shownPhotos.length)
                 font.pixelSize: 12
                 color: Theme.textDim
             }
@@ -152,7 +152,7 @@ Item {
             Text {
                 Layout.rightMargin: Theme.spaceXl
                 visible: DeviceService.connected
-                text: "save album to library"
+                text: qsTr("save album to library")
                 font.pixelSize: 12
                 color: saveAllArea.containsMouse ? Theme.activePink : Theme.pink
                 MouseArea {
@@ -264,7 +264,7 @@ Item {
                         width: devAlbumCard.cellW - 20
                     }
                     Text {
-                        text: devAlbumCard.modelData.photos.length + " photos"
+                        text: qsTr("%1 photos").arg(devAlbumCard.modelData.photos.length)
                         font.pixelSize: 11
                         color: Theme.textDim
                     }
@@ -317,8 +317,8 @@ Item {
                 visible: root.albums.length === 0
                 anchors.centerIn: parent
                 text: DeviceService.connected
-                    ? "no pictures on this zune"
-                    : "connect a zune to browse its pictures"
+                    ? qsTr("no pictures on this zune")
+                    : qsTr("connect a zune to browse its pictures")
                 font.pixelSize: 14
                 color: Theme.textDim
             }
@@ -440,7 +440,7 @@ Item {
         id: photoMenu
         property var target: null
         ZuneMenuItem {
-            text: "Save to Library"
+            text: qsTr("Save to Library")
             enabled: DeviceService.connected
             onTriggered: root.saveOne(
                 photoMenu.target,
@@ -448,7 +448,7 @@ Item {
                     ? root.openAlbum.name : "")
         }
         ZuneMenuItem {
-            text: "Delete from Zune"
+            text: qsTr("Delete from Zune")
             enabled: DeviceService.connected
             onTriggered: {
                 if (!DeviceService.connected) return
@@ -461,7 +461,7 @@ Item {
         id: albumMenu
         property var target: null
         ZuneMenuItem {
-            text: "Save Album to Library"
+            text: qsTr("Save Album to Library")
             enabled: DeviceService.connected
             onTriggered: {
                 if (!DeviceService.connected) return
@@ -473,7 +473,7 @@ Item {
             }
         }
         ZuneMenuItem {
-            text: "Delete Album from Zune"
+            text: qsTr("Delete Album from Zune")
             enabled: DeviceService.connected
             onTriggered: {
                 if (!DeviceService.connected) return

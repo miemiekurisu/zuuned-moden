@@ -41,7 +41,7 @@ Popup {
         Text {
             Layout.topMargin: Theme.spaceLg
             Layout.leftMargin: Theme.spaceLg
-            text: "RENAME ON ZUNE"
+            text: qsTr("RENAME ON ZUNE")
             font.pixelSize: 11
             font.bold: true
             font.letterSpacing: 1.5
@@ -53,7 +53,7 @@ Popup {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.spaceLg
             Layout.rightMargin: Theme.spaceLg
-            placeholderText: "new name"
+            placeholderText: qsTr("new name")
             onAccepted: sheet.commit()
         }
 
@@ -63,7 +63,7 @@ Popup {
             spacing: Theme.spaceMd
             Item { Layout.fillWidth: true }
             Text {
-                text: "cancel"
+                text: qsTr("cancel")
                 font.pixelSize: 13
                 color: Theme.textSecondary
                 MouseArea {
@@ -75,7 +75,7 @@ Popup {
             }
             DetailActionButton {
                 Layout.preferredWidth: 100
-                title: "rename"
+                title: qsTr("rename")
                 kind: "primary"
                 onClicked: sheet.commit()
             }

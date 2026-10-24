@@ -1667,6 +1667,60 @@ full rebuild following the ``LibraryTypes.h`` edit; the two checks above the twe
 no device was asked anything: device evidence is unchanged at the one hand-tested Pavo Zune HD, and
 nothing has been heard or seen on its screen.
 
+## The twenty-third pass: the wording leaves the source, and a tab too wide to show what it knew (2026-10-25)
+
+**No Chinese is typed into the interface.**  ``i18n/zh_CN.tsv`` is the only place a sentence the
+user reads is written, ``src/UiText.h`` and a ``python i18n/audit.py`` gate keep it that way, and
+the catalogue stands at 1493 translatable sources, 1493 of them answered, ``lrelease`` reporting
+0 unfinished.  A line is either ``source ~=> Chinese`` or ``Context!source ~=> Chinese``; the
+prefix counts only when it names a ``<context>`` that exists, and beats a bare line inside that
+context.  All 29 scoped lines are pivot bars, because ``Albums`` is 专辑 next to Artists and
+相册 next to photo Folders, and that one source deliberately carries three scoped lines and no
+bare line, so a fourth appearance in a new file reports ``MISSING: NewFile!Albums`` instead of
+quietly borrowing the wrong word.  Identity bytes stay untranslated: ``pivots.tabs``, the
+``--settings-tab Device`` argument, ``picker.mode = current.toLowerCase()`` and
+``page.filter === "all"`` compare the same bytes they always did and only the painted label
+changes.
+
+**One long sentence widened five tabs and hid a card that was working.**  ``Settings -> Device``
+showed the six labels of the 这台 Zune card and none of the six values, which reads exactly like
+a feature nobody wired; ``DeviceService`` had been answering the whole time.  The tab was
+**2263 logical pixels wide**: ``StackLayout`` sizes every child to the widest child's
+``implicitWidth`` and lets it overflow its own bounds, so the longest row in any one of the five
+tabs widened all five and a right-aligned value was painted at ``mapx ~ 2200``, outside a window
+no screenshot of which can be that tall.  A headless ``qml.exe`` repro settled it - a Layout child
+cannot opt out, ``width: stack.width`` is clobbered and ``implicitWidth: 300`` is ignored, while
+``anchors.left/right/top`` inside a plain ``Item`` take that Item's width and are immune to
+content.  ``qml/SettingsPage.qml`` now holds the five tab bodies in a plain ``Item`` selected by
+``visible``, and ``PhaseNote`` wraps and fills instead of asking for its own width, which is what
+let a single note widen a tab at all.
+
+**The gate that certifies it inherited its environment from whoever ran it.**  ``run.ps1`` named
+Qt and ffmpeg on ``PATH`` only for ``Start-Zuuned`` and the single-instance rival, so the tool
+checks - ``librarytool``, ``transcodetool``, ``devicetool``, ``playertool`` - inherited the
+caller's shell.  From a baseline shell that names neither, every one of those children died at
+``0xC0000135`` (``DLL_NOT_FOUND``) before printing a line: 27 failures, no seed library, and the
+page, five-settings-tab, compact and spoken cases reporting ``SKIP: no seed library`` against an
+application that was fine.  One line now prepends both directories for the whole run, because a
+gate must not pass or fail on its caller's shell; ``tests\win-compat`` loads no Qt and needed no
+change.
+
+**Gates.**  The same tree before and after that line: ``launches=3 checks=93 failures=27
+skips=6``, then ``launches=18 checks=132 failures=0 skips=0 killed=0`` and ``OVERALL=ok`` - the
+39-check difference is six cases that had been skipping and now run - with ``tests\win-compat``
+at ``201 checks, 0 failures, 0 skips`` and ``python i18n\audit.py`` at ``AUDIT=ok``.  The
+counters end where the twenty-second pass left them, because nothing new was added to what the
+harness asserts.
+
+**What this pass did not do.**  The Zune HD stayed attached and the app\'s own hotplug browsed it
+inside every isolated profile; each recorded diagnostic is a read.  No send, deletion, eject or
+audio playback was triggered, so device evidence is unchanged at the one hand-tested Pavo Zune
+HD.  Two defects are recorded and left alone: the 转码加速 note still offers NVDEC, then VAAPI,
+then software, and VAAPI means nothing on Windows; and no capture shows a context menu in
+Chinese, because a Qt menu is its own top-level window and this app\'s DWM blur paints white-ring
+artifacts under ``CopyFromScreen``, which would make such a screenshot inconclusive rather than
+evidence.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and

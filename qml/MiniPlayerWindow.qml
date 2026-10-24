@@ -25,7 +25,7 @@ Window {
     height: vinylSize + 96
     flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Dialog
     color: "transparent"
-    title: "Zuuned Mini Player"
+    title: qsTr("Zuuned Mini Player")
 
     property bool hovered: hoverProbe.hovered
 
@@ -145,7 +145,7 @@ Window {
                     spacing: Theme.spaceXs
 
                     Text {
-                        text: "UP NEXT"
+                        text: qsTr("UP NEXT")
                         font.pixelSize: 10
                         font.weight: Font.DemiBold
                         font.letterSpacing: 2

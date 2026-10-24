@@ -179,6 +179,13 @@ public:
     // 0xFF Ex/Fx) → retag path; false (ASF GUID 30 26 B2 75 or anything
     // else) → transcode path.
     static bool sniffIsMpeg(const QString &path);
+    // The same first bytes read as a container id instead of a yes/no:
+    // 1 = MPEG audio, 2 = ASF (WMA/WMV), 0 = anything else — including a
+    // file whose name claims one thing and whose header says another.  The
+    // sync engine needs the three-way answer because "convert to MP3" and
+    // "carry the WMA I already own" ask different questions of one sniff.
+    // sniffIsMpeg() is exactly this == 1.
+    static int sniffAudioContainer(const QString &path);
     static QString videoDisplayTitle(const QString &title, const QString &series,
                                      int season, int episode);
     // ObjectFileName: TV → "Series - S02E05[ - Title]",
@@ -197,6 +204,14 @@ public:
     static qint64 estimateVideoBytes(int profile, int durationMs,
                                      qint64 sourceBytes);
     static qint64 estimateTrackBytes(int durationMs, qint64 sourceBytes);
+    // The same gate for a run that may write something other than 320kbps
+    // MP3.  bitrateKbps is the chosen CBR ceiling; nativeCopy says a WMA
+    // source may go over byte-for-byte, which costs sourceBytes — and which
+    // is not sniffed here, because guessing which queued rows are ASF would
+    // mean opening every one of them to answer a question about free space.
+    // So this never promises less than the run could need.
+    static qint64 estimateTrackBytes(int durationMs, qint64 sourceBytes,
+                                     int bitrateKbps, bool nativeCopy);
 
 public slots:
     void onPodcastCleanupInspected(quint64 generation, const QString &token, const QString &serial,
@@ -418,6 +433,13 @@ private:
     QString m_spokenPreparationToken, m_spokenPreparationSerial;
     QString m_currentTempPath;            // retag/transcode temp (cleanup)
     bool m_currentTranscoded = false;
+
+    // Audio policy for the run in flight, read once at sync start so a
+    // settings change halfway cannot split one album across two formats.
+    // Target is a ZUUNED_AUDIO_* constant; bitrate a nominal CBR kbps.
+    int m_audioTarget = 0;
+    int m_audioBitrate = 320;
+    bool m_copyNativeAudio = true;
 
     // "albumartist\talbum" → {albumartist, artist, album, genre,
     // trackIds, artJpegPath}

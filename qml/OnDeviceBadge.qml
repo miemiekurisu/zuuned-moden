@@ -10,7 +10,7 @@ Item {
     width: size
     height: size
     Accessible.role: Accessible.StaticText
-    Accessible.name: "On this Zune"
+    Accessible.name: qsTr("On this Zune")
 
     Image {
         objectName: "zuunedLocationMark"
@@ -24,7 +24,7 @@ Item {
         id: locationTip
         visible: hover.hovered
         delay: Theme.locationTooltipDelay
-        text: "On this Zune"
+        text: qsTr("On this Zune")
         contentItem: Text {
             text: locationTip.text
             font.pixelSize: Theme.customizeCaptionSize

@@ -9,6 +9,13 @@ Item {
     id: root
 
     property string label: "music"
+    // label is the page identity the router and Main.qml compare with ===. The
+    // kind word a person reads on the placeholder page is a separate,
+    // translated property, so translating the interface cannot break the route.
+    readonly property string kindName:
+        label === "videos" ? qsTr("videos")
+        : label === "photos" ? qsTr("photos")
+        : label === "music" ? qsTr("music") : label
 
     Loader {
         id: musicLoader
@@ -35,14 +42,14 @@ Item {
 
         Text {
             Layout.alignment: Qt.AlignHCenter
-            text: "your " + root.label + " library"
+            text: qsTr("your %1 library").arg(root.kindName)
             color: Theme.textDim
             font.family: Theme.displayFamily
             font.pixelSize: 34
         }
         Text {
             Layout.alignment: Qt.AlignHCenter
-            text: "the " + root.label + " library arrives with a later phase —\nbrowse your zune from the device panel →"
+            text: qsTr("the %1 library arrives with a later phase —\nbrowse your zune from the device panel →").arg(root.kindName)
             horizontalAlignment: Text.AlignHCenter
             color: Theme.textGhost
             font.pixelSize: 14

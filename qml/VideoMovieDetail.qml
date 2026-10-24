@@ -349,7 +349,7 @@ Item {
             }
             Text {
                 visible: page.resumeMs > 0
-                text: "· resumes at " + page.formatClock(page.resumeMs)
+                text: qsTr("· resumes at %1").arg(page.formatClock(page.resumeMs))
                 font.pixelSize: 11
                 color: Theme.activePink
             }
@@ -363,7 +363,7 @@ Item {
             spacing: Theme.spaceMd
 
             Text {
-                text: page.movie.watched ? "✔ watched" : "○ watched"
+                text: page.movie.watched ? qsTr("✔ watched") : qsTr("○ watched")
                 font.pixelSize: 12
                 color: page.movie.watched ? Theme.pink
                      : watchedArea.containsMouse ? Theme.textSecondary
@@ -379,7 +379,7 @@ Item {
                 }
             }
             Text {
-                text: "customize"
+                text: qsTr("customize")
                 font.pixelSize: 12
                 color: fixArea.containsMouse
                        ? Theme.textSecondary : Theme.textDim
@@ -462,7 +462,7 @@ Item {
                      || (page.movie.director ?? "") !== ""
             SectionLabel {
                 visible: page.castNames.length > 0
-                text: "TOP BILLING"
+                text: qsTr("TOP BILLING")
             }
             RowLayout {
                 visible: page.castNames.length > 0
@@ -504,7 +504,7 @@ Item {
             }
             SectionLabel {
                 visible: (page.movie.director ?? "") !== ""
-                text: "DIRECTOR"
+                text: qsTr("DIRECTOR")
             }
             Text {
                 visible: (page.movie.director ?? "") !== ""
@@ -520,10 +520,9 @@ Item {
             visible: (page.movie.versions ?? []).length > 1
             RowLayout {
                 spacing: Theme.spaceSm
-                SectionLabel { text: "VERSIONS" }
+                SectionLabel { text: qsTr("VERSIONS") }
                 Text {
-                    text: (page.movie.versions ?? []).length
-                          + " files for this movie"
+                    text: qsTr("%1 files for this movie").arg((page.movie.versions ?? []).length)
                     font.pixelSize: 11
                     color: Theme.textDim
                 }
@@ -561,14 +560,14 @@ Item {
                         MovieGesture { anchors.fill: parent; row: versionRow.modelData }
                     }
                     Text {
-                        text: "customize"
+                        text: qsTr("customize")
                         font.pixelSize: 12; color: Theme.textDim
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                             onClicked: page.customizeRequested(versionRow.modelData, [versionRow.modelData.id]) }
                     }
                     Text {
                         visible: DeviceService.connected
-                        text: "to zune"
+                        text: qsTr("to zune")
                         font.pixelSize: 12
                         color: Theme.pink
                         MouseArea {
@@ -583,9 +582,9 @@ Item {
         }
 
         InfoCard {
-            SectionLabel { text: "FILE" }
+            SectionLabel { text: qsTr("FILE") }
             FileRow {
-                label: "QUALITY"
+                label: qsTr("QUALITY")
                 value: {
                     const parts = []
                     if ((page.movie.width ?? 0) > 0)
@@ -596,14 +595,14 @@ Item {
                     return parts.join(" · ")
                 }
             }
-            FileRow { label: "FILENAME"; value: page.movie.filename ?? "" }
-            FileRow { label: "PATH"; value: page.movie.filepath ?? "" }
+            FileRow { label: qsTr("FILENAME"); value: page.movie.filename ?? "" }
+            FileRow { label: qsTr("PATH"); value: page.movie.filepath ?? "" }
         }
 
         // Genre neighbors — pure QML over the browser's movie groups
         InfoCard {
             visible: page.sameShelf.length > 0
-            SectionLabel { text: "FROM THE SAME SHELF" }
+            SectionLabel { text: qsTr("FROM THE SAME SHELF") }
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Theme.spaceMd

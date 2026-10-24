@@ -22,6 +22,7 @@
 #include <QTimer>
 #include <QtConcurrent>
 #include <unistd.h>
+#include "../UiText.h"
 
 namespace {
 QByteArray normalizedCover(const QByteArray &bytes) {
@@ -157,7 +158,7 @@ void OnlineAlbumArtService::pump() {
                 } else {
                     if (result.value("status").toString() == "ready") {
                         result["status"] = "providerUnavailable";
-                        result["reason"] = "Could not save artwork";
+                        result["reason"] = UiText::tr("Could not save artwork");
                     }
                     m_terminal.insert(request.key);
                     if (result.value("status").toString() == "providerUnavailable" && request.retries == 0) {
@@ -202,7 +203,7 @@ void OnlineAlbumArtService::pump() {
                 bytes = normalizedCover(bytes);
                 if (bytes.isEmpty()) {
                     result["status"] = "providerUnavailable";
-                    result["reason"] = "Artwork download failed or returned an invalid image";
+                    result["reason"] = UiText::tr("Artwork download failed or returned an invalid image");
                 } else result["_bytes"] = bytes;
             }
             return result;

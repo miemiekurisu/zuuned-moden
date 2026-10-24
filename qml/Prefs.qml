@@ -8,10 +8,11 @@ import QtCore
 QtObject {
     // "disc"  → SpinningDiscView   |  "vinyl" → VinylRecordView
     property alias playerStyle: store.playerStyle
-    // "none" | "grime" | "dusk" | a file:// path to the user's own image
-    property alias backdrop: store.backdrop
-    // "marker" (Permanent Marker) | "graffiti"
-    property alias displayFont: store.displayFont
+    // "backdrop" and "displayFont" went 2026-10-24. They were aliases of a
+    // second copy of two settings that really live in AppSettings
+    // (backdropPreset, headerFont), written by nobody and read by nobody, so
+    // this store held values that could never be the one the app used. One
+    // owner per setting is the rule now.
 
     // QtObject has no default property, so the persistent store lives in
     // an explicit property rather than as a bare child.
@@ -19,7 +20,5 @@ QtObject {
         id: store
         category: "appearance"
         property string playerStyle: "disc"
-        property string backdrop: "grime"
-        property string displayFont: "marker"
     }
 }

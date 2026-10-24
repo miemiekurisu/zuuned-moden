@@ -131,13 +131,13 @@ Popup {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Theme.spaceSm
                 Text {
-                    text: "YOUR COLLECTION / YOUR CALL"
+                    text: qsTr("YOUR COLLECTION / YOUR CALL")
                     color: Theme.textSecondary
                     font.pixelSize: Theme.customizeLabelSize
                     font.letterSpacing: 1.6
                 }
                 GradientText {
-                    text: "make it yours."
+                    text: qsTr("make it yours.")
                     font.family: Theme.displayFamily
                     font.pixelSize: sheet.narrow ? Theme.customizeTitleSize - Theme.spaceSm : Theme.customizeTitleSize
                     rotation: -3
@@ -151,7 +151,7 @@ Popup {
                 anchors.margins: Theme.spaceXl
                 text: "×"
                 font.pixelSize: Theme.customizeHeadingSize
-                Accessible.name: "Cancel song edits"
+                Accessible.name: qsTr("Cancel song edits")
                 onClicked: sheet.close()
             }
         }
@@ -189,14 +189,14 @@ Popup {
                         Layout.fillWidth: true
                         spacing: Theme.spaceSm
                         Text {
-                            text: "SONG / IDENTITY"
+                            text: qsTr("SONG / IDENTITY")
                             color: Theme.textSecondary
                             font.pixelSize: Theme.customizeLabelSize
                             font.letterSpacing: 1.6
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: sheet.current.title || "Tell its story."
+                            text: sheet.current.title || qsTr("Tell its story.")
                             color: Theme.textPrimary
                             font.pixelSize: Theme.customizeHeadingSize
                             font.weight: Font.Light
@@ -227,9 +227,9 @@ Popup {
                         Layout.fillWidth: true
                         Layout.preferredWidth: fieldsGrid.width
                         Layout.columnSpan: sheet.narrow ? 1 : 2
-                        label: "title"
+                        label: qsTr("title")
                         value: sheet.fields.title || ""
-                        placeholder: "Song title"
+                        placeholder: qsTr("Song title")
                         prominent: true
                         onEdited: value => sheet.setField("title", value)
                     }
@@ -237,18 +237,18 @@ Popup {
                         objectName: "editTrackArtist"
                         Layout.fillWidth: true
                         Layout.preferredWidth: (fieldsGrid.width - fieldsGrid.columnSpacing) / fieldsGrid.columns
-                        label: "artist"
+                        label: qsTr("artist")
                         value: sheet.fields.artist || ""
-                        placeholder: "Artist"
+                        placeholder: qsTr("Artist")
                         onEdited: value => sheet.setField("artist", value)
                     }
                     CustomizeField {
                         objectName: "editTrackAlbumArtist"
                         Layout.fillWidth: true
                         Layout.preferredWidth: (fieldsGrid.width - fieldsGrid.columnSpacing) / fieldsGrid.columns
-                        label: "album artist"
+                        label: qsTr("album artist")
                         value: sheet.fields.albumartist || ""
-                        placeholder: "Same as artist"
+                        placeholder: qsTr("Same as artist")
                         onEdited: value => sheet.setField("albumartist", value)
                     }
                     CustomizeField {
@@ -256,18 +256,18 @@ Popup {
                         Layout.fillWidth: true
                         Layout.preferredWidth: fieldsGrid.width
                         Layout.columnSpan: sheet.narrow ? 1 : 2
-                        label: "album"
+                        label: qsTr("album")
                         value: sheet.fields.album || ""
-                        placeholder: "Album"
+                        placeholder: qsTr("Album")
                         onEdited: value => sheet.setField("album", value)
                     }
                     CustomizeField {
                         objectName: "editTrackGenre"
                         Layout.fillWidth: true
                         Layout.preferredWidth: (fieldsGrid.width - fieldsGrid.columnSpacing) / fieldsGrid.columns
-                        label: "genre"
+                        label: qsTr("genre")
                         value: sheet.fields.genre || ""
-                        placeholder: "Genre"
+                        placeholder: qsTr("Genre")
                         onEdited: value => sheet.setField("genre", value)
                     }
                     RowLayout {
@@ -278,7 +278,7 @@ Popup {
                             objectName: "editTrackNumber"
                             Layout.fillWidth: true
                             Layout.preferredWidth: 1
-                            label: "track #"
+                            label: qsTr("track #")
                             value: sheet.fields.trackNumber || ""
                             placeholder: "#"
                             numeric: true
@@ -289,9 +289,9 @@ Popup {
                             objectName: "editTrackYear"
                             Layout.fillWidth: true
                             Layout.preferredWidth: 1
-                            label: "year"
+                            label: qsTr("year")
                             value: sheet.fields.year || ""
-                            placeholder: "Year"
+                            placeholder: qsTr("Year")
                             numeric: true
                             validator: IntValidator { bottom: 0; top: 9999 }
                             onEdited: value => sheet.setField("year", value)
@@ -329,19 +329,19 @@ Popup {
                 Text {
                     Layout.fillWidth: true
                     visible: !sheet.narrow
-                    text: "Your edits stay yours."
+                    text: qsTr("Your edits stay yours.")
                     font.pixelSize: Theme.customizeCaptionSize
                     color: Theme.textSecondary
                 }
                 Item { Layout.fillWidth: true; visible: sheet.narrow }
                 QuietAction {
                     objectName: "editTrackCancel"
-                    text: "cancel"
+                    text: qsTr("cancel")
                     onClicked: sheet.close()
                 }
                 QuietAction {
                     objectName: "editTrackSave"
-                    text: "save changes  ↗"
+                    text: qsTr("save changes  ↗")
                     primary: true
                     enabled: sheet.valid
                     onClicked: sheet.commit()

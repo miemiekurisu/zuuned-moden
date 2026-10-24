@@ -4,6 +4,7 @@
 #include <QTimer>
 #include <QScopedValueRollback>
 #include <algorithm>
+#include "../UiText.h"
 
 PodcastQueuePlanner::PodcastQueuePlanner(SpokenMediaService *service, Ports ports, QObject *parent)
     : QObject(parent), m_service(service), m_ports(std::move(ports)) {
@@ -77,7 +78,7 @@ void PodcastQueuePlanner::update() {
         } else if (!c.inventoryLoading && !c.inventoryError.isEmpty()) {
             if (m_inventoryNotice != c.inventoryError) {
                 m_inventoryNotice = c.inventoryError;
-                emit m_service->notification("Podcast queue unchanged: " + c.inventoryError);
+                emit m_service->notification(UiText::tr("Podcast queue unchanged: %1").arg(c.inventoryError));
             }
             return;
         } else { m_ports.ensureInventory(); return; }
@@ -108,7 +109,7 @@ void PodcastQueuePlanner::requestSelection(const QString &id) {
     update();
     const auto c = m_ports.context();
     if (!c.connected || c.syncing || c.queueMismatch || c.serial.isEmpty()) {
-        emit m_service->notification("Connect the queue's Zune and finish the current sync before adding episodes.");
+        emit m_service->notification(UiText::tr("Connect the queue's Zune and finish the current sync before adding episodes."));
         return;
     }
     const auto show = m_service->item(id);
@@ -154,7 +155,7 @@ void PodcastQueuePlanner::admit(const Request &request) {
         const auto identity = m_service->podcastDeviceIdentity(v.toMap().value("id").toString());
         const auto source = identity.value("sourceUrl").toString();
         if (source.isEmpty() || sources.contains(source)) {
-            emit m_service->notification("Podcast queue unchanged: this feed has ambiguous audio identities.");
+            emit m_service->notification(UiText::tr("Podcast queue unchanged: this feed has ambiguous audio identities."));
             return;
         }
         sources.insert(source);
@@ -167,7 +168,7 @@ void PodcastQueuePlanner::admit(const Request &request) {
         const auto identity = m_service->podcastDeviceIdentity(id);
         const auto status = m_ports.status(identity.value("feedUrl").toString(), identity.value("sourceUrl").toString());
         if (!status.value("known").toBool()) {
-            emit m_service->notification("Podcast queue unchanged: refresh the Zune's podcast inventory first.");
+            emit m_service->notification(UiText::tr("Podcast queue unchanged: refresh the Zune's podcast inventory first."));
             return;
         }
         const bool played = row.value("played").toBool() ||

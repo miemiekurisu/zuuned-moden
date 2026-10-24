@@ -4,7 +4,11 @@ Purpose of this page: answer "what did the Zune software on Windows do that Zuun
 Modern does not do?" It is a product gap analysis, not a status page. Nothing here
 adds or changes a hardware claim; [WINDOWS_PORT.md](WINDOWS_PORT.md) is the only page
 that states what has been done to a player from a Windows machine, and
-[FEATURE_COMPLETION.md](FEATURE_COMPLETION.md) is the implementation backlog.
+[FEATURE_COMPLETION.md](FEATURE_COMPLETION.md) is the implementation backlog. A third
+axis lives in [UI_WIRING_AUDIT.md](UI_WIRING_AUDIT.md): whether a control exists on
+screen at all and reaches a service. A capability counted as present here says nothing
+about either of those, and the fourth column of the comparison table stays hardware
+evidence.
 
 Read it in this order: what the original software was, where that description comes
 from and what each release added, then the capability comparison, then what cannot come
@@ -223,7 +227,7 @@ songs into six provider requests and a `HTTP 503`.
 | --- | --- | --- | --- |
 | Music to the player | Yes | Yes | read |
 | Music off the player | Yes | Yes, into the folder the library declares for music - the marked destination, else the earliest added music folder, and only else `Music\Zuuned Imports` - indexed there and with its embedded art read out | read |
-| Convert for the target model | Yes, quality presets | Yes - video profile auto from the connected model, Zune 30 WMV and 480x272 profiles, mp3 through LAME, `transcodeAccel` auto with NVDEC on this machine | send |
+| Convert for the target model | Yes, quality presets | Yes - video profile auto from the connected model, Zune 30 WMV and 480x272 profiles, `transcodeAccel` auto with NVDEC on this machine; audio from Settings to Audio conversion - MP3 through LAME or WMA, CBR 128 to 320, with a source that already is WMA copied rather than re-encoded. WMA is opt-in and MP3 320 stays the default because no player attached here has ever played a WMA, and there is no lossless encode to preset: the linked libavcodec carries `wmav1`/`wmav2` and no `wmalossless`. Presets are still one control short of the original's - see [Settings inventory](SETTINGS_INVENTORY.md) | send |
 | Photos to the player | Yes | Yes | send |
 | Photos off the player | Yes | Implemented; the thumbnail fallback path has never returned a picture from a player | no |
 | Video to the player | Yes | Yes, through the real transcoder | send |
