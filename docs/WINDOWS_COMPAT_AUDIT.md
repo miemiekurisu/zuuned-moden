@@ -1241,6 +1241,56 @@ BOM in playlist files, and the narrower naming rule that playlist *exports* keep
 POSIX behaviour is unchanged by construction here and remains unverified on this machine.  Device
 evidence is unchanged: one hand-tested Pavo Zune HD.
 
+## Thirteenth sweep: a count of characters, not bytes (2026-10-24)
+
+Called a sweep loosely.  This pass started from two reported symptoms - a Videos page with one clip
+in a folder that demonstrably holds more, and a download that appeared not to have arrived - and
+what it found was one rule about a database engine applied with the wrong unit in two adjacent
+functions, plus a size floor filed under the wrong category.  It did not re-read the tree, so the
+gaps the twelfth sweep left open stay open for the same reason.
+
+**The rule.**  SQLite indexes TEXT by **character**, so the width bound into ``substr()`` over a TEXT
+value is a character count.  ``LibraryDb::purgeFolder()`` and ``LibraryDb::countsUnder()`` both match
+a watch folder and everything beneath it with ``path = ? OR substr(path, 1, ?) = ?`` - exact prefix
+rather than ``LIKE`` on purpose, so an ``_`` or a ``[`` in a path cannot over-match - and both took
+the width from ``QByteArray::size()`` after ``.toUtf8()``.  That is a byte count.  A Han character is
+three UTF-8 bytes, so for a folder named in Chinese the window came out wider than the string it was
+measuring, ``substr(filepath, 1, plen)`` returned the prefix *plus the next several characters*, and
+an equality that can therefore never hold.  Only a row whose path was exactly the folder could match.
+
+**What that looked like from the outside.**  Settings -> Library read ``0 photos`` beside a folder
+holding five pictures, and releasing that watch folder logged ``purged 0 items`` while keeping all
+five rows - a folder that would not leave the library, on a machine where the folder was open and
+readable the whole time.  Nothing about the folder was wrong; the count asked about it was.  Both
+sites take the width from ``QString::size()`` now, and bind the ``QString``, so the comparison is
+character against character.
+
+**Why it survived every gate, and why it is not a Windows bug.**  For an ASCII path the byte count
+and the character count are equal, and every fixture
+folder in every gate on either platform is ASCII.  The rule is SQLite's and applies identically on
+Linux, where a Chinese folder name has always miscounted the same way.  It is recorded here because
+it was *met* on Windows and the reflex is to file it under ``compat/win``; the fix belongs to the
+database, and the only Windows-specific fact is that a Chinese folder name is ordinary on this
+machine rather than a deliberate test.
+
+**The gate.**  ``librarytool folders``, 20 checks, run in the ``tools`` phase of
+``tests\win-usability``.  It pins both halves of the fault - a Chinese-named root counts the media it
+holds, an ASCII root beside it counts its own and nothing else, releasing the Chinese-named root
+takes exactly its own row - and the whole import-default rule that the same pass added, including
+that a photo default and a music default coexist and that releasing a marked root falls back to the
+earliest remaining folder of that kind.  Expectations branch on ``#ifdef Q_OS_WIN`` where a rule is
+platform-specific, so one source gates both lines.  It exists as a tool phase because neither Windows
+gate can execute a C++ rule directly, and these are ``LibraryDb`` rules.
+
+**One size floor in the wrong category.**  ``VideoNaming::isSkippedVideoFile()`` applied the 50 MB
+floor to every folder type that is not ``tv`` or ``anime``, which includes ``all`` - the type a user
+gets when they point the app at one mixed folder - so such a root silently discarded every clip
+under 50 MB while its own declaration promised to hold everything.  The floor is ``movies``-only now;
+every other type, ``all`` included, keeps the 5 MB one.  Not a Windows difference either, and now
+stated in the header comment rather than only in the ``.cpp``.
+
+Device evidence is unchanged: one hand-tested Pavo Zune HD.
+
 ## What is proven, and by which gate
 
 - `tests/win-usability/watch_folder_repair.py` seeds four roots - a `/E:/` scar, a
@@ -1258,6 +1308,12 @@ evidence is unchanged: one hand-tested Pavo Zune HD.
   from the Win32 documentation.
 - `tests/win-compat` and `tests/win-usability` are source and runtime gates;
   neither opens a USB handle.  The compat gate is currently 201 checks.
+- `librarytool folders` is 20 checks and the only gate that reaches the watch-folder rules in
+  `LibraryDb` directly: the character-width prefix counts above, the release of a Chinese-named
+  folder, and which folder a download is written into.  It runs in the `tools` phase of
+  `tests\win-usability` beside `names`, `paths`, `vanish`, `customize` and `cover`, on the same
+  reasoning as `librarytool paths` - a header-only or database-level rule is unreachable from a
+  QML launch, so the tool is where it gets pinned.
 - The profile-isolation pair in `tests\win-usability` reads the *real* profile before and
   after the run, so it gates the gate: it is only valid while nothing else is using that
   profile.  One run taken with a `build\zuuned.exe` left open from an earlier check failed on

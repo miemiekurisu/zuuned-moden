@@ -432,9 +432,14 @@ bool isSkippedVideoFile(const QString &filename, qint64 filesize,
         || stem.startsWith(QLatin1String("sample_")))
         return true;
 
-    const bool tvLike = (folderType == QLatin1String("tv")
-                         || folderType == QLatin1String("anime"));
-    const qint64 minMB = minSizeOverrideMB > 0 ? minSizeOverrideMB : (tvLike ? 5 : 50);
+    // The 50MB floor is a MOVIE-folder rule: it is there to drop trailer and
+    // clip debris in a folder the user declared to hold movies.  A folder typed
+    // "all" - the honest type for one folder holding music, video and pictures -
+    // is where a phone clip or a music video lands, and those are routinely
+    // 20MB; under the old rule the floor deleted the only video in such a
+    // library without saying so.  Only a folder that asks to be movies keeps it.
+    const bool movieLike = (folderType == QLatin1String("movies"));
+    const qint64 minMB = minSizeOverrideMB > 0 ? minSizeOverrideMB : (movieLike ? 50 : 5);
     if (filesize > 0 && filesize < minMB * 1024 * 1024)
         return true;
 

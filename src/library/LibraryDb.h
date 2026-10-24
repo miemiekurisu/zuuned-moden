@@ -162,6 +162,12 @@ public:
     void countsUnder(const QString &path, int *tracks, int *videos,
                      int *photos);
     bool setWatchFolderType(qint64 id, const QString &type);
+    // Where media of a kind is imported: the folder the user marked, else the
+    // first folder added whose type the scanner would read that kind from
+    // (kind: "music" | "photos" | "video").  Empty when the library has none.
+    QString importRoot(const QString &kind);
+    // Mark one folder as that import root, clearing every other row.
+    bool setImportDefault(qint64 id);
     // Settings → Library "Duplicate formats": drop the losing format
     // where the same (artist, album, title, tracknumber) exists as both
     // FLAC and MP3. prefer: "flac" | "mp3" (anything else is a no-op).

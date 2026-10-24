@@ -290,6 +290,10 @@ int main(int argc, char *argv[]) {
     auto *player = engine.singletonInstance<PlayerService *>("Zuuned", "PlayerService");
     auto *library = engine.singletonInstance<LibraryService *>("Zuuned", "LibraryService");
     if (sync) sync->attachLibrary(library);
+    // A download needs somewhere to write and the library is what knows: its
+    // default watch folder for the kind, else the first folder of that kind,
+    // else the ~/…/Zuuned Imports it registers on the way.
+    if (device) device->setLibraryService(library);
     auto *spoken = engine.singletonInstance<SpokenMediaService *>("Zuuned", "SpokenMediaService");
     if (spoken) spoken->attachPlayer(player);
     if (spoken && device && sync) {
@@ -339,8 +343,9 @@ int main(int argc, char *argv[]) {
     if (device && library)
         QObject::connect(device, &DeviceService::musicImportsReady,
                          library, [library](const QStringList &artists) {
-            library->addWatchFolder(DeviceService::musicImportsDir(),
-                                    QStringLiteral("music"));
+            // Idempotent, and it no longer hardcodes a folder: pulls land in
+            // whatever root the user chose, and that root is already scanned.
+            library->ensureImportRoot(QStringLiteral("music"));
             for (const QString &artist : artists)
                 library->requestArtistImage(artist);
         });

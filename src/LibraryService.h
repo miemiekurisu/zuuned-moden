@@ -65,6 +65,10 @@ class LibraryService : public QObject {
     Q_PROPERTY(int scanCurrent READ scanCurrent NOTIFY scanChanged)
     Q_PROPERTY(int scanTotal READ scanTotal NOTIFY scanChanged)
     Q_PROPERTY(QVariantList musicProbeFailures READ musicProbeFailures NOTIFY musicProbeFailuresChanged)
+    // Last scan's census of files a watch folder holds but its declared type
+    // will not index: {folder, type, videos, photos, audio}.  Empty means the
+    // library hides nothing, which is the common case.
+    Q_PROPERTY(QVariantList mediaTypeNotes READ mediaTypeNotes NOTIFY mediaTypeNotesChanged)
 
 public:
     explicit LibraryService(QObject *parent = nullptr);
@@ -72,6 +76,7 @@ public:
 
     bool empty() const;
     QVariantList musicProbeFailures() const;
+    QVariantList mediaTypeNotes() const { return m_mediaTypeNotes; }
     int trackCount() const;
     int photoCount() const;
     // ── Photos (Phase 8) — folder-albums, drill-down like videos ──
@@ -124,6 +129,17 @@ public:
     Q_INVOKABLE void addWatchFolders(const QVariantList &folders);
     Q_INVOKABLE void removeWatchFolder(double id);
     Q_INVOKABLE void setWatchFolderType(double id, const QString &type);
+    // Which folder media pulled off a Zune is written into: the row the user
+    // made the default, else the first folder added that the scanner reads
+    // this kind from (kind: "music" | "photos" | "video").  Empty when the
+    // library holds no folder for it.
+    Q_INVOKABLE QString importRoot(const QString &kind) const;
+    // importRoot(), and when there is none the "Zuuned Imports" folder under
+    // the user's Music, Pictures or Videos location -- registered as a watch
+    // folder first, so a download is indexed rather than merely written.
+    Q_INVOKABLE QString ensureImportRoot(const QString &kind);
+    // Make one watch folder the destination for downloads of its kind.
+    Q_INVOKABLE void setImportDefault(double id);
     // {tracks, videos, photos} indexed under a watch-folder root — the
     // Settings rows' count subline (QML keeps it live with void reads
     // of the library counts).
@@ -356,6 +372,7 @@ public:
 
 signals:
     void musicProbeFailuresChanged();
+    void mediaTypeNotesChanged();
     void localTrackIdentitiesChanged();
     void customizationFinished(const QString &requestId, bool success,
                                const QString &error);
@@ -457,6 +474,7 @@ private:
     TrackIdentityIndex m_localTrackIdentities;
     quint64 m_localTrackIdentityRevision = 0;
     QVariantList m_artistsList, m_albumsList, m_genresList, m_watchFolders;
+    QVariantList m_mediaTypeNotes;
     QVariantList m_playlists;
     QVariantMap m_artPaths;
     QHash<QString, QStringList> m_albumArtSources;

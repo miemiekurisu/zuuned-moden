@@ -21,6 +21,11 @@
  *     spellings of one file compare, how a playlist line resolves, and how
  *     playlist bytes decode.  Expectations are branched where the right answer
  *     genuinely differs by platform, so one source gates both.
+ *
+ *   librarytool folders
+ *     Watch-folder self-test: what a folder owns when its name is not ASCII,
+ *     and which folder a download is written into -- the one the user marked,
+ *     else the first of that kind the library holds.
  */
 /* Keep first on Windows: the compat shim declares the POSIX surface this
  * file uses (64-bit struct stat, dirent, poll, ...) and the console code page
@@ -267,9 +272,14 @@ static int runCustomizeSelfTest() {
     // leaves future tables behind and does not represent an old library.
     const QByteArray legacySchema =
         // Rewind every later schema era, not just the Customize ones: a
-        // current-schema database still carries the v6 probe columns,
-        // the v7 photo-album tables and the v9 fingerprint, which would
-        // make the real migration chain fail on columns it never dropped.
+        // current-schema database still carries the v6 columns, the v7 photo-
+        // album tables, the v9 fingerprint and the v10 import default, which
+        // would make the real migration chain fail on columns it never
+        // dropped.  Each era is dropped in full -- dropping three of the four
+        // v6 columns and leaving discnumber behind reads as "duplicate column
+        // name: discnumber", and the chain looks broken in LibraryDb rather
+        // than in this list.
+        "ALTER TABLE watch_folders DROP COLUMN import_default;"
         "ALTER TABLE tracks DROP COLUMN discnumber;"
         "ALTER TABLE tracks DROP COLUMN probe_mtime_ns;"
         "ALTER TABLE tracks DROP COLUMN probe_ctime_ns;"
@@ -1036,6 +1046,277 @@ static int runNetworkSelfTest() {
  * proves the ladder stops early rather than whatever a live store happens to
  * carry today.
  */
+/* ---- a scan retires rows whose file is gone, and only where it may ----
+ *
+ * This is the one scan behaviour that can destroy a library by accident, so it
+ * is gated on the shape of the absence rather than on a file count.  Three
+ * kinds of missing file look identical to `stat()` and are not identical at
+ * all: gone from a folder this pass read to the end, gone from a watch folder
+ * that is not mounted (or not plugged in), and outside every watch folder so
+ * that nothing can say whether it should be here.  Only the first is retired.
+ * The audio file is deliberately not decodable - retirement is a filesystem
+ * question, and a gate that needed a working encoder would not answer it.
+ */
+static int runVanishSelfTest() {
+    int failed = 0;
+    const auto check = [&failed](bool ok, const char *what) {
+        printf("  %s %s\n", ok ? "PASS" : "FAIL", what);
+        if (!ok)
+            failed++;
+    };
+
+    QTemporaryDir scratch;
+    check(scratch.isValid(), "vanish: scratch tree");
+    if (!scratch.isValid())
+        return 1;
+
+    const QString root = scratch.path() + QStringLiteral("/music");
+    const QString offline = scratch.path() + QStringLiteral("/offline");
+    const QString foreign = scratch.path() + QStringLiteral("/foreign");
+    const QString here = root + QStringLiteral("/here.mp3");
+    const QString gone = root + QStringLiteral("/gone.mp3");
+    const QString unmounted = offline + QStringLiteral("/offline-album.mp3");
+    const QString unowned = foreign + QStringLiteral("/foreign-album.mp3");
+    QDir().mkpath(root);
+    QDir().mkpath(foreign);
+    // `offline` is never created: it is a drive that is not there today.
+
+    QFile present(here);
+    bool wrote = present.open(QIODevice::WriteOnly);
+    if (wrote) {
+        present.write("not decodable audio, and retirement does not care\n");
+        present.close();
+    }
+    check(wrote, "vanish: a file that really is on disk");
+
+    const auto seed = [](const QString &path) {
+        LibTrack t;
+        t.filepath = path;
+        t.title = QStringLiteral("Track");
+        t.artist = QStringLiteral("Artist");
+        t.album = QStringLiteral("Album");
+        t.filesize = 1;
+        t.probeVersion = 1;
+        return t;
+    };
+
+    const QString dbPath = scratch.path() + QStringLiteral("/vanish.db");
+    {
+        LibraryDb db;
+        if (!db.open(dbPath)) {
+            printf("  FAIL vanish: db open: %s\n", db.lastError().toUtf8().constData());
+            return 1;
+        }
+        db.addWatchFolder(root, QStringLiteral("music"));
+        db.addWatchFolder(offline, QStringLiteral("music"));
+        db.upsertTrack(seed(here));
+        db.upsertTrack(seed(gone));
+        db.upsertTrack(seed(unmounted));
+        db.upsertTrack(seed(unowned));
+    }
+
+    LibraryScanner scanner;
+    scanner.setDbPath(dbPath);
+    scanner.scan();   // synchronous on this thread
+
+    QStringList left;
+    {
+        LibraryDb db;
+        if (!db.open(dbPath))
+            return 1;
+        for (const LibTrack &t : db.allTracks())
+            left << t.filepath;
+    }
+    const auto owns = [&left](const QString &path) {
+        return left.contains(path);
+    };
+
+    check(owns(here),
+          "vanish: a row whose file is present survives, even one that will not decode");
+    check(!owns(gone),
+          "vanish: a row under a watch folder this pass read to the end is retired");
+    check(owns(unmounted),
+          "vanish: a row under a watch folder that is not mounted is kept");
+    check(owns(unowned),
+          "vanish: a row no watch folder owns is kept");
+    check(left.size() == 3,
+          "vanish: exactly one row went, and nothing else moved");
+
+    // A second pass must have nothing left to retire: the survivors are
+    // survivors because the rule says so, not because they were not looked at.
+    LibraryScanner again;
+    again.setDbPath(dbPath);
+    again.scan();
+    int second = 0;
+    {
+        LibraryDb db;
+        if (db.open(dbPath))
+            second = int(db.allTracks().size());
+    }
+    check(second == 3, "vanish: a repeat scan retires nothing further");
+
+    printf("vanish self-test: %s (%d failures)\n",
+           failed == 0 ? "ALL PASS" : "FAILED", failed);
+    return failed ? 1 : 0;
+}
+
+// Where a download lands, and what a folder owns.  Both rules were decided by
+// nobody until 2026-10-24: a prefix comparison that counted UTF-8 bytes where
+// SQLite counts characters, and an importer that wrote into a fixed folder
+// beside the library instead of inside it.
+//
+// The Han name is built from code points, not literals: /utf-8 reaches the C
+// targets only, so a UTF-8 source literal in this file would be re-encoded to
+// the ANSI code page of whatever machine compiles it.
+static int runFoldersSelfTest() {
+    int failed = 0;
+    const auto check = [&failed](bool ok, const char *what) {
+        printf("  %s %s\n", ok ? "PASS" : "FAIL", what);
+        if (!ok)
+            failed++;
+    };
+    const auto eq = [&check](const char *what, const QString &got, const QString &expect) {
+        const bool ok = got == expect;
+        check(ok, what);
+        if (!ok)
+            printf("      got '%s' expected '%s'\n", got.toUtf8().constData(),
+                   expect.toUtf8().constData());
+    };
+
+    QTemporaryDir scratch;
+    check(scratch.isValid(), "folders: scratch tree");
+    if (!scratch.isValid())
+        return 1;
+
+    // "test music", "artist", "album", "track" -- four Han characters, three
+    // bytes each, so the folder is eight bytes wider than it is long.
+    const QString cjkRoot = scratch.path() + QStringLiteral("/\u6d4b\u8bd5\u97f3\u4e50");
+    const QString cjkFile = cjkRoot + QStringLiteral("/\u827a\u4eba/\u4e13\u8f91/\u66f2\u76ee.mp3");
+    const QString asciiRoot = scratch.path() + QStringLiteral("/music");
+    const QString asciiFile = asciiRoot + QStringLiteral("/Artist/Album/Song.mp3");
+
+    const auto seed = [](const QString &path) {
+        LibTrack t;
+        t.filepath = path;
+        t.title = QStringLiteral("Track");
+        t.artist = QStringLiteral("Artist");
+        t.album = QStringLiteral("Album");
+        t.filesize = 1;
+        return t;
+    };
+
+    const QString dbPath = scratch.path() + QStringLiteral("/folders.db");
+    bool opened = false;
+    {
+        LibraryDb db;
+        opened = db.open(dbPath);
+        if (!opened) {
+            printf("  FAIL folders: db open: %s\n", db.lastError().toUtf8().constData());
+            return 1;
+        }
+        db.addWatchFolder(cjkRoot, QStringLiteral("music"));
+        db.addWatchFolder(asciiRoot, QStringLiteral("music"));
+        db.upsertTrack(seed(cjkFile));
+        db.upsertTrack(seed(asciiFile));
+
+        int tracks = 0, videos = 0, photos = 0;
+        db.countsUnder(cjkRoot, &tracks, &videos, &photos);
+        check(tracks == 1,
+              "folders: a folder named in Chinese counts the media it holds");
+        db.countsUnder(asciiRoot, &tracks, &videos, &photos);
+        check(tracks == 1,
+              "folders: an ASCII folder beside it counts its own and nothing else");
+        check(db.purgeFolder(cjkRoot) == 1,
+              "folders: releasing a Chinese-named folder really takes its rows");
+        int left = 0;
+        for (const LibTrack &t : db.allTracks())
+            left++;
+        check(left == 1, "folders: exactly the folder's own row went");
+    }
+
+    // ── The import root ──
+    // Its own database: the folders above are music roots as well, and the
+    // Han-named one is the first added, so it would answer every question
+    // below about which folder comes first.
+    const QString rootsPath = scratch.path() + QStringLiteral("/roots.db");
+    LibraryDb db;
+    if (!db.open(rootsPath))
+        return 1;
+    // The first folder of the kind is planted in this database rather than
+    // inherited from the one above: "added first" is a fact about the rows of
+    // the database being asked, and that is the rule under test.
+    db.addWatchFolder(asciiRoot, QStringLiteral("music"));
+    const auto idOf = [&db](const QString &path) {
+        for (const WatchFolder &f : db.watchFolders())
+            if (f.path == path)
+                return f.id;
+        return qint64(-1);
+    };
+
+    eq("folders: a kind nobody added a folder for has no import root",
+       db.importRoot(QStringLiteral("photos")), QString());
+    eq("folders: with no default chosen the first folder added imports",
+       db.importRoot(QStringLiteral("music")), asciiRoot);
+
+    const QString later = scratch.path() + QStringLiteral("/music-2");
+    db.addWatchFolder(later, QStringLiteral("music"));
+    eq("folders: adding a second folder of a kind does not move the import root",
+       db.importRoot(QStringLiteral("music")), asciiRoot);
+
+    check(db.setImportDefault(idOf(later)), "folders: marking a default is accepted");
+    eq("folders: the folder the user marked is where downloads go",
+       db.importRoot(QStringLiteral("music")), later);
+
+    int marked = 0;
+    for (const WatchFolder &f : db.watchFolders())
+        if (f.importDefault)
+            marked++;
+    check(marked == 1,
+          "folders: exactly one row reports itself the default, so the list cannot "
+          "show two");
+
+    const QString shots = scratch.path() + QStringLiteral("/photos");
+    db.addWatchFolder(shots, QStringLiteral("photos"));
+    check(db.setImportDefault(idOf(shots)),
+          "folders: a photo folder can be marked the default");
+    eq("folders: a photo default is the photo import root",
+       db.importRoot(QStringLiteral("photos")), shots);
+    eq("folders: and never the music one -- the type still decides what competes",
+       db.importRoot(QStringLiteral("music")), later);
+
+    // Per kind, because there is one destination per kind. Marking the photos
+    // folder may not move the music one: a library is allowed to hold a mark
+    // for each kind at once, and the Settings list renders both as the default.
+    int markedNow = 0;
+    for (const WatchFolder &f : db.watchFolders())
+        if (f.importDefault)
+            markedNow++;
+    check(markedNow == 2,
+          "folders: a photo default and a music default coexist, so choosing "
+          "one never moves the other");
+
+    const QString everything = scratch.path() + QStringLiteral("/everything");
+    db.addWatchFolder(everything, QStringLiteral("all"));
+    eq("folders: a folder typed all serves a kind nothing else covers",
+       db.importRoot(QStringLiteral("video")), everything);
+    eq("folders: a marked folder still beats an unmarked folder typed all",
+       db.importRoot(QStringLiteral("music")), later);
+
+    check(db.removeWatchFolder(idOf(later)), "folders: releasing the default");
+    eq("folders: with the default gone the first remaining folder of that kind takes over",
+       db.importRoot(QStringLiteral("music")), asciiRoot);
+
+    // The row flags are what Settings renders as a status instead of a button.
+    bool flagsAgree = true;
+    for (const WatchFolder &f : db.watchFolders())
+        flagsAgree &= f.importDefault == (f.path == shots);
+    check(flagsAgree, "folders: watchFolders() reports which row holds the mark");
+
+    printf("folders self-test: %s (%d failures)\n",
+           failed == 0 ? "ALL PASS" : "FAILED", failed);
+    return failed ? 1 : 0;
+}
+
 static int runCoverSelfTest() {
     int failed = 0;
     const auto check = [&failed](bool ok, const char *what) {
@@ -1273,8 +1554,12 @@ int main(int argc, char **argv) {
         return runPathsSelfTest();
     if (mode == QLatin1String("net"))
         return runNetworkSelfTest();
+    if (mode == QLatin1String("vanish"))
+        return runVanishSelfTest();
     if (mode == QLatin1String("cover"))
         return runCoverSelfTest();
+    if (mode == QLatin1String("folders"))
+        return runFoldersSelfTest();
 
     const bool videoMode = mode == QLatin1String("videoscan");
     const bool photoMode = mode == QLatin1String("photoscan");
@@ -1283,13 +1568,16 @@ int main(int argc, char **argv) {
         fprintf(stderr,
                 "librarytool — library core gate\n"
                 "  librarytool scan <folder> <tmpdb>\n"
-                "  librarytool videoscan <folder> <tmpdb> [movies|tv|anime]\n"
+                "  librarytool videoscan <folder> <tmpdb> [type: tv (default), movies,\n"
+                "      anime, or any watch-folder type the scan should force]\n"
                 "  librarytool photoscan <folder> <tmpdb>\n"
                 "  librarytool names\n"
                 "  librarytool customize\n"
                 "  librarytool paths\n"
                 "  librarytool net\n"
-                "  librarytool cover\n");
+                "  librarytool cover\n"
+                "  librarytool vanish\n"
+                "  librarytool folders\n");
         return 2;
     }
     const QString folder = arguments.at(2);

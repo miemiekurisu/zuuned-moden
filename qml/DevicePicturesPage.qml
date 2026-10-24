@@ -98,12 +98,9 @@ Item {
                 root.pendingSaves--
             toastHost.show(ok ? "saved " + filename + " to library"
                               : "failed to save " + filename)
-            // Last one in: make the imports folder a scanned photo
-            // source so downloads appear in the library immediately
-            // (the videos page's pattern).
-            if (root.pendingSaves === 0 && ok)
-                LibraryService.addWatchFolder(DeviceService.photoImportsDir(),
-                                              "photos")
+            // Nothing left to register: photoImportsDir() is a watch folder by
+            // the time a file is written into it, and retyping it here would
+            // overwrite the type the user chose for their own folder.
         }
     }
     function saveOne(p, subdir) {

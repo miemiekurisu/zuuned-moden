@@ -5,6 +5,7 @@
 #include "DevicePlaylistState.h"
 #include "UsbWatcher.h"
 #include "UdevSetup.h"
+#include "LibraryService.h"
 #include "library/LibraryPaths.h"
 #include "library/MusicIdentity.h"
 #include "library/VideoIdentity.h"
@@ -784,8 +785,9 @@ void DeviceService::renameDevice(const QString &newName) {
 }
 
 QString DeviceService::importsDir() {
-    return QStandardPaths::writableLocation(QStandardPaths::MoviesLocation)
-        + QStringLiteral("/Zuuned Imports");
+    return m_library
+        ? m_library->ensureImportRoot(QStringLiteral("video"))
+        : QString();
 }
 
 void DeviceService::saveVideoToLibrary(quint32 itemId, const QString &filename,
@@ -793,6 +795,11 @@ void DeviceService::saveVideoToLibrary(quint32 itemId, const QString &filename,
     if (!m_connected || itemId == 0)
         return;
     QString dir = importsDir();
+    if (dir.isEmpty()) {
+        fprintf(stderr, "[device] nowhere to save a video -- no library\n");
+        emit videoSaved(filename, false);
+        return;
+    }
     if (!subdir.isEmpty()) {
         dir += QLatin1Char('/')
             + LibraryPaths::safeComponent(subdir,
@@ -811,13 +818,15 @@ void DeviceService::saveVideoToLibrary(quint32 itemId, const QString &filename,
 }
 
 QString DeviceService::photoImportsDir() {
-    return QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)
-        + QStringLiteral("/Zuuned Imports");
+    return m_library
+        ? m_library->ensureImportRoot(QStringLiteral("photos"))
+        : QString();
 }
 
 QString DeviceService::musicImportsDir() {
-    return QStandardPaths::writableLocation(QStandardPaths::MusicLocation)
-        + QStringLiteral("/Zuuned Imports");
+    return m_library
+        ? m_library->ensureImportRoot(QStringLiteral("music"))
+        : QString();
 }
 
 void DeviceService::savePhotoToLibrary(quint32 itemId, const QString &filename,
@@ -825,6 +834,11 @@ void DeviceService::savePhotoToLibrary(quint32 itemId, const QString &filename,
     if (!m_connected || itemId == 0)
         return;
     QString dir = photoImportsDir();
+    if (dir.isEmpty()) {
+        fprintf(stderr, "[device] nowhere to save a photo -- no library\n");
+        emit photoSaved(filename, false);
+        return;
+    }
     if (!subdir.isEmpty()) {
         dir += QLatin1Char('/')
             + LibraryPaths::safeComponent(subdir,
@@ -850,6 +864,11 @@ void DeviceService::saveTrackToLibrary(quint32 itemId, const QString &filename,
     const QString knownArtist = MusicIdentity::deviceArtist(artist);
     const QString knownAlbum = MusicIdentity::deviceAlbum(album);
     QString dir = musicImportsDir();
+    if (dir.isEmpty()) {
+        fprintf(stderr, "[device] nowhere to save a track -- no library\n");
+        emit trackSaved(filename, false);
+        return;
+    }
     for (const QString &part : {knownArtist, knownAlbum}) {
         if (part.isEmpty())
             continue;

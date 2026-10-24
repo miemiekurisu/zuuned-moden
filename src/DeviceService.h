@@ -16,6 +16,7 @@
 #include "library/MusicIdentity.h"
 
 class UsbWatcher;
+class LibraryService;
 
 // UI-thread facade over DeviceWorker — the AppState/MTPService pair of
 // this app. Holds reactive state for QML; every libzune call happens on
@@ -125,6 +126,9 @@ public:
     bool connected() const { return m_connected; }
     bool busy() const { return m_busy || m_spokenMediaLoading || m_purging; }
     void setSyncActive(bool active);
+    // A pull needs somewhere to write, and that is the library's answer, not
+    // a path this class remembers: see importsDir() and its two siblings.
+    void setLibraryService(LibraryService *library) { m_library = library; }
     bool devicePresent() const { return m_devicePresent; }
     bool udevRuleOk() const;
     QString udevInstallCommand() const;
@@ -271,23 +275,28 @@ public:
     // Sync engine callback: a video just landed on the device — keeps
     // videosList (browse page + on-device badges) fresh mid-session.
     void noteSyncedVideo(const QVariantMap &video);
-    // Save a device video into ~/Videos/Zuuned Imports[/subdir]/ (mac's
-    // Save to Library). Sequential on the device thread; videoSaved
-    // fires per item. QML follows up by adding the imports folder as a
-    // watch folder + rescanning.
+    // Save a device video into the library's video import root[/subdir]/
+    // (mac's Save to Library). Sequential on the device thread; videoSaved
+    // fires per item. The root is already a scanned folder, so nothing has to
+    // be registered after the fact.
     Q_INVOKABLE void saveVideoToLibrary(quint32 itemId, const QString &filename,
                                         const QString &subdir = QString());
-    Q_INVOKABLE static QString importsDir();
+    // The three roots below are the library's, not constants: the folder the
+    // user made the default for that kind, else the first folder they added
+    // that the scanner reads that kind from, else ~/Videos|Pictures|Music/
+    // Zuuned Imports -- which LibraryService registers as a watch folder on
+    // the way out, so an import is never written where nothing looks.
+    Q_INVOKABLE QString importsDir();
     // ── Phase 8: photos + music downloads (parity with videos) ──
-    // Save a device photo into ~/Pictures/Zuuned Imports[/subdir]/.
+    // Save a device photo into the photo import root[/subdir]/.
     Q_INVOKABLE void savePhotoToLibrary(quint32 itemId, const QString &filename,
                                         const QString &subdir = QString());
-    Q_INVOKABLE static QString photoImportsDir();
-    // Save a device track into ~/Music/Zuuned Imports/Artist/Album/.
+    Q_INVOKABLE QString photoImportsDir();
+    // Save a device track into the music import root/Artist/Album/.
     Q_INVOKABLE void saveTrackToLibrary(quint32 itemId, const QString &filename,
                                         const QString &artist = QString(),
                                         const QString &album = QString());
-    Q_INVOKABLE static QString musicImportsDir();
+    Q_INVOKABLE QString musicImportsDir();
     // Gallery full-res resolver: extract to the cache dir (skips USB if
     // cached); photoFullReady fires with a file:// url.
     Q_INVOKABLE void requestPhotoFull(quint32 itemId);
@@ -448,6 +457,7 @@ private:
     void prunePodcastDeviceStatus(const QSet<quint32> &ids);
     bool m_spokenMediaLoading = false, m_spokenRequested = false, m_spokenReadDeferred = false;
     bool m_syncActive = false;
+    LibraryService *m_library = nullptr;   // import roots; not owned
     QString m_spokenMediaError;
     quint64 m_spokenGeneration = 1, m_spokenRequest = 0;
     QString m_spokenArtSession;

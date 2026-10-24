@@ -74,6 +74,30 @@ Item {
         return list.filter(r => root.letterOf(r[key]) === letterFilter)
     }
 
+    // The visible field and the filter it drives are two pieces of state, and
+    // resetting only the property leaves the box showing a word the model has
+    // already stopped honouring: assigning the value searchText already holds
+    // emits nothing, so the Connections backstop never runs and the stale word
+    // stays on screen over an unfiltered wall. Every reset clears both.
+    function clearSearch() {
+        searchField.text = ""
+        searchText = ""
+    }
+
+    // An active A-Z letter is a filter that leaves no trace of itself, and a
+    // wall that drops to one tile with nothing on screen to click reads as
+    // lost artwork. Name it, and make that name the way out. The Songs table
+    // filters on the page; the artists and albums galleries filter themselves.
+    readonly property string activeLetter:
+        letterFilter !== "" ? letterFilter
+        : artistsGallery.letterFilter !== "" ? artistsGallery.letterFilter
+                                            : albumsGallery.letterFilter
+    function clearLetterFilter() {
+        letterFilter = ""
+        artistsGallery.letterFilter = ""
+        albumsGallery.letterFilter = ""
+    }
+
     readonly property var drill: navStack.length > 0 ? navStack[navStack.length - 1] : null
 
     // QA harness (`--music-pivot Albums`): a gate or a screenshot has to reach a
@@ -110,23 +134,23 @@ Item {
     function openPivot(name) {
         pivots.current = name
         navStack = []
-        searchText = ""
+        clearSearch()
     }
 
     function pushDrill(d) {
         navStack = navStack.concat([d])
-        searchText = ""
+        clearSearch()
     }
     function openAlbum(album) {
         root.pushDrill({ kind: "album", name: album.name, artist: album.artist })
     }
     function popDrill() {
         navStack = navStack.slice(0, -1)
-        searchText = ""
+        clearSearch()
     }
     function popTo(depth) {
         navStack = navStack.slice(0, depth)
-        searchText = ""
+        clearSearch()
     }
 
     // ── Groupings (MusicBrowserModel / MusicGroupings) ──
@@ -458,10 +482,8 @@ Item {
                 // Tapping a pivot from a detail page pops to that root.
                 onCurrentChanged: {
                     root.navStack = []
-                    root.searchText = ""
-                    root.letterFilter = ""
-                    artistsGallery.letterFilter = ""
-                    albumsGallery.letterFilter = ""
+                    root.clearSearch()
+                    root.clearLetterFilter()
                 }
             }
 
@@ -532,6 +554,34 @@ Item {
                                     searchField.text = root.searchText
                             }
                         }
+                    }
+                }
+                // Nothing else on screen admits that a letter is filtering:
+                // the header still counts the whole library, so the wall just
+                // seems to have lost albums and their covers. One underlined
+                // line both explains the shrink and undoes it.
+                Item {
+                    Layout.alignment: Qt.AlignRight
+                    visible: root.navStack.length === 0 && root.activeLetter !== ""
+                    Layout.preferredWidth: filterChip.implicitWidth
+                    Layout.preferredHeight: filterChip.implicitHeight
+                    Text {
+                        id: filterChip
+                        anchors.fill: parent
+                        text: "shows " + root.activeLetter.toUpperCase()
+                              + " only - show all"
+                        font.pixelSize: 11
+                        font.underline: true
+                        color: filterChipArea.containsMouse
+                                ? Theme.activePink : Theme.textDim
+                    }
+                    MouseArea {
+                        id: filterChipArea
+                        anchors.fill: parent
+                        anchors.margins: -4
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.clearLetterFilter()
                     }
                 }
                 Text {

@@ -636,7 +636,9 @@ Item {
 
                     Sblk {
                         title: "Watch folders"
-                        desc: "where zuuned scans — music · movies · tv · anime · other · photos"
+                        desc: "where zuuned scans — music · movies · tv · anime · other · photos. "
+                              + "Downloads off a Zune land in the default folder for that media; "
+                              + "without one, the first folder added is the default."
 
                         // D2: health strip — only FAILING checks appear.
                         Repeater {
@@ -772,6 +774,27 @@ Item {
                                             }
                                         }
 
+                                        // One folder per kind receives a
+                                        // download. It is the one marked
+                                        // here, and until the user marks one
+                                        // it is the earliest added folder of
+                                        // that kind — which is a fact about
+                                        // the row, so it reads as a status and
+                                        // not as a button.
+                                        Text {
+                                            visible: wfRow.modelData.importDefault === true
+                                            Layout.alignment: Qt.AlignVCenter
+                                            text: "default"
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                            color: Theme.pink
+                                        }
+                                        GlassButton {
+                                            visible: wfRow.modelData.importDefault !== true
+                                            small: true
+                                            text: "default"
+                                            onClicked: LibraryService.setImportDefault(wfRow.modelData.id)
+                                        }
                                         GlassButton {
                                             small: true
                                             text: "type"
@@ -916,7 +939,7 @@ Item {
 
                     Sblk {
                         title: "Music artwork"
-                                                desc: "Covers are read from your own files first: an embedded picture or a folder image never needs the network, and art you already have is never replaced. An album that stays blank can ask a music store for its cover, which is on by default. Portraits and tag lookups go to MusicBrainz and stay off until you ask."
+                                                desc: "Covers are read from your own files first: an embedded picture or a folder image never needs the network, and art you already have is never replaced. An album that stays blank can ask a music store for its cover - its right-click menu does that for one album, this switch lets the library do it for every blank one, and it starts off. Portraits and tag lookups go to MusicBrainz and stay off until you ask."
                         RowLayout {
                             spacing: Theme.spaceSm
                             SpokenCheckBox {
@@ -1504,6 +1527,25 @@ Item {
                             label: "USB rule installed"
                             value: DeviceService.udevRuleOk ? "installed" : "missing or outdated"
                             dot: DeviceService.udevRuleOk ? Theme.green : Theme.warning
+                        }
+                        // Files a folder holds that its declared type will not
+                        // index. The scan counted them once per root and the
+                        // point of showing them is the setting that fixes it:
+                        // a Videos page with one of five videos in it is
+                        // otherwise indistinguishable from a Videos page with
+                        // the wrong folder in it.
+                        Repeater {
+                            model: LibraryService.mediaTypeNotes
+                            delegate: StatRow {
+                                required property var modelData
+                                label: ZPathText.display(modelData.folder)
+                                value: (modelData.videos > 0 ? modelData.videos + " video " : "")
+                                     + (modelData.photos > 0 ? modelData.photos + " photo " : "")
+                                     + (modelData.audio > 0 ? modelData.audio + " audio " : "")
+                                     + "held — type \"" + modelData.type + "\" skips them"
+                                valueColor: Theme.warning
+                                dot: Theme.warning
+                            }
                         }
                         StatRow {
                             label: "Zune connected"

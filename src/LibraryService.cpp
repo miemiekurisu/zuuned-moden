@@ -95,8 +95,8 @@ LibraryService::LibraryService(QObject *parent) : QObject(parent) {
                 // Local sources are exhausted at this point, so this is the
                 // only place an album lookup could leave the machine. It does
                 // so for an album the user asked about (retryArtwork /
-                // retryMissingArtwork marks its key) or because asking about
-                // covers is on by default - never because a scan finished, and
+                // retryMissingArtwork marks its key) or because they turned
+                // the store lookup on - never because a scan finished, and
                 // never for a portrait.
                 const bool asked = albumCoverLookupEnabled() || onlineMetadataLookupEnabled()
                     || m_forceArtworkRetry.contains(QStringLiteral("album")
@@ -132,6 +132,13 @@ LibraryService::LibraryService(QObject *parent) : QObject(parent) {
     connect(&m_scanThread, &QThread::finished, m_scanner, &QObject::deleteLater);
     connect(m_scanner, &LibraryScanner::musicProbeFailuresChanged,
             this, &LibraryService::musicProbeFailuresChanged);
+    // The census arrives from the scan thread once per pass, including an empty
+    // one, so a folder the user just retyped stops being reported.
+    connect(m_scanner, &LibraryScanner::mediaTypeNotes, this,
+            [this](const QVariantList &notes) {
+        m_mediaTypeNotes = notes;
+        emit mediaTypeNotesChanged();
+    });
 
     connect(m_scanner, &LibraryScanner::progress, this,
             [this](const QString &stage, int current, int total,
@@ -332,7 +339,13 @@ bool LibraryService::onlineMetadataLookupEnabled() const {
 }
 
 bool LibraryService::albumCoverLookupEnabled() const {
-    return QSettings().value(QStringLiteral("albumCoverLookup"), true).toBool();
+    // Ships off. A library whose files carry their own art has no reason to ask
+    // anybody anything, and a store lookup that comes back empty leaves every
+    // artless album card saying "Needs a match" - which reads as work still
+    // pending, not as "these files have no cover and nobody asked". Asking is
+    // the user's call: an album's right-click menu and Settings -> Library
+    // "find missing artwork" both mark their own keys and bypass this.
+    return QSettings().value(QStringLiteral("albumCoverLookup"), false).toBool();
 }
 
 namespace {
@@ -872,6 +885,73 @@ void LibraryService::setWatchFolderType(double id, const QString &type) {
     rescan();
 }
 
+namespace {
+// Where a kind of media goes when the library has no folder for it, and the
+// type that folder gets registered as.  These three spellings are the ones the
+// device pages have written since the port began, so a library that never
+// chose a default imports exactly where it always did -- the difference is
+// that the folder is now a scanned root on the way in, not an afterthought.
+struct FallbackImport {
+    const char *kind;
+    QStandardPaths::StandardLocation location;
+    const char *type;
+};
+const FallbackImport kFallbackImports[] = {
+    { "music", QStandardPaths::MusicLocation, "music" },
+    { "photos", QStandardPaths::PicturesLocation, "photos" },
+    { "video", QStandardPaths::MoviesLocation, "all" },
+};
+} // namespace
+
+QString LibraryService::importRoot(const QString &kind) const {
+    if (!m_db)
+        return QString();
+    // Canonical on the way out: the row's own spelling is what the scanner
+    // matches prefixes against, and a device import has to land on bytes the
+    // walk will recognise as inside that root.
+    return PathText::canonical(m_db->importRoot(kind));
+}
+
+QString LibraryService::ensureImportRoot(const QString &kind) {
+    const QString chosen = importRoot(kind);
+    if (!chosen.isEmpty())
+        return chosen;
+    for (const FallbackImport &f : kFallbackImports) {
+        if (kind != QLatin1String(f.kind))
+            continue;
+        const QString dir = QStandardPaths::writableLocation(f.location)
+            + QStringLiteral("/Zuuned Imports");
+        QDir().mkpath(dir);   // registering an absent root reads as a failure
+        fprintf(stderr,
+                "[library] no \"%s\" watch folder to import into -- using %s\n",
+                qUtf8Printable(kind), qUtf8Printable(dir));
+        addWatchFolder(dir, QString::fromLatin1(f.type));   // canonical + rescan
+        return PathText::canonical(dir);
+    }
+    return QString();
+}
+
+void LibraryService::setImportDefault(double id) {
+    const qint64 folder = qint64(id);
+    QString path;
+    for (const QVariant &fv : std::as_const(m_watchFolders)) {
+        const QVariantMap m = fv.toMap();
+        if (qint64(m.value(QStringLiteral("id")).toDouble()) == folder) {
+            path = m.value(QStringLiteral("path")).toString();
+            break;
+        }
+    }
+    if (path.isEmpty())
+        return;     // an id the library does not have changes nothing
+    if (!m_db->setImportDefault(folder))
+        return;
+    reloadFolders();
+    // No rescan: nothing about what the folders contain changed, only about
+    // where the next download is written.
+    fprintf(stderr, "[library] downloads now land in '%s'\n",
+            qUtf8Printable(path));
+}
+
 QVariantMap LibraryService::folderCounts(const QString &path) const {
     int tracks = 0, videos = 0, photos = 0;
     if (m_db)
@@ -1142,6 +1222,29 @@ QVariantList LibraryService::musicProbeFailures() const {
 
 void LibraryService::reloadFolders() {
     m_watchFolders.clear();
+    // What a row shows as its status is "downloads land here", not "somebody
+    // clicked this row": one destination per kind, and until the user chooses
+    // one the destination is that kind's earliest folder.  Asking importRoot()
+    // per kind -- instead of reading the mark off the row -- is what lets a
+    // photo default and a music default both read as the default, and keeps
+    // the label honest when the marked folder was removed and the rule fell
+    // back on its own.
+    const QString musicRoot = importRoot(QStringLiteral("music"));
+    const QString photoRoot = importRoot(QStringLiteral("photos"));
+    const QString videoRoot = importRoot(QStringLiteral("video"));
+    const auto destinations = [&musicRoot, &photoRoot, &videoRoot](
+                                  const QString &type) {
+        if (type == QLatin1String("music"))
+            return QStringList{musicRoot};
+        if (type == QLatin1String("photos"))
+            return QStringList{photoRoot};
+        if (type == QLatin1String("movies") || type == QLatin1String("tv")
+            || type == QLatin1String("anime"))
+            return QStringList{videoRoot};
+        if (type == QLatin1String("all"))
+            return QStringList{musicRoot, photoRoot, videoRoot};
+        return QStringList();
+    };
     for (const WatchFolder &f : m_db->watchFolders()) {
         // canonical() on the way out too, not only on the way in: a row written
         // by an older build still gets one identity, so its media can be
@@ -1152,6 +1255,7 @@ void LibraryService::reloadFolders() {
             {"path", stored},
             {"displayPath", PathText::display(stored)},
             {"type", f.type},
+            {"importDefault", destinations(f.type).contains(stored)},
         });
     }
     emit foldersChanged();

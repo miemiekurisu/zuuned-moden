@@ -1373,7 +1373,7 @@ to its artist tile.
 **What the fix then exposed.**  Nine of this machine's thirteen albums have no picture in a file,
 in a folder, or in a store: they are the sine-wave fixtures the scan gates generate, and they stay
 blank because blank is the truth.  For an album a store *does* carry, ``albumCoverLookup`` - a
-switch of its own, and unlike ``autoMetadataLookup`` it ships **on** - walks the
+switch of its own, and since October 24, 2026 it ships **off**, exactly like ``autoMetadataLookup`` - walks the
 ``us, jp, tw, hk, gb, de`` catalogues, accepts only an exact normalised artist+album match
 (earliest release date, then smallest id), and keeps only an ``https`` URL on ``*.mzstatic.com``,
 rewriting the ``/NNNxNNNbb.jpg`` size token to ``600x600``.  MusicBrainz stays behind
@@ -1422,6 +1422,113 @@ isolates its artwork cache with ``qputenv("XDG_CACHE_HOME")``, which the Windows
 ignore - so five of its ``device-album-art`` checks fail here.  Those five were reproduced against
 a scratch build of HEAD's own ``AlbumArtService.cpp`` and came back identical, so they are a
 Linux-only gate with no Windows verdict in them, not something this pass broke.
+
+## The twentieth pass: where a download is allowed to land, and a folder that could not
+count itself (2026-10-24)
+
+The complaint was about the library rather than the player: a music library is one thing, and a song
+pulled off a Zune was not appearing in it.  It was appearing *beside* it.  Three ``static`` helpers
+in ``DeviceService`` returned a ``QStandardPaths`` location plus ``Zuuned Imports`` - behaviour
+inherited from the Linux line and never questioned there either - so a pull landed in a folder the
+application had invented and the user had never added, next to the folders they had.  What was asked
+for came with the rule the app had never held: when several folders hold the same kind of media, one
+of them is the default; a folder that is not the default gets a ``default`` button on the same line
+as ``type`` and ``remove``; the folder that *is* the default says so as a status rather than as a
+button; and until anybody clicks, the folder added first is the default.  That last clause is why
+the feature needs no setup.  The first music folder added on this machine is
+``E:\Temp\testmusic\测试音乐``, and a download went there with nobody choosing anything.
+
+**Three constants became one question.**  ``musicImportsDir()``, ``photoImportsDir()`` and
+``importsDir()`` are members now and answer ``LibraryService::ensureImportRoot(kind)`` for
+``music`` / ``photos`` / ``video``, wired by ``device->setLibraryService(library)`` in
+``src/main.cpp``.  The fallback keeps its old spelling for a library that holds no folder of that
+kind, and registers it as a watch folder *before* the first byte is written, so the one case where
+the app still invents a folder invents a scanned one - ``musicImportsReady`` calls
+``ensureImportRoot("music")`` for the same reason.  What had to go was the other half of the old
+design: the videos page ended a save with ``addWatchFolder(importsDir(), "all")`` and the photos
+page with ``"photos"``, which existed only because the alternative was a file nothing indexed.  Once
+a download may land in a folder the user added, that line would silently retype their declaration,
+so all three call sites are gone and the pages say why in a comment.
+
+**Schema v10, and one query that answers both halves.**  ``watch_folders.import_default`` arrives at
+``kSchemaVersion`` 10 with a v9 ``PRAGMA table_info`` probe for a database that already carries it.
+``LibraryDb::importRoot(kind)`` is a single statement - ``SELECT path FROM watch_folders WHERE type
+IN (<qualifying types>) ORDER BY import_default DESC, id ASC LIMIT 1`` - so "the marked folder wins,
+else the earliest added" is one read rather than two rules that can disagree.  The kind-to-type sets
+(``music`` -> ``music, all``; ``photos`` -> ``photos, all``; ``video`` -> ``movies, tv, anime, all``)
+restate ``LibraryScanner``'s root rule deliberately, and they have to agree: a file written into a
+folder no walk visits is one the library owns, that occupies disk and that can never be browsed.
+``setImportDefault(id)`` clears only the rows that compete for *that* kind - same type, plus any
+folder typed ``all``, which competes for everything - so a photo default and a music default
+coexist and choosing one never moves the other.  ``reloadFolders()`` then reports ``importDefault``
+as "this row is what ``importRoot()`` returns for a kind my type serves" instead of echoing the
+stored column, which is what keeps the status honest after the marked folder is removed and the rule
+falls back on its own.
+
+**One pull, measured, into the folder that is the default because it was added first.**  Session
+``zuuned-20261024T021257990Z-109328-d7b12c2a-0000.log``: the player answered 168 tracks and 5
+photos, the probe printed ``download-into E:/Temp/testmusic/测试音乐``, ``[worker] extracting track
+16777453`` named ``.../Anri/Bi・Ki・Ni/Good Bye Boogie Dance.mp3`` at 02:13:10.749 and
+``download-saved name='Good Bye Boogie Dance.mp3' ok=true`` at 02:13:13.459 - **2.71 s for the
+34,379,623 bytes** that are now on disk there, roughly 12 MB/s.  Five seconds later
+``folder change detected - incremental rescan`` ran and ``verified music copies`` went from
+``25 source rows`` to ``26``; the wall stayed at 15 displayed songs because the pull is a second
+copy of a song the library already displayed, which is the identity dedup answering and not a row
+lost.  That the destination is a Chinese path is a fact about this library and no longer a hazard -
+see the two faults below.  **One number in that log line does not mean what it looks like**:
+``readbackDurationMs=272093`` is the *track's audio duration*, 4 min 32 s, printed from
+``row.durationMs`` in ``qml/Main.qml``; the same field carried ``8000`` for the eight-second sine
+fixture, which is what proves it.  Quote durations as durations.
+
+**A folder that could not count itself, or let go.**  ``LibraryDb::purgeFolder()`` and
+``countsUnder()`` bound a path prefix inside ``substr()`` with a width taken from
+``QByteArray::size()``, and SQLite indexes TEXT by **character**.  A Han character is three UTF-8
+bytes, so for a Chinese folder the window came out wider than the string, ``substr(filepath,1,plen)``
+returned the prefix plus six more characters, could never equal it, and every "beneath this folder"
+test failed.  Settings read ``0 photos`` beside a folder holding five, and releasing that folder
+logged ``purged 0 items`` while keeping every row it owned.  Both now take the width from
+``QString::size()``.  An ASCII path has the same count either way, which is how this survived every
+gate ever written for it; and the rule is SQLite's, not Windows', so the whole account is in
+``WINDOWS_COMPAT_AUDIT.md``, thirteenth sweep.  ``librarytool folders`` is 20 checks and is the
+first place either half was ever pinned.
+
+**Two ways a folder's declared type used to be silently wrong.**  ``isSkippedVideoFile()`` applied
+its 50 MB floor to every type that is not ``tv`` or ``anime``, so a folder typed ``all`` - the
+answer when one mixed folder is pointed at the app - discarded every clip under 50 MB; the floor is
+``movies``-only now and every other type keeps the 5 MB one.  And the walk hands every file under a
+root to the visitor and then discards the kinds that root was not typed for, which is why a mixed
+folder typed ``music`` produced an empty Videos page, an empty Photos page, and no word about
+either.  ``LibraryScanner`` now keeps one counter per excluded kind inside the walk that is already
+running and reports once per root - ``mediaTypeNotes`` to Settings -> Device as warning rows naming
+the setting to change, and one log line reading ``[scan] <root> holds N video file(s) that the type
+"x" will not index - Settings > Library > treat as "all"``.  Coded, compiled, and **not sighted**:
+the last twelve session logs on this machine contain no such line, because every root here is typed
+to match what is in it.  It is a diagnostic with no capture, and it stays that way until somebody
+mistypes a folder on purpose.
+
+**Two fixture faults found by writing the gate, not by running the app.**  The import-root checks
+first shared the database the counting checks had already filled, where the Chinese-named folder was
+the earliest music root and so answered every ordering question the import root was being tested on;
+it gets its own ``roots.db`` now.  And rewinding the legacy ``customize`` fixture for v10 the obvious
+way - one more ``DROP COLUMN`` in the list that rewinds v6 - fails as ``duplicate column name:
+discnumber``, because that column is in the ``CREATE TABLE`` the fixture writes *and* the subject of
+migration 6, so an era must be dropped in full.  Both read as ``LibraryDb`` being broken and neither
+was.
+
+**Gates, and a harness trap worth a paragraph.**  On the relinked build ``tests\win-compat`` answers
+``201 checks, 0 failures, 0 skips`` and ``tests\win-usability``
+``launches=18 checks=129 failures=0 skips=0 killed=0``, ``OVERALL=ok``; ``librarytool folders``
+answers 20 inside the ``tools`` phase beside ``names``, ``paths``, ``vanish``, ``cover`` and
+``customize``, whose label now reads "v0/v2 to v10 migration chain".  The six checks above the
+nineteenth pass's 123 are ``vanish``, ``folders``, the ``wfDefaults`` assertion, two "ships off"
+source invariants and the ``clearSearch()`` invariant.  ``wfDefaults`` matters enough to assert
+through a live launch because the flag is derived per kind in C++ and turned into either a status or
+a button in QML: the seed library holds two music roots and nobody marked either, so exactly one row
+may claim to be the default.  The first run of this pass reported ``launches=3 checks=91
+failures=25 OVERALL=fail`` with every failure at ``-1073741515`` (``0xC0000135``, DLL not found) -
+``zuuned.exe`` starts from the Qt copy beside it, ``librarytool.exe``, ``devicetool.exe`` and
+``playertool.exe`` need ``D:\dev\Qt\6.11.0\msvc2022_64\bin`` on ``PATH``, and it was not.  A gate
+that cannot start its own tools is not an application verdict.
 
 No device claim changes with this pass: still the one hand-tested Pavo Zune HD, still nothing on it
 heard, and the artwork it does supply to the application is a read.

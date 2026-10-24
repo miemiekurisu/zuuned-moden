@@ -72,7 +72,8 @@ QStringList movieQueries(const QString &filepath, const QString &filename);
 bool isSkippedDir(const QString &dirName);
 
 // True for sample/trailer stems or files under the per-folder-type size
-// floor (5MB for tv/anime, 50MB otherwise; minSizeOverrideMB > 0 wins).
+// floor (50MB only where the folder declares itself movies, 5MB for every
+// other type including "all"; minSizeOverrideMB > 0 wins).
 bool isSkippedVideoFile(const QString &filename, qint64 filesize,
                         const QString &folderType, int minSizeOverrideMB);
 

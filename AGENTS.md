@@ -20,8 +20,8 @@ Runtime fixes proven on Windows: `LibraryDb` stages its pre-migration snapshot
 through SQLite's own backup API and publishes it with `QFile::rename`, because a
 live `QTemporaryFile` handle made that rename fail with a sharing violation and
 blocked any library that still needed migrations; the `librarytool customize`
-legacy fixture now rewinds the v6 probe columns, v7 photo-album tables and the
-v9 fingerprint, so the whole v0/v2 to v9 migration chain is exercised there
+legacy fixture now rewinds the v6 probe columns, v7 photo-album tables, the v9
+fingerprint and the v10 import default, so the whole v0/v2 to v10 migration chain is exercised there
 (`ci/check.sh` itself stays Linux-only). `fd_handle()` consults the CRT
 descriptor table before reading a number as an NT handle: Qt opens a `QFile`
 through `_wopen()`, so `QFile::handle()` is a descriptor even though its
@@ -620,7 +620,8 @@ real cover, and `tests/device-music-import/album-art-precedence.cpp` now pins th
 tiles and the player keyed art by the *track* artist, which stops being the album owner at the
 first compilation or featured artist; `localArtOwners()` in `qml/MusicIdentity.js` derives the
 owner per album and `ArtistCard`, `ArtistDetail`, `MusicPage` and `Main` ask for that key with the
-album's own cover as fallback. Album-cover lookup (`albumCoverLookup`, default **on**) and
+album's own cover as fallback. Album-cover lookup (`albumCoverLookup`, default **on** until the
+2026-10-24 import-default pass below ships it **off** alongside the switch beside it) and
 MusicBrainz identity lookup (`autoMetadataLookup`, default **off**, portraits included) are
 separate switches now, so a file that carries its own art still causes no request while an album
 with no local art does get a real cover - and that last clause is what exposed the fourth fault.
@@ -646,6 +647,46 @@ Linux-only gate and not a regression. Gates on the relinked build: `tests\win-co
 `OVERALL=ok`, `librarytool cover` 33 checks including the pacing arithmetic and "one unanswered
 catalogue is enough to learn it". Header-only edits still need `--clean-first` because Ninja's
 `deps = msvc` never matches this machine's localized `/showIncludes`. No device claim changes.
+
+**2026-10-24 Windows import-default pass:** a pull off a Zune no longer lands beside the library.
+Three `static` `DeviceService::*ImportsDir()` helpers returned a `QStandardPaths` location plus
+`Zuuned Imports` whatever the library held, and the device pages finished a save by registering that
+path as a watch folder - so a download could never reach a folder the user added, and the moment one
+could, that same line would silently retype their declaration. `watch_folders.import_default`
+arrives at schema v10; `LibraryDb::importRoot(kind)` answers "the marked one, else the earliest
+added" in one `ORDER BY import_default DESC, id ASC LIMIT 1` read, and the kind-to-type sets restate
+`LibraryScanner`'s root rule on purpose, because a file written into a folder no walk visits is one
+the library owns, occupies disk and can never browse. `setImportDefault(id)` unmarks only the rows
+that compete for the same kind (same type, plus any `all`), so a photo default and a music default
+coexist and choosing one never moves the other; `reloadFolders()` derives a row's `importDefault`
+from what `importRoot()` returns instead of echoing the column, so the label stays honest once the
+marked folder is gone; `ensureImportRoot()` mkpaths and registers `~/Music|Pictures|Videos/Zuuned
+Imports` *before* the first byte when the library holds nothing of that kind, so even the fallback is
+indexed rather than merely written. Measured on the player: destination `E:/Temp/testmusic/测试音乐`,
+the first music folder added and therefore the default with nobody clicking, `[worker] extracting
+track 16777453` to `download-saved ok=true` in 2.71 s for 34,379,623 bytes, `verified music copies`
+25 to 26 source rows while displayed songs stayed at 15 because the pull is a second copy of a song
+the library already showed. `readbackDurationMs` in that same probe line is the track's audio
+duration - 272,093 ms, 4 min 32 s - not a transfer time: `qml/Main.qml` prints `row.durationMs`, and
+the 8000 it carried for the eight-second sine fixture is what proves it. Two faults found on the way
+are not Windows faults at all: `purgeFolder()` and `countsUnder()` bounded `substr()` with
+`QByteArray::size()` while SQLite indexes TEXT by character, so a Chinese-named folder counted 0 of
+everything and releasing it logged `purged 0 items` while keeping every row it owned;
+`QString::size()` at both sites, pinned by the new `librarytool folders` (20 checks, `tools` phase).
+`isSkippedVideoFile()`'s 50 MB floor is `movies`-only now rather than "anything that is not
+tv/anime", so a folder typed `all` keeps a 20 MB clip. `LibraryScanner` also censuses, per root, the
+files its own declared type will not index and reports them as Settings -> Device warning rows plus
+one `[scan] ... will not index` log line - coded and compiled and **not claimed as sighted**, because
+no session log on this machine contains one and every root here is typed to match its contents. The
+usability gate no longer seeds a settings ini at all, so it measures the shipping defaults instead of
+a value it wrote for itself. Gates: `tests\win-compat` 201 checks 0 failures, `tests\win-usability`
+`launches=18 checks=129 failures=0 skips=0 killed=0` `OVERALL=ok` - six above the nineteenth pass,
+from `vanish`, `folders`, the `wfDefaults` assertion (the seed library holds two unmarked music roots,
+so exactly one row may read `default`), two ships-off source invariants and the `clearSearch()`
+invariant. Harness fact worth keeping: the first run was `launches=3 checks=91 failures=25`, every
+failure `0xC0000135`, because Qt's bin was not on `PATH` and the gate's own `librarytool`,
+`devicetool` and `playertool` never started - a gate that cannot launch its own tools is not an
+application verdict. No device claim changes.
 
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow

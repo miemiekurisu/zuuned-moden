@@ -117,9 +117,9 @@ Item {
                 root.pendingSaves--
             toastHost.show(ok ? "saved " + filename + " to library"
                               : "download failed: " + filename)
-            // Last one in: make the imports folder a scanned source.
-            if (root.pendingSaves === 0 && ok)
-                LibraryService.addWatchFolder(DeviceService.importsDir(), "all")
+            // Nothing left to register: importsDir() is a watch folder before
+            // the first byte is written, and retyping it to "all" here would
+            // overwrite the type the user chose for their own folder.
         }
     }
 

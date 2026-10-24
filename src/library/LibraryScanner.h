@@ -10,6 +10,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QVariantList>
 
 #include <functional>
 
@@ -52,6 +53,10 @@ signals:
     void failed(const QString &error);
     // Quiet diagnostics for Settings; failed reads never become fake tracks.
     void musicProbeFailuresChanged();
+    // Files a watch folder demonstrably holds but its declared TYPE will not
+    // let the app index, so an empty Videos page can say why.  Emitted on every
+    // scan, empty when a library hides nothing.
+    void mediaTypeNotes(const QVariantList &notes);
 
 private:
     QString m_dbPath;

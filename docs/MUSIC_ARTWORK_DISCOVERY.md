@@ -7,7 +7,7 @@ software gates, with user acceptance and packaging pending.
 
 Automatic album covers come from local folder images and embedded artwork.
 Missing album covers fall back to music-store lookup after all known local
-sources fail, behind the ``albumCoverLookup`` switch. Customize remains the
+sources fail, behind the ``albumCoverLookup`` switch, which since October 24, 2026 ships off. Customize remains the
 explicit match/artwork chooser. Artist portraits use the online
 identity/artwork providers; MusicBrainz identity lookup
 (``autoMetadataLookup``) ships off, so a portrait is fetched when something
@@ -46,7 +46,7 @@ its own living object still holds, so the verbatim-JPEG path returned false and 
 device-sourced cover never reached the cache - on Windows alone, because POSIX unlinks open files.
 It streams into the destination now.  See `WINDOWS_COMPAT_AUDIT.md`, twelfth sweep.
 
-**Two switches instead of one.**  ``albumCoverLookup`` is the album-cover lookup and ships **on**;
+**Two switches instead of one.**  ``albumCoverLookup`` is the album-cover lookup and ships **off**;
 ``autoMetadataLookup`` is the MusicBrainz identity lookup and ships **off**, artist portraits
 included.  A file that carries its own art still causes no request of any kind, and right-click
 remains how you ask about one album, artist or track.  With the album switch on and every local
@@ -70,6 +70,16 @@ of those thirteen albums have no picture anywhere - they are the fixtures the sc
 and they display blank, which is the correct answer and the one a "found it!" screenshot cannot
 show.  For an album a store does carry, the download is proven end to end: 33,762 bytes published
 into an isolated profile's art cache.
+
+## October 24, 2026 (later): a store asked about nothing, and rows whose music is gone
+
+The nine blank tiles above stopped being a footnote when they became a complaint. On this machine the album wall was thirteen tiles wide, four of them wearing real art, and the measurement in `WINDOWS_PORT.md` was correct: the other nine had no picture to show. What had changed is that they no longer had music either. Eleven test fixtures had been deleted from disk and the library had kept every one of their rows, so the wall painted nine coverless tiles for albums that were on no disk at all - and, with the album switch on, the app queried a store nine times about names nobody had typed, then logged `needsMatch: Unknown Artist / 测试音乐 (Artist and album are required.)` as though the user had. Three things followed.
+
+**A scan retires a row whose file is gone, and only where it may.** `LibraryScanner::scan()` gained a pass beside the one that already clears stale probe failures, and it borrows that pass's whole safety argument: the root must be one a walk read to the end this pass (`WalkOutcome::complete`), the root must still carry the `st_dev`/`st_ino` it had before the walk, the most specific watching root wins, and absence means `ENOENT`/`ENOTDIR` only. A row outside every watch folder is left alone because nothing can say whether its file ought to be there, and a row under a folder that is not mounted is left alone because an offline drive is not an empty one. Rows go; files never do - put one back and the next pass indexes it again with the tags that live inside it. `librarytool vanish` pins all five cases, including that a repeat pass retires nothing further. Measured here, on the library that produced the complaint: `[scan] retired 11 vanished track(s)` on the next launch, thirteen tiles down to four, four covers.
+
+**`albumCoverLookup` ships off.** The switch was justified by an album a store does carry, and it delivered that - 33,762 bytes published into a cache, proven end to end. It was also, unasked, walking six catalogues for every artless album in a library the moment a scan finished, which is what made this repository look as though it had lost its artwork when in fact those rows never had any. The default now matches `autoMetadataLookup`'s: local files answer for local music, and the per-item question is what reaches a provider - right-click `Search Cover Online` on an album, artist or track, the same offer inside Customize, and the explicit find-missing-artwork action in Settings. The pacing, exact-match and URL rules above are untouched and still gated by `librarytool cover`. the usability gate asserts the app's own `online lookup off` line plus the absence of any provider request line, from the shipping defaults rather than from an ini the harness wrote for itself, so the assertion is about the application.
+
+**A filter you can see is a filter you can leave.** Two smaller things came out of the same screenshots. A search box whose text survived a pivot change was a genuine desync: every reset assigned `LibraryService.searchText`, and assigning a value that was already there emits no signal, so the `Connections` backstop never ran and the field read `Watercolour` over an unfiltered wall. All five reset sites now call one `clearSearch()` that empties field and filter together. And the A-Z rail was never broken - `qml/AlphabetRail.qml` toggles, and only offers letters the current view actually has - but a latched letter was invisible the moment your eye left the rail, so the header now reads `shows W only - show all`, underlined and one click from everything. Both halves were clicked through on the live window: `W` leaves one album and names itself, and `show all` returns a wall whose capture is identical to the unfiltered one.
 
 ## October 1, 2026 correction
 

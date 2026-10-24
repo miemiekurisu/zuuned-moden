@@ -98,4 +98,10 @@ struct WatchFolder {
     qint64 id = -1;
     QString path;
     QString type;   // music | movies | tv | anime | photos | all
+    // The one folder media pulled off a Zune lands in, among the rows whose
+    // type fits that media.  Zero means "not chosen", which is not the same as
+    // "never used": LibraryDb::importRoot() falls back to the first folder
+    // added, so a library always has an import root and the user only has to
+    // choose once they disagree with that order.
+    bool importDefault = false;
 };

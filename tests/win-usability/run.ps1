@@ -7,14 +7,15 @@
 # the null driver) and no contact with the real profile, because every launch gets
 # its own ZUUNED_PROFILE_DIR plus its own ZUUNED_LOCK_SUFFIX and the run compares
 # the real profile before and after.  It needs no network to pass, and it does not
-# get there by hoping the defaults are quiet: album cover lookup is ON by default
-# now, so a seeded case writes albumCoverLookup=false and autoMetadataLookup=false
-# into its own settings ini before launching, and the music page case asserts the
-# app's own "online lookup off" line plus that no provider request line appears.
-# Without that ini the gate would send real store traffic on the user's machine
-# and still call itself offline.  (With Settings -> Library switched on a launch
-# whose seeded library lacks covers does reach a provider; that is the user's
-# choice, not the gate's.)
+# get there by hoping the defaults are quiet: both online questions - album cover
+# lookup and artist portrait lookup - ship off, so a seeded case writes no ini at
+# all and the music page case asserts the app's own "online lookup off" line plus
+# that no provider request line appears.  That assertion is therefore about the
+# shipping defaults and not about a value the harness typed in for itself, which
+# is the whole point of it: a gate that silences the app and then measures the
+# silence proves nothing but the gate.  (With Settings -> Library switched on a
+# launch whose seeded library lacks covers does reach a provider; that is the
+# user's choice, not the gate's.)
 #
 # A started process is not proof of anything on Windows: a Qt Quick window can
 # come up with a clean stderr and paint nothing.  So each case ends with a
@@ -458,16 +459,10 @@ function Invoke-Case {
     $profile = if ($ProfileDir) { $ProfileDir } else { Join-Path $profiles $tag }
     New-Item -ItemType Directory -Force -Path $profile | Out-Null
     if ($Seed) {
+        # Deliberately no settings ini.  Both online questions ship off, so an
+        # untouched profile is the honest fixture, and the music page case then
+        # proves the defaults rather than a value written here.
         Copy-Item -LiteralPath (Join-Path $out 'seed-library.db') -Destination (Join-Path $profile 'library.db')
-        # Both online questions get answered "no" here, by the profile and not by
-        # a default: album cover lookup ships switched on, so leaving the ini
-        # absent would have this gate browse a music store on the user's machine
-        # and then assert that it contacted nobody.  The ini is the same file the
-        # Settings page writes, at the path ProfilePaths gives ZUUNED_PROFILE_DIR.
-        $ini = Join-Path $profile 'Zuuned\Zuuned.ini'
-        New-Item -ItemType Directory -Force -Path (Split-Path -LiteralPath $ini) | Out-Null
-        Set-Content -LiteralPath $ini -Encoding ASCII -Value @(
-            '[General]', 'albumCoverLookup=false', 'autoMetadataLookup=false')
     }
     $handle = Start-Zuuned -Profile $profile -Suffix ('wus' + $script:caseSeq) `
         -Arguments (@($Arguments) + @('--qa-probe'))
@@ -783,6 +778,14 @@ if (Select-Phase 'pages') {
                     ($wfStored -eq $wfRows) ('wfStored=' + $wfStored + ' wfRows=' + $wfRows)
                 Check 'the QML display helper and the row it feeds agree' `
                     ($wfLabel -eq '1') ('wfLabel=' + $wfLabel)
+                # Where a download would land, asserted through the running app.
+                # The seed library holds two music roots and nobody marked
+                # either, so exactly one row may read as the default: the label
+                # is derived from where a pull would actually be written, per
+                # kind, not echoed off a stored column the list happens to show.
+                $wfDefaults = Get-QaField $pageCase.QaSplash 'wfDefaults'
+                Check 'exactly one watch folder reports itself the default import folder' `
+                    ($wfDefaults -eq '1') ('wfDefaults=' + $wfDefaults + ' wfRows=' + $wfRows)
                 # Artwork identity, asserted rather than read off a picture.  The
                 # island, a queue row and the media-property report all ask the art
                 # cache for the album's cover; a row that carries a track artist as
@@ -796,7 +799,7 @@ if (Select-Phase 'pages') {
                 Check 'the player asks for album art as the album owner, never the track artist' `
                     ($artKeyOwner -eq '1' -and $artKeyDecoy -eq '1') `
                     ('artKeyOwner=' + $artKeyOwner + ' artKeyDecoy=' + $artKeyDecoy)
-                # Whether any artwork reached the grid at all.  The seeded ini answers
+                # Whether any artwork reached the grid at all.  The shipping defaults answer
                 # both online questions with "no" and the fixture puts one Cover.jpg in
                 # one album folder, so a non-zero count can only be the user's own bytes
                 # extracted into that profile's art cache - the half of album art no
@@ -1071,14 +1074,28 @@ if (Select-Phase 'tools') {
     Check 'librarytool names passes its 17-case naming self-test' `
         ($names.Code -eq 0 -and $names.Out -match 'ALL PASS \(0 failures\)') ('code=' + $names.Code)
     $cust = Invoke-Proc -File $libraryTool -Arguments @('customize') -Timeout 900
-    Check 'librarytool customize runs the v0/v2 to v9 migration chain' `
+    Check 'librarytool customize runs the v0/v2 to v10 migration chain' `
         ($cust.Code -eq 0 -and $cust.Out -match 'ALL PASS \(0 failures\)') ('code=' + $cust.Code)
     # The filename, path-comparison and playlist rules are header-only, so no other
     # part of this gate can see them: they are reached through the tool instead.
     $paths = Invoke-Proc -File $libraryTool -Arguments @('paths') -Timeout 600
     Check 'librarytool paths pins the Windows filename and playlist rules' `
         ($paths.Code -eq 0 -and $paths.Out -match 'ALL PASS \(0 failures\)') ('code=' + $paths.Code)
-    # Album cover lookup is on by default, so the rule that decides what it sends
+    # Retirement is the one scan behaviour that can wreck a library on its own,
+    # and the case that matters most - a folder that is not mounted, a row nobody
+    # owns - is one no GUI launch can produce on purpose.  It is reached through
+    # the tool for that reason.
+    $vanish = Invoke-Proc -File $libraryTool -Arguments @('vanish') -Timeout 600
+    Check 'librarytool retires only rows whose absence a completed walk certified' `
+        ($vanish.Code -eq 0 -and $vanish.Out -match 'ALL PASS \(0 failures\)') ('code=' + $vanish.Code)
+    # Which folder receives a download, and which rows a folder owns, are two rules
+    # no GUI launch can be pointed at on purpose: the first is one click whose result
+    # is a file on a disk nobody is allowed to write to during a gate, and the second
+    # needs a folder named in a script this harness cannot pass through a file dialog.
+    $folders = Invoke-Proc -File $libraryTool -Arguments @('folders') -Timeout 600
+    Check 'librarytool folders pins the import default and the non-ASCII folder prefix' `
+        ($folders.Code -eq 0 -and $folders.Out -match 'ALL PASS \(0 failures\)') ('code=' + $folders.Code)
+    # Album cover lookup ships off, so the rule that decides what a lookup sends
     # and what it is allowed to download is worth more than a screenshot.  The
     # self-test injects its transport and its cache directory and never opens a
     # socket: what it proves is the catalogue ladder, the exact-name rule and the
@@ -1164,6 +1181,30 @@ if (Select-Phase 'tools') {
         } | ForEach-Object { $_.FullName.Substring($root.Length + 1) })
     Check 'no source file builds a profile folder out of a string' `
         ($spellers.Count -eq 0) ('found=' + ($spellers -join ','))
+    # Two invariants that no launch can see, pinned where they are written.
+    # Both online questions have to ship off or a library of files that already
+    # carry their own art spends every launch asking strangers about covers it
+    # does not need, and every artless album then reads "Needs a match" instead
+    # of the truth.  A seeded case that writes its own ini would hide a flipped
+    # default completely, which is exactly how this one stayed on.
+    $lookupText = [IO.File]::ReadAllText((Join-Path $root 'src\LibraryService.cpp'))
+    Check 'album cover lookup ships off, so asking a store stays the user call' `
+        ($lookupText.Contains('QSettings().value(QStringLiteral("albumCoverLookup"), false)') -and
+         -not $lookupText.Contains('QSettings().value(QStringLiteral("albumCoverLookup"), true)')) `
+        'src/LibraryService.cpp albumCoverLookupEnabled'
+    Check 'artist portrait and tag lookup ships off' `
+        ($lookupText.Contains('QSettings().value(QStringLiteral("autoMetadataLookup"), false)')) `
+        'src/LibraryService.cpp onlineMetadataLookupEnabled'
+    # The search field and the filter it drives are two states, and a reset that
+    # touches only the property leaves the box showing a word the model stopped
+    # honouring - observed live, "Watercolour" in the field over a wall of every
+    # album.  Every reset has to go through clearSearch(), so the only place the
+    # property is assigned the empty string is that function.
+    $musicText = [IO.File]::ReadAllText((Join-Path $root 'qml\MusicPage.qml'))
+    $blanks = @([regex]::Matches($musicText, 'searchText\s*=\s*""')).Count
+    Check 'every music search reset clears the field and the filter together' `
+        ($blanks -eq 1 -and $musicText.Contains('function clearSearch()')) `
+        ('searchText = "" appears ' + $blanks + ' time(s) in qml/MusicPage.qml')
 }
 
 Write-Host ''

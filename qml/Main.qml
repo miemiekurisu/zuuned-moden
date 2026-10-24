@@ -150,11 +150,15 @@ ApplicationWindow {
     // forward-slash identity, and the label a row renders must be the string the
     // C++ helper produced for it.  Asserted from the running application rather
     // than eyeballed in a screenshot, which is how this regressed once.
+    //  The import default rides along for the same reason.  Settings renders it
+    //  as a status or as a button off `importDefault`, and LibraryService derives
+    //  that per media kind instead of storing one flag per row, so only a live
+    //  launch proves the derived value survives the trip into QML.
     readonly property var qaPathProof: {
         if (!qaProbe)
             return null
         const wf = LibraryService.watchFolders
-        let rows = 0, native = 0, raw = 0, stored = 0, agrees = 0
+        let rows = 0, native = 0, raw = 0, stored = 0, agrees = 0, defs = 0
         for (let i = 0; i < wf.length; i++) {
             rows++
             const label = String(wf[i].displayPath)
@@ -165,10 +169,13 @@ ApplicationWindow {
                 raw++
             if (held.indexOf("/") >= 0)
                 stored++
+            if (wf[i].importDefault === true)
+                defs++
         }
         if (rows > 0)
             agrees = ZPathText.display(String(wf[0].path)) === String(wf[0].displayPath) ? 1 : 0
-        return { rows: rows, native: native, raw: raw, stored: stored, agrees: agrees }
+        return { rows: rows, native: native, raw: raw, stored: stored,
+                 agrees: agrees, defs: defs }
     }
     // QA harness: the artwork-identity proof.  The island, a queue row and the
     // media-property report all ask for the album's picture, and they must ask
@@ -266,6 +273,7 @@ ApplicationWindow {
             + " wfRaw=" + qaPathProof.raw
             + " wfStored=" + qaPathProof.stored
             + " wfLabel=" + qaPathProof.agrees
+            + " wfDefaults=" + qaPathProof.defs
             + " albums=" + qaArtProof.albums
             + " artWith=" + qaArtProof.withArt
             + " artAgree=" + qaArtProof.agree

@@ -16,8 +16,10 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
+#include <QHash>
 #include <QRegularExpression>
 #include <QSet>
+#include <QVariant>
 #include <QSettings>
 #include <QtConcurrent/QtConcurrent>
 #include <sys/stat.h>
@@ -367,11 +369,29 @@ void LibraryScanner::scan() {
     }
 
     QSet<QString> musicRoots, photoRoots;
+    /* Every walk here hands the visitor EVERY file under its root and then
+     * discards the kinds that root was not typed for, which is why a folder
+     * holding music, video and pictures that was typed "music" produced an
+     * empty Videos page, an empty Photos page, and not one word about either.
+     * The type is a real choice - a 40,000-file music library must not be
+     * crawled for movie posters - so the walk stays as it is and the silence
+     * goes instead: one counter per excluded kind, filled by the walk that is
+     * already running, reported once per root.  A root is censused only by the
+     * walk that visits it and a root typed "all" excludes nothing, so no file
+     * is ever counted twice. */
+    struct Excluded {
+        int videos = 0;
+        int photos = 0;
+        int audio = 0;
+    };
+    QHash<QString, Excluded> excluded;
+    QHash<QString, QString> rootType;   // normalized path -> declared type
     // Video roots keep their folder TYPE — it forces category at insert
     // time and picks the size floor (5MB tv/anime, 50MB movies).
     QVector<WatchFolder> videoRoots;
     for (const WatchFolder &f : db.watchFolders()) {
         const QString norm = normalizePath(f.path);
+        rootType.insert(norm, f.type);
         if (f.type == QLatin1String("music") || f.type == QLatin1String("all"))
             musicRoots.insert(norm);
         if (f.type == QLatin1String("photos") || f.type == QLatin1String("all"))
@@ -424,11 +444,18 @@ void LibraryScanner::scan() {
             /* The identity guard inside the walk is what stops a junction from
              * being walked twice; seen stays as the cheap second opinion for a
              * filesystem that will not report a folder identity at all. */
+            Excluded &hide = excluded[root];
             const auto walked = LibraryScan::walkFiles(
                 root, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
                 [&](const QFileInfo &fi) {
                     const QString path = fi.filePath();
-                    if (!audioExtensions().contains(fi.suffix().toLower()) || seen.contains(path))
+                    const QString suffix = fi.suffix().toLower();
+                    if (!audioExtensions().contains(suffix)) {
+                        if (videoExtensions().contains(suffix)) hide.videos++;
+                        else if (photoExtensions().contains(suffix)) hide.photos++;
+                        return;
+                    }
+                    if (seen.contains(path))
                         return;
                     seen.insert(path);
                     if (db.isExcluded(path))
@@ -466,7 +493,14 @@ void LibraryScanner::scan() {
             LibraryScan::walkFiles(
                 root.path, QDir::Files | QDir::Readable,
                 [&](const QFileInfo &fi) {
-                    if (!videoExtensions().contains(fi.suffix().toLower()))
+                    const QString suffix = fi.suffix().toLower();
+                    const bool mine = videoExtensions().contains(suffix);
+                    if (!mine && root.type != QLatin1String("all")) {
+                        Excluded &hide = excluded[root.path];
+                        if (photoExtensions().contains(suffix)) hide.photos++;
+                        else if (audioExtensions().contains(suffix)) hide.audio++;
+                    }
+                    if (!mine)
                         return;
                     const QString path = fi.filePath();
                     // Plex/Jellyfin bonus-content dirs anywhere under the root
@@ -508,10 +542,17 @@ void LibraryScanner::scan() {
         const auto index = db.photoPathIndex();
         for (const QString &root : photoRoots) {
             if (m_cancel) break;
+            Excluded &hide = excluded[root];
             LibraryScan::walkFiles(
                 root, QDir::Files | QDir::Readable,
                 [&](const QFileInfo &fi) {
-                    if (!photoExtensions().contains(fi.suffix().toLower()))
+                    const QString suffix = fi.suffix().toLower();
+                    const bool mine = photoExtensions().contains(suffix);
+                    if (!mine && rootType.value(root) != QLatin1String("all")) {
+                        if (videoExtensions().contains(suffix)) hide.videos++;
+                        else if (audioExtensions().contains(suffix)) hide.audio++;
+                    }
+                    if (!mine)
                         return;
                     const QString path = fi.filePath();
                     if (db.isExcluded(path))
@@ -675,6 +716,66 @@ void LibraryScanner::scan() {
         }
     }
 
+    // Retire indexed tracks whose file is gone.  Only a root this pass read to
+    // the end, and that is still the same folder it was when the walk started,
+    // may certify an absence: a watch folder that could not be opened, a walk
+    // that was cancelled or could not read one of its subfolders, and a root
+    // that changed identity mid-scan (a remount, a replaced junction) all
+    // certify nothing, so an offline drive can never empty the library.  The
+    // most specific watched root wins, exactly as it does for a retry
+    // diagnostic, so an offline nested folder is not cleared by its readable
+    // parent.  Absence means ENOENT/ENOTDIR: a permission or network error
+    // leaves the row alone, as it always has.  Rows go, files never do - put
+    // the file back and the next pass indexes it again with the tags that live
+    // inside it.  Without this the row outlived its music forever: the album
+    // wall kept painting a coverless tile for an album that was no longer on
+    // the machine, and no lookup could ever fill it because there is nothing
+    // left to read.
+    int tracksRetired = 0;
+    if (!m_cancel) {
+        QVector<QPair<qint64, QString>> vanished;
+        for (const LibTrack &track : db.allTracks()) {
+            if (m_cancel) break;
+            QString owner;
+            for (const QString &root : musicRoots) {
+                const QString prefix =
+                    root == QLatin1String("/") ? root : root + QLatin1Char('/');
+                if (track.filepath.startsWith(prefix) && root.size() > owner.size())
+                    owner = root;
+            }
+            // No music watch folder owns it - a spoken import, a path from a
+            // folder the user removed from the library - so nothing can speak
+            // for whether its file should be here.
+            if (owner.isEmpty()) continue;
+            struct stat currentRoot {};
+            if (!completedMusicRoots.contains(owner)
+                || !accessibleDirectory(owner, &currentRoot)) continue;
+            if (completedMusicRoots.value(owner)
+                != qMakePair(quint64(currentRoot.st_dev), quint64(currentRoot.st_ino)))
+                continue;
+            struct stat file {};
+            if (::stat(pathBytes(track.filepath).constData(), &file) == 0
+                || (errno != ENOENT && errno != ENOTDIR))
+                continue;
+            vanished.append(qMakePair(track.id, track.filepath));
+        }
+        if (!vanished.isEmpty() && !m_cancel && db.begin()) {
+            bool ok = true;
+            int removed = 0;
+            for (const auto &row : vanished) {
+                if (m_cancel || !db.removeTrack(row.first, false)) { ok = false; break; }
+                removed++;
+            }
+            if (ok && !m_cancel && db.commit()) {
+                tracksRetired = removed;
+                fprintf(stderr, "[scan] retired %d vanished track(s)\n", tracksRetired);
+                emit chunkCommitted();
+            } else {
+                db.rollback();
+            }
+        }
+    }
+
     // Inspect every indexed source: missing or inconsistent tags must not
     // prevent payload evidence from discovering a copy in another folder.
     // allTracks is deterministically ordered; unchanged sources reuse the
@@ -714,6 +815,34 @@ void LibraryScanner::scan() {
             emit progress(QStringLiteral("checking copies"), copiesVisited, copyTotal, lastCopyPath);
         if (changed) emit chunkCommitted();
     }
+
+    // Name the hidden media once per root, in the log and to the UI.  A count
+    // without an action would just be a second way to be ignored, so the line
+    // says which setting to change and to what.
+    QVariantList notes;
+    QStringList censusRoots = excluded.keys();
+    censusRoots.sort();
+    for (const QString &root : censusRoots) {
+        const Excluded hide = excluded.value(root);
+        QStringList parts;
+        if (hide.videos) parts << QStringLiteral("%1 video file(s)").arg(hide.videos);
+        if (hide.photos) parts << QStringLiteral("%1 photo file(s)").arg(hide.photos);
+        if (hide.audio) parts << QStringLiteral("%1 audio file(s)").arg(hide.audio);
+        if (parts.isEmpty())
+            continue;
+        const QString type = rootType.value(root);
+        fprintf(stderr,
+                "[scan] %s holds %s that the type \"%s\" will not index"
+                " - Settings > Library > treat as \"all\"\n",
+                qUtf8Printable(root), qUtf8Printable(parts.join(QStringLiteral(", "))),
+                qUtf8Printable(type));
+        notes.append(QVariantMap{{QStringLiteral("folder"), root},
+                                 {QStringLiteral("type"), type},
+                                 {QStringLiteral("videos"), hide.videos},
+                                 {QStringLiteral("photos"), hide.photos},
+                                 {QStringLiteral("audio"), hide.audio}});
+    }
+    emit mediaTypeNotes(notes);
 
     emit finished(tracksAdded, tracksUpdated, photosAdded);
     m_running = false;

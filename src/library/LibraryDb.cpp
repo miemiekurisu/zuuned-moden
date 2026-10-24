@@ -73,7 +73,8 @@ CREATE TABLE IF NOT EXISTS music_probe_failures (
 CREATE TABLE IF NOT EXISTS watch_folders (
   id INTEGER PRIMARY KEY,
   path TEXT UNIQUE NOT NULL,
-  type TEXT DEFAULT 'all'
+  type TEXT DEFAULT 'all',
+  import_default INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS playlists (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -229,7 +230,7 @@ bool LibraryDb::open(const QString &path) {
     // historical DB receives new columns too. A DB from
     // a NEWER app refuses politely instead of corrupting; migrations
     // append to kMigrations and bump kSchemaVersion.
-    static const int kSchemaVersion = 9;
+    static const int kSchemaVersion = 10;
     static const QByteArray photoAlbumMigration = QByteArray(
         "CREATE TABLE photos_v7 (id INTEGER PRIMARY KEY AUTOINCREMENT,"
         "filepath TEXT UNIQUE,filename TEXT,filesize INTEGER,mtime INTEGER);"
@@ -280,6 +281,10 @@ bool LibraryDb::open(const QString &path) {
         { 8, "ALTER TABLE playlist_tracks ADD COLUMN pending_disc_number INTEGER NOT NULL DEFAULT 0;"
              "ALTER TABLE playlist_tracks ADD COLUMN pending_track_number INTEGER NOT NULL DEFAULT 0;" },
         { 9, "ALTER TABLE tracks ADD COLUMN audio_fingerprint TEXT NOT NULL DEFAULT '';" },
+        // v10: a library with several folders of one kind needs to say which
+        // one a download belongs in, or media pulled off a player keeps
+        // arriving beside the library instead of inside it.
+        { 10, "ALTER TABLE watch_folders ADD COLUMN import_default INTEGER NOT NULL DEFAULT 0;" },
         { 0, nullptr }
     };
     int userVersion = 0;
@@ -319,6 +324,11 @@ bool LibraryDb::open(const QString &path) {
                 Stmt fingerprintColumns(m_db, "PRAGMA table_info(tracks)");
                 while (fingerprintColumns.ok() && fingerprintColumns.step() == SQLITE_ROW)
                     if (fingerprintColumns.colText(1) == QLatin1String("audio_fingerprint")) userVersion = 9;
+            }
+            if (userVersion == 9) {
+                Stmt importColumns(m_db, "PRAGMA table_info(watch_folders)");
+                while (importColumns.ok() && importColumns.step() == SQLITE_ROW)
+                    if (importColumns.colText(1) == QLatin1String("import_default")) userVersion = 10;
             }
         }
     }
@@ -1488,13 +1498,14 @@ QHash<QString, QPair<qint64, qint64>> LibraryDb::photoPathIndex() {
 QVector<WatchFolder> LibraryDb::watchFolders() {
     QVector<WatchFolder> out;
     if (!m_db) return out;
-    Stmt s(m_db, "SELECT id, path, type FROM watch_folders ORDER BY path");
+    Stmt s(m_db, "SELECT id, path, type, import_default FROM watch_folders ORDER BY path");
     if (!s.ok()) return out;
     while (s.step() == SQLITE_ROW) {
         WatchFolder f;
         f.id = s.colInt64(0);
         f.path = s.colText(1);
         f.type = s.colText(2);
+        f.importDefault = s.colInt(3) != 0;
         out.append(f);
     }
     return out;
@@ -1524,7 +1535,13 @@ int LibraryDb::purgeFolder(const QString &path) {
     // Match the folder itself and anything beneath "<path>/". Exact
     // prefix via substr so no LIKE/GLOB metacharacters in the path
     // (underscore, [ ]) can over-match.
-    const QByteArray prefix = (path + QLatin1Char('/')).toUtf8();
+    // The width bound into substr() is a count of CHARACTERS, not of UTF-8
+    // bytes: SQLite indexes TEXT by character.  A folder named in Chinese is
+    // two bytes per Han character wider than it is long, so the window came
+    // out too wide, the comparison could never match, and releasing that watch
+    // folder logged "purged 0 items" while every row it owned stayed in the
+    // library.  QByteArray::size() is the byte count and was the bug.
+    const QString prefix = path + QLatin1Char('/');
     const int plen = prefix.size();
     int removed = 0;
     for (const char *tbl : {"tracks", "videos", "photos", "music_probe_failures"}) {
@@ -1536,7 +1553,7 @@ int LibraryDb::purgeFolder(const QString &path) {
             continue;
         del.bindText(1, path);
         del.bindInt64(2, plen);
-        del.bindText(3, QString::fromUtf8(prefix));
+        del.bindText(3, prefix);
         if (del.step() == SQLITE_DONE && QByteArray(tbl) != "music_probe_failures")
             removed += sqlite3_changes(m_db);
     }
@@ -1549,7 +1566,11 @@ void LibraryDb::countsUnder(const QString &path, int *tracks, int *videos,
     if (!m_db || path.isEmpty()) return;
     // Exact prefix via substr, as in purgeFolder — no LIKE/GLOB
     // metacharacter surprises from _ and [ ] in paths.
-    const QByteArray prefix = (path + QLatin1Char('/')).toUtf8();
+    // Character count, for the reason spelled out in purgeFolder(): handed the
+    // byte count instead, a non-ASCII folder counted 0 of everything, so
+    // Settings said "0 photos" beside a folder holding five - and kept saying
+    // it, because nothing about the folder was actually wrong.
+    const QString prefix = path + QLatin1Char('/');
     const int plen = prefix.size();
     const struct { const char *tbl; int *out; } q[] = {
         {"tracks", tracks}, {"videos", videos}, {"photos", photos}};
@@ -1561,7 +1582,7 @@ void LibraryDb::countsUnder(const QString &path, int *tracks, int *videos,
         if (!s.ok())
             continue;
         s.bindInt64(1, plen);
-        s.bindText(2, QString::fromUtf8(prefix));
+        s.bindText(2, prefix);
         if (s.step() == SQLITE_ROW)
             *e.out = s.colInt(0);
     }
@@ -1574,6 +1595,85 @@ bool LibraryDb::setWatchFolderType(qint64 id, const QString &type) {
     s.bindText(1, type);
     s.bindInt64(2, id);
     return s.step() == SQLITE_DONE;
+}
+
+// Name the one folder media of this kind is imported into.
+//
+// One query answers both halves of the rule the user asked for: a folder they
+// marked wins, and until they mark one the earliest added folder of that kind
+// wins.  A row typed "all" qualifies for every kind, which is exactly what
+// promising to hold everything means.
+//
+// The kind-to-type sets are LibraryScanner::run()'s root rule, restated.  They
+// have to agree: an import that lands in a folder no walk visits is a file the
+// library owns, occupies disk and can never be browsed.
+QString LibraryDb::importRoot(const QString &kind) {
+    if (!m_db) return QString();
+    QByteArray types;
+    if (kind == QLatin1String("music"))
+        types = "'music','all'";
+    else if (kind == QLatin1String("photos"))
+        types = "'photos','all'";
+    else if (kind == QLatin1String("video"))
+        types = "'movies','tv','anime','all'";
+    else
+        return QString();
+    const QByteArray sql =
+        "SELECT path FROM watch_folders WHERE type IN (" + types + ")"
+        " ORDER BY import_default DESC, id ASC LIMIT 1";
+    Stmt s(m_db, sql.constData());
+    if (!s.ok()) return QString();
+    return s.step() == SQLITE_ROW ? s.colText(0) : QString();
+}
+
+bool LibraryDb::setImportDefault(qint64 id) {
+    if (!m_db) return false;
+    // "The default" is per kind, because that is how many destinations exist.
+    // Marking where pictures go must not quietly move where songs land, so this
+    // unmarks only the rows importRoot() would weigh against the chosen one:
+    // folders of the same type plus any folder typed "all", which competes for
+    // every kind.  A photo default and a music default therefore coexist, and
+    // choosing either leaves the other exactly where the user left it.
+    QString type;
+    {
+        Stmt row(m_db, "SELECT type FROM watch_folders WHERE id=?");
+        if (!row.ok())
+            return false;
+        row.bindInt64(1, id);
+        if (row.step() != SQLITE_ROW)
+            return false;   // an id the library does not have changes nothing
+        type = row.colText(0);
+    }
+    QByteArray competes;
+    if (type == QLatin1String("music"))
+        competes = "'music','all'";
+    else if (type == QLatin1String("photos"))
+        competes = "'photos','all'";
+    else if (type == QLatin1String("movies") || type == QLatin1String("tv")
+             || type == QLatin1String("anime"))
+        competes = "'movies','tv','anime','all'";
+    else if (type == QLatin1String("all"))
+        competes = "'music','photos','movies','tv','anime','all'";
+    else
+        return false;       // a type no import asks about has no destination
+    if (!exec("BEGIN"))
+        return false;
+    {
+        const QByteArray sql =
+            "UPDATE watch_folders SET import_default=0 WHERE id<>? AND type IN ("
+            + competes + ")";
+        Stmt clear(m_db, sql.constData());
+        if (!clear.ok()) { exec("ROLLBACK"); return false; }
+        clear.bindInt64(1, id);
+        if (clear.step() != SQLITE_DONE) { exec("ROLLBACK"); return false; }
+    }
+    {
+        Stmt mark(m_db, "UPDATE watch_folders SET import_default=1 WHERE id=?");
+        if (!mark.ok()) { exec("ROLLBACK"); return false; }
+        mark.bindInt64(1, id);
+        if (mark.step() != SQLITE_DONE) { exec("ROLLBACK"); return false; }
+    }
+    return exec("COMMIT");
 }
 
 int LibraryDb::resolveDuplicateFormats(const QString &prefer) {
