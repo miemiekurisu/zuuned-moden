@@ -709,6 +709,38 @@ launch sweep indexed the 20 MB file that had been invisible since 02:43:14 - two
 201 checks 0 failures, `tests\win-usability` `launches=18 checks=130 failures=0 skips=0 killed=0`
 `OVERALL=ok`, on a `--clean-first` relink after the header edit. No device claim changes.
 
+**2026-10-24 per-kind import defaults:** a library is one place, so music has to import into the
+music folder, and among several folders of one kind exactly one receives - a status on that row, a
+`default` button beside `type`/`remove` on the others, earliest-added holding the title until somebody
+clicks. `watch_folders.import_default` could not express that: one bit per row, and a folder typed
+`all` qualifies for every kind, so marking a picture folder cleared the mark that had been carrying
+music, and `ORDER BY import_default DESC, id ASC` let a root that merely promised everything win a kind
+another folder was declared for. Schema v11 keys the mark by kind in `import_defaults (kind PRIMARY
+KEY, folder_id)`; the migration seeds only real v10 marks (`WHERE import_default=1`) so a fallback is
+never frozen into a choice nobody made, and the v10 column stays, unread, because dropping a column is
+the one migration a downgrade cannot forgive. `LibraryDb::importWinnerId()` is the whole rule - the
+mark for that kind while its type still serves the kind, else the first folder added that serves it,
+`ORDER BY CASE WHEN type='all' THEN 1 ELSE 0 END, id ASC` - `setImportDefault()` upserts one row per
+kind the chosen type serves, and `importKindsForType()`/`watchTypesForKind()` in
+`src/library/LibraryTypes.h` are the kind-to-type rule stated once beside the third copy of it in
+`LibraryScanner::scan()`'s root sets. Status is derived from a row *id* per kind, never from a stored
+path (two rows spell one folder differently) and never from a column: `default`, `default - video`, or
+an empty string, which matters because the label used to emit a truthy `"default . "` for a row that
+receives nothing, so "no status" and "blank status" were one thing to the QML fallback and to a gate
+counting rows. Same pass: the music walk was the one walk missing the `rootType != "all"` guard, so it
+censused an `all` root for videos and pictures it had already indexed and Settings offered to set that
+folder's type to the type it already had. Gates: `librarytool folders` 20 checks to 35, now rewinding
+a real v10 database (marked column, no `import_defaults`, `user_version` 10) and reading the upgrade -
+the rewind drops `import_defaults` too, because a fixture that answers the v11 probe is not a v2
+fixture; new `librarytool census`, 10 checks, one real `LibraryScanner` pass over a tree holding all
+three kinds; `wfDefaultLabels`/`wfDefaultAgree` in `--qa-probe` with a `pages` check that only a
+default row carries a default string. `tests\win-compat` 201 checks 0 failures,
+`tests\win-usability` `launches=18 checks=132 failures=0 skips=0 killed=0` `OVERALL=ok`, on the build
+the running app is. Deliberate: a mark survives its folder being retyped, it just stops qualifying, so
+an accidental retype does not cost the user their choice. No device claim changes and one is narrower:
+the music destination on this machine moved from `Zuuned Imports` to the declared music folder, and no
+player has written into it.
+
 **2026-10-13 compact playback UI:** windows below the existing 1100-logical-pixel
 headroom breakpoint use Now Playing instead of the top ribbon, as do narrow
 windows. Resizing an existing queue opens the island unless a builder is active;

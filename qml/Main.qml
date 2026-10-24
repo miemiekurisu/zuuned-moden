@@ -159,6 +159,7 @@ ApplicationWindow {
             return null
         const wf = LibraryService.watchFolders
         let rows = 0, native = 0, raw = 0, stored = 0, agrees = 0, defs = 0
+        let labels = 0, labelAgree = 0
         for (let i = 0; i < wf.length; i++) {
             rows++
             const label = String(wf[i].displayPath)
@@ -171,11 +172,22 @@ ApplicationWindow {
                 stored++
             if (wf[i].importDefault === true)
                 defs++
+            // The status text a row paints comes from this string, so the flag
+            // and the words must be the same fact: a default has a label naming
+            // the kinds it receives, a non-default has nothing and shows a
+            // button instead.  A stray "default" on a row that receives nothing
+            // would send a download somewhere the user never chose.
+            const dl = String(wf[i].defaultLabel ?? "")
+            if (dl.length > 0)
+                labels++
+            if ((wf[i].importDefault === true) === (dl.length > 0))
+                labelAgree++
         }
         if (rows > 0)
             agrees = ZPathText.display(String(wf[0].path)) === String(wf[0].displayPath) ? 1 : 0
         return { rows: rows, native: native, raw: raw, stored: stored,
-                 agrees: agrees, defs: defs }
+                 agrees: agrees, defs: defs, labels: labels,
+                 labelAgree: labelAgree }
     }
     // QA harness: the artwork-identity proof.  The island, a queue row and the
     // media-property report all ask for the album's picture, and they must ask
@@ -274,6 +286,8 @@ ApplicationWindow {
             + " wfStored=" + qaPathProof.stored
             + " wfLabel=" + qaPathProof.agrees
             + " wfDefaults=" + qaPathProof.defs
+            + " wfDefaultLabels=" + qaPathProof.labels
+            + " wfDefaultAgree=" + qaPathProof.labelAgree
             + " albums=" + qaArtProof.albums
             + " artWith=" + qaArtProof.withArt
             + " artAgree=" + qaArtProof.agree

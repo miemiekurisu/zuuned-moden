@@ -44,6 +44,10 @@
 #include "LibraryDb.h"
 #include "LibraryPaths.h"
 #include "LibraryScanner.h"
+
+// The upgrade test rewinds a database by hand to the shape the previous
+// build wrote, which is a job for the library the database is made of.
+#include <sqlite3.h>
 #include "MusicIdentity.h"
 #include "MusicIdentityClient.h"
 #include "NetworkAccess.h"
@@ -279,12 +283,15 @@ static int runCustomizeSelfTest() {
     const QByteArray legacySchema =
         // Rewind every later schema era, not just the Customize ones: a
         // current-schema database still carries the v6 columns, the v7 photo-
-        // album tables, the v9 fingerprint and the v10 import default, which
-        // would make the real migration chain fail on columns it never
-        // dropped.  Each era is dropped in full -- dropping three of the four
-        // v6 columns and leaving discnumber behind reads as "duplicate column
-        // name: discnumber", and the chain looks broken in LibraryDb rather
-        // than in this list.
+        // album tables, the v9 fingerprint, the v10 import default and the v11
+        // per-kind marks table, which would make the real migration chain fail
+        // on columns it never dropped.  Each era is dropped in full -- dropping
+        // three of the four v6 columns and leaving discnumber behind reads as
+        // "duplicate column name: discnumber", and the chain looks broken in
+        // LibraryDb rather than in this list.  import_defaults goes too: leaving
+        // it behind would let a "v2" database answer the v11 probe, and this
+        // fixture's whole claim is that it holds nothing newer than its label.
+        "DROP TABLE import_defaults;"
         "ALTER TABLE watch_folders DROP COLUMN import_default;"
         "ALTER TABLE tracks DROP COLUMN discnumber;"
         "ALTER TABLE tracks DROP COLUMN probe_mtime_ns;"
@@ -1312,11 +1319,147 @@ static int runFoldersSelfTest() {
     eq("folders: with the default gone the first remaining folder of that kind takes over",
        db.importRoot(QStringLiteral("music")), asciiRoot);
 
-    // The row flags are what Settings renders as a status instead of a button.
+    // The row flags are what Settings renders as a status instead of a button,
+    // and the rule behind them is per kind.  THREE rows in one library are the
+    // default at the same time here: the one that receives songs, the one that
+    // receives pictures, and the folder typed "all" that receives the videos
+    // nobody was declared for -- because a library has three destinations, not
+    // one, and a kind always has one of them.
     bool flagsAgree = true;
     for (const WatchFolder &f : db.watchFolders())
-        flagsAgree &= f.importDefault == (f.path == shots);
-    check(flagsAgree, "folders: watchFolders() reports which row holds the mark");
+        flagsAgree &= f.importDefault == (f.path == shots || f.path == asciiRoot
+                                          || f.path == everything);
+    check(flagsAgree,
+          "folders: watchFolders() reports every row that is some kind's default");
+
+    // ── Marks that cannot disturb each other ──
+    // The defect a per-row flag could not express: a folder typed "all"
+    // competes for every kind, so marking one folder unmarked it for all three,
+    // and choosing where songs go moved where pictures went.  A library is
+    // supposed to be one place, and a destination the user never chose is not
+    // part of that place.
+    const QString allRoot = scratch.path() + QStringLiteral("/everything-2");
+    const QString songRoot = scratch.path() + QStringLiteral("/songs-2");
+    const QString quietPath = scratch.path() + QStringLiteral("/quiet.db");
+    LibraryDb quiet;
+    if (!quiet.open(quietPath))
+        return 1;
+    quiet.addWatchFolder(scratch.path() + QStringLiteral("/shots-2"),
+                         QStringLiteral("photos"));
+    quiet.addWatchFolder(allRoot, QStringLiteral("all"));
+    const auto idIn = [](LibraryDb &d, const QString &p) {
+        for (const WatchFolder &f : d.watchFolders())
+            if (f.path == p)
+                return f.id;
+        return qint64(-1);
+    };
+    quiet.setImportDefault(idIn(quiet, allRoot));
+    eq("folders: marking a folder typed all makes it receive every kind",
+       quiet.importRoot(QStringLiteral("photos")), allRoot);
+    eq("folders: music too", quiet.importRoot(QStringLiteral("music")), allRoot);
+    eq("folders: and video", quiet.importRoot(QStringLiteral("video")), allRoot);
+
+    quiet.addWatchFolder(songRoot, QStringLiteral("music"));
+    quiet.setImportDefault(idIn(quiet, songRoot));
+    eq("folders: marking a music folder moves where songs land",
+       quiet.importRoot(QStringLiteral("music")), songRoot);
+    eq("folders: and leaves the kind the other folder was receiving where it was",
+       quiet.importRoot(QStringLiteral("photos")), allRoot);
+    eq("folders: and the third kind with it",
+       quiet.importRoot(QStringLiteral("video")), allRoot);
+
+    // ── A declared folder beats a folder that merely holds everything ──
+    // The other half of "the library is one place": a music download goes into
+    // the music folder even in a library whose first root promised to hold all
+    // media, because the point of naming a folder for a kind is that the kind
+    // goes there.
+    const QString generic = scratch.path() + QStringLiteral("/generic");
+    const QString declaredMusic = scratch.path() + QStringLiteral("/music-3");
+    const QString declaredClips = scratch.path() + QStringLiteral("/movies-3");
+    LibraryDb ordered;
+    if (!ordered.open(scratch.path() + QStringLiteral("/order.db")))
+        return 1;
+    ordered.addWatchFolder(generic, QStringLiteral("all"));
+    ordered.addWatchFolder(declaredMusic, QStringLiteral("music"));
+    ordered.addWatchFolder(declaredClips, QStringLiteral("movies"));
+    eq("folders: a folder added first but typed all does not take a kind "
+       "another folder was declared for",
+       ordered.importRoot(QStringLiteral("music")), declaredMusic);
+    eq("folders: nor a kind a movie folder was declared for",
+       ordered.importRoot(QStringLiteral("video")), declaredClips);
+    eq("folders: a kind nobody declared still goes to the folder that "
+       "holds everything",
+       ordered.importRoot(QStringLiteral("photos")), generic);
+
+    // ── A library written before the mark was per kind ──
+    // Rewound by hand to exactly what the v10 app wrote -- one marked column,
+    // no import_defaults table, user_version 10 -- because an upgrade is where
+    // a destination the user chose is either carried across or quietly lost.
+    const QString oldPath = scratch.path() + QStringLiteral("/old.db");
+    const QString oldPhotos = scratch.path() + QStringLiteral("/old-photos");
+    const QString oldMusic = scratch.path() + QStringLiteral("/old-music");
+    {
+        LibraryDb old;
+        if (!old.open(oldPath))
+            return 1;
+        old.addWatchFolder(oldPhotos, QStringLiteral("photos"));
+        old.addWatchFolder(oldMusic, QStringLiteral("music"));
+    }
+    const auto raw = [&oldPath](const char *sql) -> bool {
+        sqlite3 *handle = nullptr;
+        if (sqlite3_open(oldPath.toUtf8().constData(), &handle) != SQLITE_OK) {
+            if (handle) sqlite3_close(handle);
+            return false;
+        }
+        char *err = nullptr;
+        const bool ok = sqlite3_exec(handle, sql, nullptr, nullptr, &err) == SQLITE_OK;
+        sqlite3_free(err);
+        sqlite3_close(handle);
+        return ok;
+    };
+    const auto rawFirst = [&oldPath](const char *sql) -> QString {
+        sqlite3 *handle = nullptr;
+        if (sqlite3_open(oldPath.toUtf8().constData(), &handle) != SQLITE_OK) {
+            if (handle) sqlite3_close(handle);
+            return QString();
+        }
+        QString out;
+        sqlite3_stmt *st = nullptr;
+        if (sqlite3_prepare_v2(handle, sql, -1, &st, nullptr) == SQLITE_OK
+            && sqlite3_step(st) == SQLITE_ROW) {
+            const unsigned char *t = sqlite3_column_text(st, 0);
+            out = t ? QString::fromUtf8(reinterpret_cast<const char *>(t)) : QString();
+        }
+        if (st) sqlite3_finalize(st);
+        sqlite3_close(handle);
+        return out;
+    };
+    check(raw("DROP TABLE import_defaults;"
+              "UPDATE watch_folders SET import_default=1 WHERE type='music';"
+              "PRAGMA user_version=10;"),
+          "folders: a library can be rewound to the v10 shape");
+    eq("folders: the rewound library really reports v10",
+       rawFirst("PRAGMA user_version"), QStringLiteral("10"));
+    {
+        LibraryDb upgraded;
+        if (!upgraded.open(oldPath)) {
+            printf("  FAIL folders: the v10 library refused to open: %s\n",
+                   upgraded.lastError().toUtf8().constData());
+            failed++;
+        }
+        eq("folders: the folder a v10 library marked survives the upgrade",
+           upgraded.importRoot(QStringLiteral("music")), oldMusic);
+        eq("folders: a kind v10 never marked keeps falling back to the first "
+           "folder added",
+           upgraded.importRoot(QStringLiteral("photos")), oldPhotos);
+    }
+    eq("folders: and the upgraded library is v11 again",
+       rawFirst("PRAGMA user_version"), QStringLiteral("11"));
+    // Only the mark the user made is copied.  Seeding the rest would freeze
+    // today's fallback into a choice nobody made, and the row would read as a
+    // default the user never picked.
+    check(rawFirst("SELECT COUNT(*) FROM import_defaults") == QStringLiteral("1"),
+          "folders: the upgrade copies marks and invents none");
 
     printf("folders self-test: %s (%d failures)\n",
            failed == 0 ? "ALL PASS" : "FAILED", failed);
@@ -1478,6 +1621,143 @@ static int runVideoFloorSelfTest() {
           "floor: and the complaint goes away instead of accumulating a second one");
 
     printf("videofloor self-test: %s (%d failures)\n",
+           failed == 0 ? "ALL PASS" : "FAILED", failed);
+    return failed ? 1 : 0;
+}
+
+// What a scan may complain about, and what it has to index anyway.
+//
+// Every walk hands its visitor every file under its root and throws away the
+// kinds that root was not typed for, then reports the count out loud, because a
+// folder holding videos that shows no videos is otherwise indistinguishable
+// from an empty one.  Both halves of that promise need a walk that actually
+// walked: a root typed "all" sits in all three root sets and therefore excludes
+// nothing, so naming it is a lie -- and the music walk used to file the videos
+// and pictures it had already indexed against exactly such a root, offering to
+// set its type to the type it already had.  A typed root, meanwhile, must name
+// each foreign kind once and only once, from the one walk that visits it.
+static int runCensusSelfTest() {
+    int failed = 0;
+    const auto check = [&failed](bool ok, const char *what) {
+        printf("  %s %s\n", ok ? "PASS" : "FAIL", what);
+        if (!ok)
+            failed++;
+    };
+
+    QTemporaryDir scratch;
+    check(scratch.isValid(), "census: scratch tree");
+    if (!scratch.isValid())
+        return 1;
+
+    // One shape planted four times, under four declared types: a song, a clip
+    // and a picture.  The clip clears the 5 MB floor a folder typed "all"
+    // carries, so indexing it is the walk's own answer and not an exemption's.
+    struct Planted {
+        QString root, audio, video, photo;
+        bool ok = false;
+    };
+    const auto plant = [&scratch](const QString &name, bool withClip) {
+        Planted p;
+        p.root = scratch.path() + QLatin1Char('/') + name;
+        p.audio = p.root + QStringLiteral("/Artist/Album/Song.mp3");
+        p.video = p.root + QStringLiteral("/Show/Season 1/Episode.mp4");
+        p.photo = p.root + QStringLiteral("/Album/Shot.jpg");
+        const auto write = [](const QString &where, int bytes) {
+            if (!QDir().mkpath(QFileInfo(where).absolutePath()))
+                return false;
+            QFile f(where);
+            if (!f.open(QIODevice::WriteOnly))
+                return false;
+            f.write(QByteArray(bytes, 'x'));
+            f.close();
+            return true;
+        };
+        p.ok = write(p.audio, 2048) && write(p.photo, 2048)
+            && (!withClip || write(p.video, 6 * 1024 * 1024));
+        return p;
+    };
+    const Planted every = plant("everything", true);
+    const Planted songs = plant("songs", true);
+    const Planted shots = plant("shots", true);
+    const Planted films = plant("films", false);
+    check(every.ok && songs.ok && shots.ok && films.ok,
+          "census: four roots that each hold a song, a picture and -- but for "
+          "the movie folder -- a clip");
+
+    const QString dbPath = scratch.path() + QStringLiteral("/census.db");
+    {
+        LibraryDb db;
+        if (!db.open(dbPath)) {
+            printf("  FAIL census: db open: %s\n", db.lastError().toUtf8().constData());
+            return 1;
+        }
+        db.addWatchFolder(every.root, QStringLiteral("all"));
+        db.addWatchFolder(songs.root, QStringLiteral("music"));
+        db.addWatchFolder(shots.root, QStringLiteral("photos"));
+        db.addWatchFolder(films.root, QStringLiteral("movies"));
+    }
+
+    QVariantList notes;
+    {
+        LibraryScanner scanner;
+        scanner.setDbPath(dbPath);
+        QObject::connect(&scanner, &LibraryScanner::mediaTypeNotes,
+                         [&notes](const QVariantList &n) { notes = n; });
+        scanner.scan();
+    }
+
+    QHash<QString, QVariantMap> byRoot;
+    for (const QVariant &note : notes) {
+        const QVariantMap m = note.toMap();
+        byRoot.insert(m.value(QStringLiteral("folder")).toString(), m);
+    }
+    const auto countIn = [&byRoot](const QString &root, const char *field) {
+        return byRoot.value(root).value(QLatin1String(field)).toInt();
+    };
+
+    // The fault this exists for.  A folder declared to hold everything indexes
+    // everything, so it has no foreign kind to report and no setting left to fix.
+    check(!byRoot.contains(every.root),
+          "census: a folder typed all is named by no complaint at all");
+    check(countIn(songs.root, "videos") == 1
+              && countIn(songs.root, "photos") == 1
+              && countIn(songs.root, "audio") == 0,
+          "census: a music folder names the clip and the picture it skips, and "
+          "not the song it kept");
+    check(countIn(shots.root, "videos") == 1
+              && countIn(shots.root, "audio") == 1
+              && countIn(shots.root, "photos") == 0,
+          "census: a photo folder names the song and the clip it skips");
+    check(countIn(films.root, "audio") == 1
+              && countIn(films.root, "photos") == 1
+              && countIn(films.root, "videos") == 0,
+          "census: a movie folder names the song and the picture it skips");
+    check(notes.size() == 3,
+          "census: one complaint per folder that skips something, and no second "
+          "opinion from another walk");
+    int sizeRefused = 0;
+    for (const QVariant &note : notes)
+        sizeRefused += note.toMap().value(QStringLiteral("sizeSkipped")).toInt();
+    check(sizeRefused == 0, "census: nothing was refused by a size floor here");
+
+    // And the other half: the folder that holds everything really did index all
+    // three kinds, so the silence above is accuracy and not a census that never
+    // ran.
+    {
+        LibraryDb db;
+        if (!db.open(dbPath))
+            return 1;
+        const int clips = db.videoPathIndex().size();
+        const int pictures = db.photoPathIndex().size();
+        check(clips == 1,
+              "census: the clip inside the folder typed all is indexed, not "
+              "just counted");
+        check(pictures == 2,
+              "census: and so is the picture in it, beside the one in the photo "
+              "folder");
+    }
+
+    printf("census self-test: %s (%d failures)\n",
            failed == 0 ? "ALL PASS" : "FAILED", failed);
     return failed ? 1 : 0;
 }
@@ -1727,6 +2007,8 @@ int main(int argc, char **argv) {
         return runFoldersSelfTest();
     if (mode == QLatin1String("videofloor"))
         return runVideoFloorSelfTest();
+    if (mode == QLatin1String("census"))
+        return runCensusSelfTest();
 
     const bool videoMode = mode == QLatin1String("videoscan");
     const bool photoMode = mode == QLatin1String("photoscan");
@@ -1744,7 +2026,9 @@ int main(int argc, char **argv) {
                 "  librarytool net\n"
                 "  librarytool cover\n"
                 "  librarytool vanish\n"
-                "  librarytool folders\n");
+                "  librarytool folders\n"
+                "  librarytool videofloor\n"
+                "  librarytool census\n");
         return 2;
     }
     const QString folder = arguments.at(2);

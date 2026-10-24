@@ -950,6 +950,18 @@ void LibraryService::setImportDefault(double id) {
     // where the next download is written.
     fprintf(stderr, "[library] downloads now land in '%s'\n",
             qUtf8Printable(path));
+    // Naming the kinds is the point of the line.  One click on a folder typed
+    // "all" moves three destinations, and a log that says only "downloads"
+    // cannot be read against a folder that kept some of them.
+    for (const QVariant &fv : std::as_const(m_watchFolders)) {
+        const QVariantMap m = fv.toMap();
+        if (m.value(QStringLiteral("path")).toString() != path)
+            continue;
+        fprintf(stderr, "[library]   kinds: %s\n",
+                qUtf8Printable(m.value(QStringLiteral("defaultKinds"))
+                               .toStringList().join(QStringLiteral("+"))));
+        break;
+    }
 }
 
 QVariantMap LibraryService::folderCounts(const QString &path) const {
@@ -1224,38 +1236,43 @@ void LibraryService::reloadFolders() {
     m_watchFolders.clear();
     // What a row shows as its status is "downloads land here", not "somebody
     // clicked this row": one destination per kind, and until the user chooses
-    // one the destination is that kind's earliest folder.  Asking importRoot()
-    // per kind -- instead of reading the mark off the row -- is what lets a
-    // photo default and a music default both read as the default, and keeps
-    // the label honest when the marked folder was removed and the rule fell
-    // back on its own.
-    const QString musicRoot = importRoot(QStringLiteral("music"));
-    const QString photoRoot = importRoot(QStringLiteral("photos"));
-    const QString videoRoot = importRoot(QStringLiteral("video"));
-    const auto destinations = [&musicRoot, &photoRoot, &videoRoot](
-                                  const QString &type) {
-        if (type == QLatin1String("music"))
-            return QStringList{musicRoot};
-        if (type == QLatin1String("photos"))
-            return QStringList{photoRoot};
-        if (type == QLatin1String("movies") || type == QLatin1String("tv")
-            || type == QLatin1String("anime"))
-            return QStringList{videoRoot};
-        if (type == QLatin1String("all"))
-            return QStringList{musicRoot, photoRoot, videoRoot};
-        return QStringList();
-    };
+    // one the destination is that kind's earliest folder of that kind.  Asking
+    // the database per kind -- instead of reading a mark off the row -- is what
+    // lets a photo default and a music default both read as the default, and
+    // keeps the label honest when a marked folder was removed or retyped and
+    // the rule fell back on its own.
+    //
+    // Matched by row id rather than by path because two rows can name one
+    // folder at different spellings, and because a folder typed "all" may
+    // receive some kinds and not others: which kinds is the difference between
+    // "default" and "default - video" on the row.
+    const QVariantMap winners = m_db->importDefaults();
     for (const WatchFolder &f : m_db->watchFolders()) {
         // canonical() on the way out too, not only on the way in: a row written
         // by an older build still gets one identity, so its media can be
         // counted and released instead of being orphaned by a separator.
         const QString stored = PathText::canonical(f.path);
+        const QStringList served = importKindsForType(f.type);
+        QStringList receives;
+        for (const QString &kind : served)
+            if (winners.value(kind).toLongLong() == f.id)
+                receives << kind;
         m_watchFolders.append(QVariantMap{
             {"id", double(f.id)},
             {"path", stored},
             {"displayPath", PathText::display(stored)},
             {"type", f.type},
-            {"importDefault", destinations(f.type).contains(stored)},
+            {"importDefault", !receives.isEmpty()},
+            {"defaultKinds", receives},
+            // A row that receives nothing gets no string at all, rather than a
+            // "default" prefix with nothing after it: the status Text falls back
+            // on the absence of a label, and the gate counts that absence.
+            {"defaultLabel", receives.isEmpty()
+                ? QString()
+                : receives.size() == served.size()
+                    ? QStringLiteral("default")
+                    : QStringLiteral("default \u00b7 ")
+                        + receives.join(QStringLiteral("+"))},
         });
     }
     emit foldersChanged();

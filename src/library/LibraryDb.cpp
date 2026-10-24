@@ -76,6 +76,10 @@ CREATE TABLE IF NOT EXISTS watch_folders (
   type TEXT DEFAULT 'all',
   import_default INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS import_defaults (
+  kind TEXT PRIMARY KEY,
+  folder_id INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS playlists (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL
@@ -230,7 +234,7 @@ bool LibraryDb::open(const QString &path) {
     // historical DB receives new columns too. A DB from
     // a NEWER app refuses politely instead of corrupting; migrations
     // append to kMigrations and bump kSchemaVersion.
-    static const int kSchemaVersion = 10;
+    static const int kSchemaVersion = 11;
     static const QByteArray photoAlbumMigration = QByteArray(
         "CREATE TABLE photos_v7 (id INTEGER PRIMARY KEY AUTOINCREMENT,"
         "filepath TEXT UNIQUE,filename TEXT,filesize INTEGER,mtime INTEGER);"
@@ -285,6 +289,29 @@ bool LibraryDb::open(const QString &path) {
         // one a download belongs in, or media pulled off a player keeps
         // arriving beside the library instead of inside it.
         { 10, "ALTER TABLE watch_folders ADD COLUMN import_default INTEGER NOT NULL DEFAULT 0;" },
+        // v11: the mark became per kind.  One flag per row cannot say "this
+        // folder receives pictures and that one receives songs" once a folder
+        // typed "all" is in the list -- it competes for every kind at once --
+        // so the mark moves to a table keyed by kind, which is how many
+        // destinations a library actually has.  watch_folders.import_default
+        // stays as the v10 column it was and nothing reads it any more.
+        // Seeding copies only a mark the user really made: an unmarked library
+        // must keep falling back to "the first folder added" rather than have
+        // today's fallback frozen into a choice nobody made.
+        { 11, "CREATE TABLE IF NOT EXISTS import_defaults ("
+              "kind TEXT PRIMARY KEY, folder_id INTEGER NOT NULL);"
+              "INSERT INTO import_defaults(kind,folder_id)"
+              " SELECT 'music',id FROM watch_folders"
+              "  WHERE type IN ('music','all') AND import_default=1"
+              "  ORDER BY id LIMIT 1;"
+              "INSERT INTO import_defaults(kind,folder_id)"
+              " SELECT 'photos',id FROM watch_folders"
+              "  WHERE type IN ('photos','all') AND import_default=1"
+              "  ORDER BY id LIMIT 1;"
+              "INSERT INTO import_defaults(kind,folder_id)"
+              " SELECT 'video',id FROM watch_folders"
+              "  WHERE type IN ('movies','tv','anime','all') AND import_default=1"
+              "  ORDER BY id LIMIT 1;" },
         { 0, nullptr }
     };
     int userVersion = 0;
@@ -329,6 +356,11 @@ bool LibraryDb::open(const QString &path) {
                 Stmt importColumns(m_db, "PRAGMA table_info(watch_folders)");
                 while (importColumns.ok() && importColumns.step() == SQLITE_ROW)
                     if (importColumns.colText(1) == QLatin1String("import_default")) userVersion = 10;
+            }
+            if (userVersion == 10) {
+                Stmt importDefaults(m_db, "SELECT 1 FROM sqlite_master"
+                                          " WHERE type='table' AND name='import_defaults'");
+                if (importDefaults.ok() && importDefaults.step() == SQLITE_ROW) userVersion = 11;
             }
         }
     }
@@ -1498,15 +1530,28 @@ QHash<QString, QPair<qint64, qint64>> LibraryDb::photoPathIndex() {
 QVector<WatchFolder> LibraryDb::watchFolders() {
     QVector<WatchFolder> out;
     if (!m_db) return out;
-    Stmt s(m_db, "SELECT id, path, type, import_default FROM watch_folders ORDER BY path");
+    Stmt s(m_db, "SELECT id, path, type FROM watch_folders ORDER BY path");
     if (!s.ok()) return out;
     while (s.step() == SQLITE_ROW) {
         WatchFolder f;
         f.id = s.colInt64(0);
         f.path = s.colText(1);
         f.type = s.colText(2);
-        f.importDefault = s.colInt(3) != 0;
         out.append(f);
+    }
+    // Which rows are "the default" is asked of importWinnerId() rather than
+    // read off a column, for the same reason LibraryService does: a mark can
+    // stop being true between the click and the next read -- the folder got
+    // removed, or retyped into a kind it cannot serve -- and a status that
+    // outlives the fact behind it tells the user the next download will land
+    // somewhere it will not.
+    for (const char *kind : {"music", "photos", "video"}) {
+        const qint64 winner = importWinnerId(QLatin1String(kind));
+        if (winner < 0)
+            continue;
+        for (WatchFolder &f : out)
+            if (f.id == winner)
+                f.importDefault = true;
     }
     return out;
 }
@@ -1524,6 +1569,13 @@ bool LibraryDb::addWatchFolder(const QString &path, const QString &type) {
 
 bool LibraryDb::removeWatchFolder(qint64 id) {
     if (!m_db) return false;
+    // A mark pointing at a row that no longer exists would win nothing, and a
+    // rule whose dead rows are invisible is a rule nobody can read.
+    Stmt gone(m_db, "DELETE FROM import_defaults WHERE folder_id=?");
+    if (gone.ok()) {
+        gone.bindInt64(1, id);
+        gone.step();
+    }
     Stmt s(m_db, "DELETE FROM watch_folders WHERE id=?");
     if (!s.ok()) return false;
     s.bindInt64(1, id);
@@ -1597,43 +1649,86 @@ bool LibraryDb::setWatchFolderType(qint64 id, const QString &type) {
     return s.step() == SQLITE_DONE;
 }
 
-// Name the one folder media of this kind is imported into.
+namespace {
+// Quote a kind's qualifying folder types into an SQL IN (...) list.  Nothing
+// user-supplied reaches here: the words come from watchTypesForKind().
+QByteArray qualifyingTypes(const QString &kind) {
+    QStringList quoted;
+    for (const QString &type : watchTypesForKind(kind))
+        quoted << QLatin1Char('\'') + type + QLatin1Char('\'');
+    return quoted.join(QLatin1String(", ")).toUtf8();
+}
+} // namespace
+
+// Name the folder media of this kind is imported into, by row id.
 //
-// One query answers both halves of the rule the user asked for: a folder they
-// marked wins, and until they mark one the earliest added folder of that kind
-// wins.  A row typed "all" qualifies for every kind, which is exactly what
-// promising to hold everything means.
+// Two rules, in order, and they are the user's:
+//   1. the folder they marked for THIS kind -- unless its type has since
+//      stopped serving it, because a mark cannot promise a kind the scanner
+//      would not read from that folder;
+//   2. otherwise the first folder added that serves the kind, preferring one
+//      declared for it over a generic "all" root.  A library that holds a
+//      music folder imports music into the music folder even when an
+//      "everything" root was added years earlier: the point of several folders
+//      is that each kind goes where it belongs.
 //
-// The kind-to-type sets are LibraryScanner::run()'s root rule, restated.  They
-// have to agree: an import that lands in a folder no walk visits is a file the
-// library owns, occupies disk and can never be browsed.
-QString LibraryDb::importRoot(const QString &kind) {
-    if (!m_db) return QString();
-    QByteArray types;
-    if (kind == QLatin1String("music"))
-        types = "'music','all'";
-    else if (kind == QLatin1String("photos"))
-        types = "'photos','all'";
-    else if (kind == QLatin1String("video"))
-        types = "'movies','tv','anime','all'";
-    else
-        return QString();
+// The qualifying types come from watchTypesForKind(), which is
+// LibraryScanner::scan()'s root rule restated.  They have to agree: an import
+// that lands in a folder no walk visits is a file the library owns, occupies
+// disk and can never be browsed.
+qint64 LibraryDb::importWinnerId(const QString &kind) {
+    if (!m_db) return -1;
+    const QByteArray types = qualifyingTypes(kind);
+    if (types.isEmpty()) return -1;   // a kind no folder type serves has no root
+    {
+        const QByteArray marked =
+            "SELECT f.id FROM watch_folders f JOIN import_defaults d"
+            " ON d.folder_id=f.id WHERE d.kind=? AND f.type IN (" + types + ")";
+        Stmt s(m_db, marked.constData());
+        if (s.ok()) {     // a library too old to have the table still falls back
+            s.bindText(1, kind);
+            if (s.step() == SQLITE_ROW)
+                return s.colInt64(0);
+        }
+    }
     const QByteArray sql =
-        "SELECT path FROM watch_folders WHERE type IN (" + types + ")"
-        " ORDER BY import_default DESC, id ASC LIMIT 1";
+        "SELECT id FROM watch_folders WHERE type IN (" + types + ")"
+        " ORDER BY CASE WHEN type='all' THEN 1 ELSE 0 END, id ASC LIMIT 1";
     Stmt s(m_db, sql.constData());
+    if (!s.ok()) return -1;
+    return s.step() == SQLITE_ROW ? s.colInt64(0) : -1;
+}
+
+QString LibraryDb::importRoot(const QString &kind) {
+    const qint64 id = importWinnerId(kind);
+    if (id < 0 || !m_db) return QString();
+    Stmt s(m_db, "SELECT path FROM watch_folders WHERE id=?");
     if (!s.ok()) return QString();
+    s.bindInt64(1, id);
     return s.step() == SQLITE_ROW ? s.colText(0) : QString();
 }
 
+QVariantMap LibraryDb::importDefaults() {
+    QVariantMap out;
+    if (!m_db) return out;
+    for (const char *kind : {"music", "photos", "video"})
+        out.insert(QLatin1String(kind), importWinnerId(QLatin1String(kind)));
+    return out;
+}
+
+// One folder becomes the destination for every kind of media its type can
+// hold, and for nothing else.
+//
+// The mark is per kind, because that is how many destinations a library has.
+// Marking a picture folder therefore cannot move where songs land, and marking
+// a folder typed "all" takes every kind at once -- which is what clicking
+// "default" on a folder declared to hold everything says, out loud, at the
+// moment the user clicks it.  Under one flag per row neither half was
+// expressible: an "all" row competed for every kind at once, so choosing one
+// destination quietly redecorated the others, and a music download could leave
+// the music folder for a root that merely promised to hold it.
 bool LibraryDb::setImportDefault(qint64 id) {
     if (!m_db) return false;
-    // "The default" is per kind, because that is how many destinations exist.
-    // Marking where pictures go must not quietly move where songs land, so this
-    // unmarks only the rows importRoot() would weigh against the chosen one:
-    // folders of the same type plus any folder typed "all", which competes for
-    // every kind.  A photo default and a music default therefore coexist, and
-    // choosing either leaves the other exactly where the user left it.
     QString type;
     {
         Stmt row(m_db, "SELECT type FROM watch_folders WHERE id=?");
@@ -1644,33 +1739,17 @@ bool LibraryDb::setImportDefault(qint64 id) {
             return false;   // an id the library does not have changes nothing
         type = row.colText(0);
     }
-    QByteArray competes;
-    if (type == QLatin1String("music"))
-        competes = "'music','all'";
-    else if (type == QLatin1String("photos"))
-        competes = "'photos','all'";
-    else if (type == QLatin1String("movies") || type == QLatin1String("tv")
-             || type == QLatin1String("anime"))
-        competes = "'movies','tv','anime','all'";
-    else if (type == QLatin1String("all"))
-        competes = "'music','photos','movies','tv','anime','all'";
-    else
+    const QStringList kinds = importKindsForType(type);
+    if (kinds.isEmpty())
         return false;       // a type no import asks about has no destination
     if (!exec("BEGIN"))
         return false;
-    {
-        const QByteArray sql =
-            "UPDATE watch_folders SET import_default=0 WHERE id<>? AND type IN ("
-            + competes + ")";
-        Stmt clear(m_db, sql.constData());
-        if (!clear.ok()) { exec("ROLLBACK"); return false; }
-        clear.bindInt64(1, id);
-        if (clear.step() != SQLITE_DONE) { exec("ROLLBACK"); return false; }
-    }
-    {
-        Stmt mark(m_db, "UPDATE watch_folders SET import_default=1 WHERE id=?");
+    for (const QString &kind : kinds) {
+        Stmt mark(m_db, "INSERT INTO import_defaults(kind,folder_id) VALUES(?,?)"
+                        " ON CONFLICT(kind) DO UPDATE SET folder_id=excluded.folder_id");
         if (!mark.ok()) { exec("ROLLBACK"); return false; }
-        mark.bindInt64(1, id);
+        mark.bindText(1, kind);
+        mark.bindInt64(2, id);
         if (mark.step() != SQLITE_DONE) { exec("ROLLBACK"); return false; }
     }
     return exec("COMMIT");

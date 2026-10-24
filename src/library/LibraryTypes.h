@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 // Row types mirroring the mac's LibraryService schema.
@@ -98,10 +99,45 @@ struct WatchFolder {
     qint64 id = -1;
     QString path;
     QString type;   // music | movies | tv | anime | photos | all
-    // The one folder media pulled off a Zune lands in, among the rows whose
-    // type fits that media.  Zero means "not chosen", which is not the same as
-    // "never used": LibraryDb::importRoot() falls back to the first folder
-    // added, so a library always has an import root and the user only has to
-    // choose once they disagree with that order.
+    // Whether this folder is where media pulled off a Zune lands, for at
+    // least one kind of media.  Derived, never stored: the mark is kept per
+    // kind (import_defaults, LibraryDb::importDefaults()) because one library
+    // has three destinations and a row typed "all" can hold a mark for each
+    // of them at once.  False does not mean "never used" -- a kind always has
+    // a destination, because importRoot() falls back to the first folder added
+    // of that kind, so the user only has to choose once they disagree.
     bool importDefault = false;
 };
+
+// Which kinds of media a folder declared as this type may receive.  A folder
+// typed "all" receives every kind, which is what promising to hold everything
+// means; a kind a type does not serve must never be marked for it.
+inline QStringList importKindsForType(const QString &type) {
+    if (type == QLatin1String("music"))
+        return {QStringLiteral("music")};
+    if (type == QLatin1String("photos"))
+        return {QStringLiteral("photos")};
+    if (type == QLatin1String("movies") || type == QLatin1String("tv")
+        || type == QLatin1String("anime"))
+        return {QStringLiteral("video")};
+    if (type == QLatin1String("all"))
+        return {QStringLiteral("music"), QStringLiteral("photos"),
+                QStringLiteral("video")};
+    return {};
+}
+
+// The same rule read backwards: the folder types allowed to receive a kind.
+// These two functions are one rule, stated twice, and LibraryScanner::scan()'s
+// root sets are the third copy -- they have to agree, because a file written
+// into a folder no walk visits is one the library owns, occupies disk and can
+// never browse.
+inline QStringList watchTypesForKind(const QString &kind) {
+    if (kind == QLatin1String("music"))
+        return {QStringLiteral("music"), QStringLiteral("all")};
+    if (kind == QLatin1String("photos"))
+        return {QStringLiteral("photos"), QStringLiteral("all")};
+    if (kind == QLatin1String("video"))
+        return {QStringLiteral("movies"), QStringLiteral("tv"),
+                QStringLiteral("anime"), QStringLiteral("all")};
+    return {};
+}

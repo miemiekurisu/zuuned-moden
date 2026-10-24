@@ -1,6 +1,6 @@
 # Windows port status
 
-Dated 2026-10-20, updated 2026-10-21.  This is where the native Windows build of Zuuned actually
+Dated 2026-10-20, updated 2026-10-24.  This is where the native Windows build of Zuuned actually
 stands: what compiles, what has been proven on a Windows machine, and what has
 not.  It exists so that nobody reads "the Windows gates pass" as "the Windows
 build works with a Zune".  Build steps and dependency locations live in
@@ -1584,6 +1584,89 @@ longer allowed to answer for it.  Nobody has watched it.  A row and a duration a
 ``videofloor``, wired into the ``tools`` phase beside ``folders``.  No device claim changes with this
 pass: still the one hand-tested Pavo Zune HD, still nothing heard or seen on its screen.
 
+## The twenty-second pass: three destinations, and a library that is one place (2026-10-24)
+
+**The complaint was about the library, not about the folder list.**  "The music library has to be
+consistent": a song that arrives - imported, or pulled off a player - belongs in the library the user
+browses, which means music goes into the music folder; and when several folders hold the same kind,
+exactly one of them has to be the one that receives, shown as a status on the row that is and as a
+button beside *type* and *remove* on the rows that are not, with the earliest added folder holding the
+title until somebody clicks.  The twentieth pass shipped a mark for that.  The mark was wrong in a way
+a single folder can never show.
+
+**One flag per row cannot name three destinations.**  ``watch_folders.import_default`` was one bit on
+one row, and a row typed ``all`` qualifies for music, photos *and* video, so marking a picture folder
+cleared the mark on the folder typed ``all`` - and with it the music destination that folder had been
+carrying.  Choosing where songs go moved where pictures go.  The fallback made it worse in the other
+direction: ``ORDER BY import_default DESC, id ASC`` let a root that merely promised to hold everything
+win a kind for which a folder had actually been declared, so a library with a music folder could still
+import songs somewhere else.  And the status was derived by comparing *paths*, so two rows spelling one
+folder at different lengths both lit up.
+
+**The mark became a table keyed by kind.**  Schema v11 adds ``import_defaults (kind PRIMARY KEY,
+folder_id)`` - one row per destination, which is how many destinations a library has - and leaves
+``watch_folders.import_default`` alone as the v10 column it is, now unread.  The migration copies
+*only* the marks a user really made, one row per kind from ``... WHERE import_default=1`` in id order:
+seeding the other kinds would freeze today's fallback into a choice nobody made, and the row would then
+wear a default the user never picked.  The legacy probe answers 10 when the old column exists and 11
+when the new table does, so a library that has been upgraded is never migrated a second time.
+
+**Two rules, in the order the user gave them.**  ``LibraryDb::importWinnerId()`` names the row marked
+for *that* kind - unless its type has since stopped serving the kind, because a mark cannot promise a
+kind no walk would read out of that folder - and otherwise the first folder added that serves it, under
+``ORDER BY CASE WHEN type='all' THEN 1 ELSE 0 END, id ASC``: a folder declared for a kind beats a
+generic root added years before it.  ``setImportDefault()`` upserts one row for every kind the chosen
+type serves and for no others, so a music folder takes music alone while a folder typed ``all`` takes
+all three at once - which is what clicking *default* on a folder that promised to hold everything says,
+out loud, at the moment it is clicked.  ``removeWatchFolder()`` prunes the marks of a folder that is
+gone, because a rule whose dead rows are invisible is a rule nobody can read.
+
+**The kind-to-type rule is written once.**  ``importKindsForType()`` and ``watchTypesForKind()`` in
+``src/library/LibraryTypes.h`` are that rule read forwards and backwards; ``LibraryScanner::scan()``'s
+three root sets are the third copy, and they have to agree, because a file written into a folder no
+walk visits is one the library owns, occupies disk and can never browse.  The two SQL sites that had
+spelled the sets out by hand now ask the header.
+
+**Status is derived, never read off a column.**  ``LibraryService::reloadFolders()`` asks
+``importDefaults()`` for a row *id* per kind rather than matching paths - two rows can name one folder,
+and a folder typed ``all`` may receive some kinds and not others - and paints ``default`` when a row
+receives every kind its type serves, ``default · video`` when it receives some, and nothing at all when
+it receives none, which is what turns the button on.  The live profile reads ``user_version=11`` with
+``import_defaults`` empty: four folders, nobody has clicked, and each row shows the button while the
+fallback answers `E:/Temp/testmusic/测试音乐` for songs, `测试图片` for pictures and `测试视频`
+for video.
+
+**The label lied about a row that receives nothing.**  It emitted ``"default · "`` - a truthy string
+with an empty tail - so ``defaultLabel || "default"`` could not tell *no status* from *blank status*, and
+a gate could not count the absence of one.  A row that receives nothing now returns an empty string.
+
+**A folder typed "all" was censused for the files it had already indexed.**  Every walk counts the files
+of a kind its root excludes and says the count out loud, because a folder that shows no videos is
+otherwise indistinguishable from an empty one.  The video and photo walks ask first whether the root is
+typed ``all``, which sits in all three root sets and therefore excludes nothing; the music walk did not
+ask, so it counted the videos and pictures inside an ``all`` root as skipped and Settings offered to set
+that folder's type to the type it already had.  The music walk carries the same guard now.
+
+**Both halves have a capture, and the upgrade has a rewind.**  ``librarytool census`` is 10 checks over
+one real ``LibraryScanner`` pass on a real tree holding a music, a photos, a movies and an ``all``
+folder: the clip is named once, under the folder that really does exclude it; the ``all`` root says
+nothing; and the clip and the picture inside it are indexed, not merely counted.  ``librarytool
+folders`` grew from 20 checks to 35 and now rewinds a database to the exact shape the previous build
+wrote - marked column present, ``import_defaults`` absent, ``user_version`` 10 - and reads the upgrade:
+the folder a v10 library marked keeps the kind it had been given, the kinds v10 never marked keep
+falling back, and the result is v11 again with no mark invented.  The rewind drops ``import_defaults``
+alongside the v6 columns and the v9 fingerprint, because leaving it behind would let a fixture labelled
+"v2" answer the v11 probe - and a fixture's whole claim is that it holds nothing newer than its label.
+
+**Gates.**  ``tests\win-compat`` answers ``201 checks, 0 failures, 0 skips`` and ``tests\win-usability``
+``launches=18 checks=132 failures=0 skips=0 killed=0``, ``OVERALL=ok``, against a build relinked after a
+full rebuild following the ``LibraryTypes.h`` edit; the two checks above the twenty-first pass's 130 are
+``census`` in the ``tools`` phase and *only a default row carries a default status string* in the
+``pages`` phase, driven by the ``wfDefaultLabels``/``wfDefaultAgree`` counters added to the
+``--qa-probe`` report.  The app runs on that executable.  No transfer was attempted for this pass and
+no device was asked anything: device evidence is unchanged at the one hand-tested Pavo Zune HD, and
+nothing has been heard or seen on its screen.
+
 ## What is not proven here
 
 1. Everything past audio.  Deletion and purge, the firmware categories and
@@ -1665,6 +1748,12 @@ pass: still the one hand-tested Pavo Zune HD, still nothing heard or seen on its
     compile a new `FastBlur` variant writes it into the real profile.  It costs a warm
     shader cache and no data, and the profile pair-check in the usability gate is the
     thing that sees it - the eleventh pass has the file name and the measurement.
+13. Where a pull lands moved the same day it was last proven by hand.  The twentieth pass put device
+    tracks into `Music\Zuuned Imports`; the twenty-second pass made a folder *declared* for a kind
+    outrank a generic root, so `music` now answers the declared music folder and `Zuuned Imports` is
+    an ordinary row wearing a button.  The rule is pinned in software and its label is pinned on
+    screen, but no player has written into the new destination: not one byte has been pulled since it
+    changed, so "downloads land in the right folder" is a database fact and not a device fact.
 
 ## Order to close it in
 

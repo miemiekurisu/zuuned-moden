@@ -162,11 +162,20 @@ public:
     void countsUnder(const QString &path, int *tracks, int *videos,
                      int *photos);
     bool setWatchFolderType(qint64 id, const QString &type);
-    // Where media of a kind is imported: the folder the user marked, else the
-    // first folder added whose type the scanner would read that kind from
-    // (kind: "music" | "photos" | "video").  Empty when the library has none.
+    // Where media of a kind is imported: the folder the user marked for that
+    // kind, else the first folder added whose type the scanner would read that
+    // kind from (kind: "music" | "photos" | "video").  Empty when the library
+    // has no folder that could hold it.
     QString importRoot(const QString &kind);
-    // Mark one folder as that import root, clearing every other row.
+    // The same answer as a row id per kind -- {kind: folder id, ...}, with -1
+    // for a kind the library has nowhere to put.  Settings needs the id, not
+    // the path, to say which of two rows holding the same folder is the one
+    // that receives, and needs all three kinds at once to label a folder typed
+    // "all" that receives only some of them.
+    QVariantMap importDefaults();
+    // Mark one folder as the destination for every kind its type serves: a
+    // music folder only, a folder typed "all" all three.  Marks for kinds this
+    // type does not serve are left exactly where the user left them.
     bool setImportDefault(qint64 id);
     // Settings → Library "Duplicate formats": drop the losing format
     // where the same (artist, album, title, tracknumber) exists as both
@@ -198,6 +207,11 @@ private:
     // rows a healthy scan will never revisit are exactly the ones that need help,
     // because a file whose probe version already matches is not read again.
     int repairDeviceMonikers();
+    // The row that answers for a kind: the mark for that kind when it still
+    // qualifies, else the first folder added that serves it.  -1 when the
+    // library holds no folder that could receive it.
+    qint64 importWinnerId(const QString &kind);
+
     sqlite3 *m_db = nullptr;
     QString m_lastError;
 };

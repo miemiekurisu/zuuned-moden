@@ -461,8 +461,17 @@ void LibraryScanner::scan() {
                     const QString path = fi.filePath();
                     const QString suffix = fi.suffix().toLower();
                     if (!audioExtensions().contains(suffix)) {
-                        if (videoExtensions().contains(suffix)) hide.videos++;
-                        else if (photoExtensions().contains(suffix)) hide.photos++;
+                        // Only a root that excludes this kind has anything to
+                        // complain about.  The video and photo walks carry the
+                        // same guard; without it a root typed "all" -- which
+                        // indexes every kind, and is what the video import
+                        // fallback registers -- was censused for the videos and
+                        // pictures it had already indexed, and Settings offered
+                        // to set its type to the type it already had.
+                        if (rootType.value(root) != QLatin1String("all")) {
+                            if (videoExtensions().contains(suffix)) hide.videos++;
+                            else if (photoExtensions().contains(suffix)) hide.photos++;
+                        }
                         return;
                     }
                     if (seen.contains(path))

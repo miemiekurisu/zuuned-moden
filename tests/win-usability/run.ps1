@@ -786,6 +786,17 @@ if (Select-Phase 'pages') {
                 $wfDefaults = Get-QaField $pageCase.QaSplash 'wfDefaults'
                 Check 'exactly one watch folder reports itself the default import folder' `
                     ($wfDefaults -eq '1') ('wfDefaults=' + $wfDefaults + ' wfRows=' + $wfRows)
+                # And the words on those rows.  A default paints a status, a
+                # non-default paints a button, so the status string has to exist
+                # for exactly the rows the flag names -- one stale or blank label
+                # and a row tells the user a download lands somewhere it will not.
+                $wfDefaultLabels = Get-QaField $pageCase.QaSplash 'wfDefaultLabels'
+                $wfDefaultAgree = Get-QaField $pageCase.QaSplash 'wfDefaultAgree'
+                Check 'only a default row carries a default status string' `
+                    ($wfDefaultLabels -eq $wfDefaults -and $wfDefaultAgree -eq $wfRows) `
+                    ('wfDefaultLabels=' + $wfDefaultLabels + ' wfDefaultAgree=' `
+                        + $wfDefaultAgree + ' wfDefaults=' + $wfDefaults `
+                        + ' wfRows=' + $wfRows)
                 # Artwork identity, asserted rather than read off a picture.  The
                 # island, a queue row and the media-property report all ask the art
                 # cache for the album's cover; a row that carries a track artist as
@@ -1074,7 +1085,7 @@ if (Select-Phase 'tools') {
     Check 'librarytool names passes its 17-case naming self-test' `
         ($names.Code -eq 0 -and $names.Out -match 'ALL PASS \(0 failures\)') ('code=' + $names.Code)
     $cust = Invoke-Proc -File $libraryTool -Arguments @('customize') -Timeout 900
-    Check 'librarytool customize runs the v0/v2 to v10 migration chain' `
+    Check 'librarytool customize runs the v0/v2 to v11 migration chain' `
         ($cust.Code -eq 0 -and $cust.Out -match 'ALL PASS \(0 failures\)') ('code=' + $cust.Code)
     # The filename, path-comparison and playlist rules are header-only, so no other
     # part of this gate can see them: they are reached through the tool instead.
@@ -1103,6 +1114,15 @@ if (Select-Phase 'tools') {
     $videofloor = Invoke-Proc -File $libraryTool -Arguments @('videofloor') -Timeout 600
     Check 'librarytool videofloor pins what a video folder may discard and what it must report' `
         ($videofloor.Code -eq 0 -and $videofloor.Out -match 'ALL PASS \(0 failures\)') ('code=' + $videofloor.Code)
+    # A watch folder that skips a kind has to say which files it skipped, and a
+    # folder typed "all" has to say nothing, because it skipped nothing.  One
+    # wrong word here and a user adds a music folder, sees a complaint about the
+    # picture inside it, and is told to set the type it already has.  This needs
+    # the real scanner over a real tree with all three kinds in it, which no
+    # screenshot of a page with one music folder can show.
+    $census = Invoke-Proc -File $libraryTool -Arguments @('census') -Timeout 600
+    Check 'librarytool census reports the kinds a folder skips and stays quiet about all' `
+        ($census.Code -eq 0 -and $census.Out -match 'ALL PASS \(0 failures\)') ('code=' + $census.Code)
     # Album cover lookup ships off, so the rule that decides what a lookup sends
     # and what it is allowed to download is worth more than a screenshot.  The
     # self-test injects its transport and its cache directory and never opens a

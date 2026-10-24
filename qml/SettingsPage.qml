@@ -784,7 +784,11 @@ Item {
                                         Text {
                                             visible: wfRow.modelData.importDefault === true
                                             Layout.alignment: Qt.AlignVCenter
-                                            text: "default"
+                                            // Spelled by C++, which knows the kinds:
+                                            // a folder typed "all" that only receives
+                                            // videos has to say so, or the row reads as
+                                            // the destination for songs it will never get.
+                                            text: wfRow.modelData.defaultLabel || "default"
                                             font.pixelSize: 11
                                             font.weight: Font.DemiBold
                                             color: Theme.pink

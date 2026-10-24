@@ -1291,6 +1291,78 @@ stated in the header comment rather than only in the ``.cpp``.
 
 Device evidence is unchanged: one hand-tested Pavo Zune HD.
 
+## Fourteenth sweep: three destinations, and a folder censused for what it had already indexed (2026-10-24)
+
+Also not a re-read of the tree.  It started from a product complaint - a music download did not go
+into the music folder, and a library is supposed to be one place - and it found one data-model
+mistake, one derivation done in the wrong currency, one status string that could not be absent, and
+one scan walk that had forgotten a guard its two sibling walks already carried.
+
+**The rule.**  A library has *three* import destinations - one each for music, photos and video - not
+one.  The twentieth sweep's ``watch_folders.import_default`` was one bit on one row, which cannot say
+"this folder receives pictures and that one receives songs" the moment a folder typed ``all`` is in
+the list: ``all`` qualifies for every kind, so it competes for all three at once, and marking a
+picture folder cleared the bit on the ``all`` root that had been carrying music too.  Choosing where
+songs go moved where pictures went.  Schema v11 keys the mark by kind - ``import_defaults (kind
+PRIMARY KEY, folder_id)`` - and the migration copies *only* marks the user actually made
+(``... WHERE import_default=1``), because seeding the remaining kinds would freeze today's fallback
+into a choice nobody made.  The v10 column stays where it is, unread: dropping a column is the one
+migration a downgraded app cannot forgive.
+
+**The fallback had the wrong winner, in the direction the user cares about.**  ``ORDER BY
+import_default DESC, id ASC`` let a folder that merely promised to hold everything win a kind for
+which another folder had actually been declared, so a library with a real music folder still imported
+songs somewhere else.  Declared beats generic now - ``ORDER BY CASE WHEN type='all' THEN 1 ELSE 0 END,
+id ASC`` - which is the point of naming a folder for a kind.  The mark itself is honoured only while
+the row's type still serves that kind: a mark cannot promise a kind no walk reads out of that folder,
+and an import that lands in a folder no walk visits is a file the library owns, occupies disk and can
+never browse.  That is also why ``watchTypesForKind()`` and ``importKindsForType()`` moved into
+``src/library/LibraryTypes.h`` as one rule stated twice, next to the third copy of it in
+``LibraryScanner::scan()``'s root sets.
+
+**Status is derived by row id, not by path.**  Whether a row shows a status or a button was computed
+by comparing a stored path against ``importRoot()``'s answer, so two rows naming one folder at
+different spellings both claimed it, and it could not express the case the per-kind table makes
+possible: a folder typed ``all`` that receives video but not songs.  ``LibraryService::reloadFolders()``
+now asks for a row *id* per kind and spells the status from the kinds that row actually receives -
+``default``, ``default · video``, or nothing at all.
+
+**And that "nothing at all" was the last defect.**  The label for a partial default was built as
+``"default · " + kinds.join("+")``, so a row receiving *nothing* got ``"default · "`` - a truthy string
+- which made "no status" indistinguishable from "blank status" to the QML fallback and to any gate
+counting the rows.  A row that receives nothing returns an empty string now, and the usability gate
+counts the absence: ``only a default row carries a default status string`` compares
+``wfDefaultLabels`` with ``wfDefaults`` and ``wfDefaultAgree`` with the row count, off counters added
+to the ``--qa-probe`` report.
+
+**The scan walk that complained about its own root.**  Every walk hands its visitor every file under
+its root, discards the kinds the root was not typed for, and reports that count, because a folder that
+shows no videos is otherwise indistinguishable from an empty one.  The video and photo walks check
+``rootType.value(root) != "all"`` first - a root in all three root sets excludes nothing, so counting
+it is a lie.  The music walk did not check, so it filed the videos and pictures inside an ``all`` root
+as hidden, and Settings offered to set that folder's type to the type it already had.  Guarded, and
+pinned by a tool because no screenshot of a one-folder library can show three kinds in one tree.
+
+**The gates.**  ``librarytool folders`` grew from 20 checks to 35 and now rewinds a database to the
+exact v10 shape - marked column present, ``import_defaults`` absent, ``user_version`` 10 - and reads
+the upgrade back: the marked folder keeps the kind it had, unmarked kinds keep falling back, nothing
+is invented, and the library is v11 again.  The rewind drops ``import_defaults`` with the v6 columns
+and the v9 fingerprint, since a fixture that still answers the v11 probe is not a v2 fixture.
+``librarytool census`` is new, 10 checks, one real ``LibraryScanner`` pass over a music, a photos, a
+movies and an ``all`` folder: exactly one folder complains about the clip, the ``all`` root says
+nothing, and everything inside the ``all`` root is indexed rather than counted.  Both run in the
+``tools`` phase of ``tests\win-usability``; the counters for the pass are ``201 checks, 0 failures,
+0 skips`` from ``tests\win-compat`` and ``launches=18 checks=132 failures=0 skips=0 killed=0`` from
+the usability gate.
+
+**Deliberate, so it does not get "fixed" twice.**  The v10 ``import_default`` column is left in place
+and unread.  A mark is *not* deleted when a folder is retyped into a kind it no longer serves - it
+stops qualifying, and if the type comes back the user's choice comes back with it.  Device evidence is
+unchanged and it matters here more than usual: the destination for ``music`` on this machine moved
+from ``Music\Zuuned Imports`` to the declared music folder, and no player has written into the new one.
+
+Device evidence is unchanged: one hand-tested Pavo Zune HD.
+
 ## What is proven, and by which gate
 
 - `tests/win-usability/watch_folder_repair.py` seeds four roots - a `/E:/` scar, a
@@ -1308,12 +1380,18 @@ Device evidence is unchanged: one hand-tested Pavo Zune HD.
   from the Win32 documentation.
 - `tests/win-compat` and `tests/win-usability` are source and runtime gates;
   neither opens a USB handle.  The compat gate is currently 201 checks.
-- `librarytool folders` is 20 checks and the only gate that reaches the watch-folder rules in
+- `librarytool folders` is 35 checks and the only gate that reaches the watch-folder rules in
   `LibraryDb` directly: the character-width prefix counts above, the release of a Chinese-named
-  folder, and which folder a download is written into.  It runs in the `tools` phase of
+  folder, which folder a download of each kind is written into, that two marks cannot disturb each
+  other, and that a library written against the old one-flag schema keeps the destination its user
+  chose through the v10 to v11 upgrade.  It runs in the `tools` phase of
   `tests\win-usability` beside `names`, `paths`, `vanish`, `customize` and `cover`, on the same
   reasoning as `librarytool paths` - a header-only or database-level rule is unreachable from a
   QML launch, so the tool is where it gets pinned.
+- `librarytool census` is 10 checks and the only capture the scan census has: which folder may
+  report the files of a kind it does not index, and the one type that may report nothing because it
+  indexes everything it holds.  It runs one real `LibraryScanner` pass over a real tree holding all
+  three kinds, which is more than any page screenshot with a single music folder can show.
 - `librarytool videofloor` is 19 checks and the only capture the video size floor has: which folder may
   refuse a small video, the one folder that may not (the download destination, so a pull the user asked
   for cannot be discarded as debris), and the note the scan owes for every file it did refuse.  Nothing
